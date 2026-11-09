@@ -25,12 +25,21 @@ const availability = { CHANNEL3: !!env.CHANNEL3_API_KEY, TAVILY: !!env.TAVILY_AP
 console.log("Budget (per request):", JSON.stringify(budget), "· prices: UNKNOWN (ledger records NULL cost) · availability:", JSON.stringify(availability));
 if (!availability.CHANNEL3) { console.error("CHANNEL3_API_KEY not configured: stopping (no fixture substitution)."); process.exit(3); }
 
-let channel3Http = 0;
-const countingFetch: typeof fetch = async (u, init) => { if (String(u).includes("trychannel3.com")) channel3Http++; return fetch(u, init); };
+// Hard TOTAL caps for the whole script run (in addition to the ledger's per-request caps). No retries.
+const TOTAL = { CHANNEL3: Number(env.LIVE_MAX_CHANNEL3 ?? 1), TAVILY: Number(env.LIVE_MAX_TAVILY ?? 2) };
+let channel3Http = 0, tavilyHttp = 0;
+const countingFetch: typeof fetch = async (u, init) => {
+  const url = String(u);
+  if (url.includes("trychannel3.com")) { if (channel3Http >= TOTAL.CHANNEL3) throw new Error("TOTAL Channel3 budget exhausted"); channel3Http++; }
+  else if (url.includes("api.tavily.com")) { if (tavilyHttp >= TOTAL.TAVILY) throw new Error("TOTAL Tavily budget exhausted"); tavilyHttp++; }
+  else throw new Error(`Unexpected live host: ${new URL(url).host}`);
+  return fetch(u, init);
+};
+console.log("Hard total caps for this run:", JSON.stringify(TOTAL));
 const channel3 = new Channel3ResearchAdapter(env.CHANNEL3_API_KEY!, { limit: 10, fetchImpl: countingFetch });
 const store = new Store(":memory:");
 const ledger = new UsageLedger(store, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: budget });
-const tavily = availability.TAVILY ? new TavilySearch(env.TAVILY_API_KEY!, "community") : null;
+const tavily = availability.TAVILY ? new TavilySearch(env.TAVILY_API_KEY!, "community", countingFetch) : null;
 const router = new EvidenceRouter(store, ledger, tavily, null, { billable: false });
 
 const probe = createServer(); await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
@@ -50,7 +59,7 @@ const call = async (name: string, args: Record<string, unknown>): Promise<any> =
 const req = { request: "Buy Sony WH-CH720N Black", currency: "USD", mustHave: ["active_noise_cancellation"] };
 const startedAt = new Date().toISOString();
 const r1 = await call("research_purchase", req);
-const callsAfter1 = channel3Http;
+const callsAfter1 = channel3Http, tavilyAfter1 = tavilyHttp;
 let compare: any = null;
 if (r1.identity?.status === "LOCKED") compare = await call("compare_purchase_offers", { researchSessionId: r1.purchaseSessionId, productIdentity: r1.identity.lockedIdentity, destination: { country: "US", region: "CA" } });
 const r2 = await call("research_purchase", req);
@@ -60,6 +69,9 @@ await client.close(); await new Promise<void>((r) => app.server.close(() => r())
 const evidence = {
   kind: "LIVE_PROVIDER_SMOKE", startedAt, finishedAt: new Date().toISOString(), budget, availability,
   channel3HttpCalls: { afterFirstRequest: callsAfter1, total: channel3Http },
+  tavilyHttpCalls: { afterFirstRequest: tavilyAfter1, total: tavilyHttp },
+  channel3Observed: [...((channel3 as unknown as { products: Map<string, { product: { title: string; identity: unknown } }> }).products.values())]
+    .map((p) => ({ title: p.product.title, identity: p.product.identity })),
   firstRequest: r1.error ? { error: r1.error } : {
     mode: r1.mode, state: r1.state, identity: r1.identity, candidates: r1.candidates?.map((c: any) => ({ productId: c.productId, title: c.title, identity: c.identity, suitability: c.suitability,
       mustHave: c.mustHave, evidenceRouting: c.evidenceRouting, lowestListing: c.listingPrice })), unknowns: r1.unknowns, usage: r1.usage,
@@ -70,7 +82,7 @@ const evidence = {
   usageSummary: usage.usage,
 };
 mkdirSync("docs/evidence", { recursive: true });
-const file = `docs/evidence/live-smoke-${startedAt.slice(0, 10)}.json`;
+const file = `docs/evidence/live-smoke-${startedAt.slice(0, 19).replace(/[:T]/g, "-")}.json`;
 writeFileSync(file, JSON.stringify(evidence, null, 2));
-console.log(JSON.stringify({ file, channel3HttpCalls: evidence.channel3HttpCalls, identity: r1.identity?.status, candidates: r1.candidates?.length,
+console.log(JSON.stringify({ file, channel3HttpCalls: evidence.channel3HttpCalls, tavilyHttpCalls: evidence.tavilyHttpCalls, identity: r1.identity?.status, candidates: r1.candidates?.length,
   compareState: compare?.state, eligible: compare?.eligibleOffers?.length, secondRequestChannel3Calls: channel3Http - callsAfter1 }, null, 1));

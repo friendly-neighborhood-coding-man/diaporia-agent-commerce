@@ -276,3 +276,20 @@ Evidence independence now counts subdomains of one site, and syndicated copies o
 ### Suite
 
 `npm test` gives **9 files, 114 passed, 0 failed**.
+
+
+## Corrective live verification (2026-11-09 16:05 UTC, owner-approved budget: at most 1 Channel3 and 2 Tavily, no KERNEL, Shopify or PayPal, no retries)
+
+**Live calls actually made: 1 Channel3 search and 1 Tavily search.** Hard total caps were enforced in the scripts.
+
+- **Defect 1 (bundle as exact product): FIXED on real data.** `live-smoke-2026-11-09-16-05-08.json`
+  - Channel3 returned 9 WH-CH720N listings; the "Black w/ Pro Stand Kit" listing became variant `Black BUNDLE`.
+  - No standalone listing named the colour, so identity was `NOT_FOUND`, giving **HOLD**. Purchase safety rules are unchanged.
+  - The repeated request made **0** new calls. Tavily was not called in this script because there was no locked candidate.
+- **Defect 2 (comparative phrase read as absence): FIXED on real data.** `live-evidence-check-2026-11-09-16-05-42.json`
+  - One Tavily search for the exact model's ANC claim returned 8 positive claims from 8 hosts: `SUFFICIENT_TRUE`.
+  - soundguys.com's "The noise canceling isn't the very best, but it performs relatively well." was correctly read as **positive**.
+  - The repeat used stored evidence: **0** new calls.
+- **New finding:** amazon.com (a retailer) was among the counted sources. Retailer and marketplace domains are now excluded from independent evidence (tested offline, not re-run live). Without amazon.com the claim remains sufficient from editorial review sites. reddit.com is still counted; it is user-generated.
+- **Ledger:** both runs recorded `BYOK_LIVE` usage with **unknown** supplier cost (not 0) and 0 billable.
+- **Suite:** `npm test`: **9 files, 115 passed, 0 failed**.

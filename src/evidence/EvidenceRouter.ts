@@ -18,7 +18,7 @@ export interface PageInspectionProvider {
 export type Sufficiency = "SUFFICIENT_TRUE" | "SUFFICIENT_FALSE" | "CONTRADICTED" | "INSUFFICIENT";
 export interface RouterStep {
   provider: "STORE" | "TAVILY" | "KERNEL";
-  action: "REUSED_EXISTING_EVIDENCE" | "SKIPPED_SUFFICIENT" | "CALLED" | "REUSED_CACHED_QUERY" | "REUSED_CACHED_PAGE" | "BLOCKED_BY_LIMIT" | "FAILED";
+  action: "REUSED_EXISTING_EVIDENCE" | "SKIPPED_SUFFICIENT" | "CALLED" | "REUSED_CACHED_QUERY" | "REUSED_CACHED_PAGE" | "BLOCKED_BY_LIMIT" | "FAILED" | "EXCLUDED_NON_INDEPENDENT_SOURCE";
   capability: string; detail: string;
 }
 export interface RouterResult { capability: string; sufficiency: Sufficiency; claims: CapabilityClaim[]; steps: RouterStep[]; reason: string }
@@ -38,6 +38,8 @@ const NEGATED: Record<string, RegExp> = {
 const MAX_KERNEL_PAGES = 2;
 const EVIDENCE_TTL_MS = 30 * 86400_000;
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+/** Retailer / marketplace pages are merchant-controlled: never counted as INDEPENDENT evidence. */
+const NOT_INDEPENDENT = /(^|\.)(amazon|ebay|walmart|bestbuy|target|aliexpress|temu|costco|newegg|bhphotovideo|sweetwater|cdw)\.[a-z.]+$/i;
 /** Naive registrable domain (last two labels; known two-label public suffixes handled). */
 function registrableDomain(h: string): string {
   const parts = h.split(".").filter(Boolean);
@@ -129,6 +131,7 @@ export class EvidenceRouter {
     const needsPage: string[] = [];
     for (const h of hits) {
       if (!model.test(`${h.title} ${h.snippet}`)) continue;
+      if (NOT_INDEPENDENT.test(host(h.url))) { steps.push({ provider: "TAVILY", action: "EXCLUDED_NON_INDEPENDENT_SOURCE", capability, detail: `excluded retailer/marketplace source ${host(h.url)}` }); continue; }
       const kw = KEYWORDS[capability];
       const sentence = kw ? h.snippet.split(/(?<=[.!?])\s+/).find((s) => kw.test(s)) : undefined;
       if (sentence) claims = this.add(claims, productKey, capability, !(NEGATED[capability]?.test(sentence) ?? false), h.url, "TAVILY", this.search.provenance, sentence);

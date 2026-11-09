@@ -2,7 +2,7 @@
   "name": "diaporia-agent-commerce",
   "version": "0.8.0",
   "description": "A cross-platform AI purchasing engine with evidence-based product research, bounded checkout authorization, and PayPal Sandbox integration. Built for MCP-enabled assistants.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {
@@ -21,7 +21,9 @@
     "demo:identity": "tsx scripts/demo-merchant-identity.ts",
     "demo:quote": "tsx scripts/demo-merchant-quote.ts",
     "smoke:shopify": "tsx scripts/shopify-smoke.ts",
-    "demo:service": "tsx scripts/demo-service.ts"
+    "demo:service": "tsx scripts/demo-service.ts",
+    "live:smoke": "tsx scripts/live-smoke.ts",
+    "live:evidence": "tsx scripts/live-evidence-check.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -32,5 +34,6 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
-  }
+  },
+  "author": "Eric Lee Kim"
 }

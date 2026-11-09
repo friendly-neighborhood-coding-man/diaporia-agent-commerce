@@ -32,7 +32,7 @@ Nothing has been pushed. This audit records what was checked before a possible f
 
 ## License
 
-- MIT is proposed in `LICENSE.MIT.proposed`. It is not in effect.
+- MIT is proposed in `LICENSE`. It is not in effect.
 - Production dependencies: 95 packages, licensed MIT (85), ISC (7), BSD-3-Clause (2) and BSD-2-Clause (1). None is copyleft or unknown.
 - Ownership: the code was authored for the owner in this project. The owner must confirm the copyright holder before MIT is adopted.
 
@@ -45,3 +45,16 @@ A fresh `git clone` into an empty temp folder was tested with no PayPal or catal
 1. Owner approval to create and push the GitHub repository.
 2. Owner decision on the license and copyright holder.
 3. Optional: the first genuine Sandbox E2E result, so that TEST_REPORT can show live Sandbox evidence.
+
+
+## Release-candidate audit (2026-11-09, after owner decisions)
+
+- **License.** MIT is active in `LICENSE` (Copyright (c) 2026 Eric Lee Kim). `THIRD_PARTY_NOTICES.md` lists 92 production dependencies: MIT 82, ISC 7, BSD-3 2, BSD-2 1. No copyleft.
+- **Ownership.** All source, tests and docs were written for this repository. The Channel3 request/normalization and the Tavily request shape follow the owner's own DIAPORIA Buy V7 integration. No third-party source is vendored. Merchant fixtures are fictional; "Sony WH-CH720N" appears only as a product name and citation.
+- **Complete-history secret audit** (all commits, all refs):
+  - No `.env*` (except `.env.example`), `.data/`, database or key files were ever committed.
+  - Exact-value search across every commit for the local PayPal client id and secret, Channel3, KERNEL and Tavily keys, the Sandbox payee merchant id and email, dev tokens, the owner's email and local profile paths: **none found**.
+  - Pattern search (PayPal tokens, private keys, sk-/tvly- keys, generated dev credentials, Windows paths): **none**.
+  - The value that triggered the scanner in `0d06fbe` (`tests/service-plane.test.ts`) is a **fake test constant**, renamed in `e994fe2`.
+- **Personal data.** Commit metadata carries the owner's personal email as author. Publishing the existing history would expose it; see the push plan.
+- **Sandbox evidence.** Docs contain PayPal Sandbox order and capture ids, which are not secrets. They contain no client id or secret, payee merchant id, or buyer or business email.

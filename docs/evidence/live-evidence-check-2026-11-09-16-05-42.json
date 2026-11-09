@@ -1,0 +1,96 @@
+{
+  "kind": "LIVE_EVIDENCE_CHECK",
+  "startedAt": "2026-11-09T16:05:42.267Z",
+  "maxTavily": 2,
+  "tavilyCalls": {
+    "afterFirst": 1,
+    "total": 1
+  },
+  "first": {
+    "sufficiency": "SUFFICIENT_TRUE",
+    "reason": "INDEPENDENT_SEARCH_SUFFICIENT",
+    "steps": [
+      {
+        "provider": "TAVILY",
+        "action": "CALLED",
+        "capability": "active_noise_cancellation",
+        "detail": "\"Sony WH-CH720N\" noise cancelling review → 10 results"
+      }
+    ],
+    "claims": [
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://www.techgearlab.com/reviews/audio/wireless-headphones/sony-wh-ch720n",
+        "statement": "| Rating Categories | Sony WH-CH720N | 1More SonoFlow Pro | Tozo HT3 | Tozo HT2 | JLab JBuds Lux ANC |\n| Sound Quality ("
+      },
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://www.soundguys.com/sony-wh-ch720n-review-99305",
+        "statement": "The noise canceling isn’t the very best, but it performs relatively well."
+      },
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://recordingnow.com/blog/sony-wh-ch720n-review",
+        "statement": "They are the lightest over-ear, wireless, noise cancelling headphone we’ve tested with perfect comfort."
+      },
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://www.loudnwireless.com/blog/i-did-not-expect-this-sony-wh-ch720n-review",
+        "statement": "In terms of active noise cancelling, I have to say that these are pretty awesome."
+      },
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://www.amazon.com/Sony-WH-CH720N-Canceling-Headphones-Microphone/dp/B0BS1QCFHX",
+        "statement": "| Customer Reviews | 4.3  4.3 out of 5 stars)        (17,352)   4.3 out of 5 stars | [...] # Product summary presents ke"
+      },
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://www.whathifi.com/reviews/sony-wh-ch720n",
+        "statement": "Award as the best budget wireless headphones – fill a gap in the market by offering active noise-cancellation (ANC), goo"
+      },
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://www.reddit.com/r/SonyHeadphones/comments/18o6g77/what_do_you_guys_think_about_the_whch720n",
+        "statement": "I notice being able to hear lower frequencies noticeably better when i have noise cancelling on."
+      },
+      {
+        "value": true,
+        "kind": "INDEPENDENT_REVIEW",
+        "url": "https://www.audioreviews.org/sony-wh-ch720n-review",
+        "statement": "I found the WH-CH720N to be ergonomic and comfortable—they have enough clamping force to keep ‘em from sliding around, b"
+      }
+    ]
+  },
+  "second": {
+    "sufficiency": "SUFFICIENT_TRUE",
+    "reason": "EXISTING_EVIDENCE_SUFFICIENT",
+    "steps": [
+      {
+        "provider": "STORE",
+        "action": "REUSED_EXISTING_EVIDENCE",
+        "capability": "active_noise_cancellation",
+        "detail": "previously verified independent evidence (fresh)"
+      },
+      {
+        "provider": "STORE",
+        "action": "SKIPPED_SUFFICIENT",
+        "capability": "active_noise_cancellation",
+        "detail": "existing evidence meets the sufficiency rule"
+      }
+    ]
+  },
+  "ledger": {
+    "knownEstimatedSupplierMicroUsd": 0,
+    "unknownCostRecords": 1,
+    "supplierCostComplete": false,
+    "billableMinor": 0,
+    "failedOperations": 0
+  }
+}

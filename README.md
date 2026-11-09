@@ -47,7 +47,7 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 114 tests
+npm test            # 115 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
@@ -107,13 +107,13 @@ Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`
 |---|---|---|
 | Claude Code CLI as MCP host (localhost) | ✓ | Discovery, research, compare, prepare and status; $6,000 refusal; cross-user and scope boundaries |
 | PayPal Sandbox order, buyer approval, recipient check, capture | ✓ (2 runs) | Run 1 failed closed before capture. Run 2: one capture, still `PENDING / PENDING_REVIEW` |
-| Channel3 product discovery | ✓ (1 call) | Exact model found. The listing price is not a checkout quote, so the result is HOLD (`NO_MERCHANT_QUOTE`) |
-| Tavily independent search | ✓ (1 call) | It returned 10 results. The router's decision was wrong (a false contradiction caused by an over-broad negation rule); fixed and unit-tested afterwards, **not re-run live** |
+| Channel3 product discovery | ✓ (2 calls total) | First run wrongly locked a "w/ Pro Stand Kit" bundle as the exact product. After the fix, the corrective run marked it `BUNDLE`; no standalone listing named the colour Black, so identity was `NOT_FOUND`, giving HOLD. Listing prices are never checkout quotes |
+| Tavily independent search | ✓ (2 calls total, 2026-11-09) | First run: a false contradiction from an over-broad negation rule. After the fix, a corrective run found Sony WH-CH720N ANC `SUFFICIENT_TRUE` from independent review sites; a comparative "isn't the very best" sentence was read correctly. A retailer page (amazon.com) was counted as independent, so retailer and marketplace domains are now excluded (fixed offline) |
 | KERNEL page inspection | — | No public adapter yet |
 | Shopify Storefront Cart | — | Fixtures only |
 | Production OAuth, managed billing, merchant orders | — | Not implemented |
 
-Raw evidence (sanitized) is in `docs/evidence/live-smoke-2026-11-09.json`. Setup is in [docs/SETUP.md](docs/SETUP.md), and the judge walkthrough is in [docs/HACKATHON_DEMO.md](docs/HACKATHON_DEMO.md).
+Raw evidence (sanitized) is in `docs/evidence/`. Setup is in [docs/SETUP.md](docs/SETUP.md), and the judge walkthrough is in [docs/HACKATHON_DEMO.md](docs/HACKATHON_DEMO.md).
 
 ## Community and managed service foundation
 
@@ -184,4 +184,4 @@ References: [Agent Ready](https://developer.paypal.com/agent-ready/overview/) ·
 
 ## License
 
-Not yet in effect. MIT is proposed in `LICENSE.MIT.proposed` (third-party notices in `THIRD_PARTY_NOTICES.md`) pending the owner's approval and code-ownership confirmation; all 95 production dependencies are MIT/ISC/BSD. Until a `LICENSE` file exists, all rights are reserved.
+MIT. Copyright (c) 2026 Eric Lee Kim. See [LICENSE](LICENSE). Third-party dependencies keep their own licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): 92 production packages, all MIT, ISC or BSD.

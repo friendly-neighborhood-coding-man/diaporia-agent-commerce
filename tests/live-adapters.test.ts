@@ -53,6 +53,14 @@ describe("Evidence Router negation and labels (observed live defect)", () => {
     ]);
     expect(r.sufficiency).toBe("SUFFICIENT_TRUE");
   });
+  it("retailer/marketplace pages are not independent sources (observed live: amazon.com)", async () => {
+    const r = await run([
+      { url: "https://www.amazon.com/dp/x", title: "Sony WH-CH720N", snippet: "Sony WH-CH720N active noise cancelling headphones, best seller." },
+      { url: "https://b.example/r", title: "WH-CH720N", snippet: "Sony WH-CH720N active noise cancelling handled office chatter." },
+    ]);
+    expect(r.sufficiency).toBe("INSUFFICIENT");
+    expect(r.claims.some((c) => c.source.url.includes("amazon"))).toBe(false);
+  });
   it("an explicit denial counts as negative; disagreement is labelled for review, not as sufficient", async () => {
     const r = await run([
       { url: "https://a.example/r", title: "Sony WH-CH720N", snippet: "The Sony WH-CH720N has no noise cancelling at all." },

@@ -1,0 +1,195 @@
+{
+  "kind": "LIVE_PROVIDER_SMOKE",
+  "startedAt": "2026-11-09T16:05:08.836Z",
+  "finishedAt": "2026-11-09T16:05:10.820Z",
+  "budget": {
+    "CHANNEL3": 1,
+    "TAVILY": 2,
+    "KERNEL": 1
+  },
+  "availability": {
+    "CHANNEL3": true,
+    "TAVILY": true,
+    "KERNEL": false
+  },
+  "channel3HttpCalls": {
+    "afterFirstRequest": 1,
+    "total": 1
+  },
+  "tavilyHttpCalls": {
+    "afterFirstRequest": 0,
+    "total": 0
+  },
+  "channel3Observed": [
+    {
+      "title": "WH-CH720N Wireless Bluetooth Noise-Cancelling Headphones",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "WH-CH720N Wireless Bluetooth Noise-Cancelling Headphones",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "WH-CH720N Wireless Noise-Cancelling Over-Ear Headphones",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "Sony WH-CH720N Wireless Noise Cancelling Headphone",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "Sony WH-CH720N Wireless Noise Cancelling Headphone",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "WH-CH720N Active Noise Canceling Wireless Bluetooth Headphones",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "Sony WH-CH720N Wireless Noise Cancelling Headphone Black w/ Pro Stand Kit",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": "Black BUNDLE",
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "Sony WH-CH720N Noise cancelling Headphone Bluetooth with microphone",
+      "identity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    },
+    {
+      "title": "Sony WHCH720N Noise cancelling Headphone Bluetooth with microphone",
+      "identity": {
+        "brand": "Sony",
+        "model": "WHCH720N",
+        "variant": null,
+        "condition": "new",
+        "sku": null
+      }
+    }
+  ],
+  "firstRequest": {
+    "mode": "EXACT_PRODUCT_PURCHASE",
+    "state": "HOLD",
+    "identity": {
+      "status": "NOT_FOUND",
+      "reason": "No catalog product matches the requested brand, model, variant and condition exactly."
+    },
+    "candidates": [],
+    "unknowns": [
+      "No catalog product matches the requested brand, model, variant and condition exactly.",
+      "No budget given; totals will not be filtered by budget."
+    ],
+    "usage": {
+      "records": [
+        {
+          "provider": "CHANNEL3",
+          "operation": "search",
+          "status": "SUCCEEDED",
+          "billingState": "NOT_BILLABLE",
+          "provenance": "BYOK_LIVE",
+          "attempts": 1,
+          "estimatedSupplierMicroUsd": null,
+          "pricingVersion": "live-supplier-prices-unknown",
+          "billableMinor": 0
+        }
+      ],
+      "mode": "community"
+    }
+  },
+  "compare": null,
+  "secondRequest": {
+    "state": "HOLD",
+    "identity": "NOT_FOUND",
+    "evidenceRouting": [],
+    "usage": {
+      "records": [],
+      "mode": "community"
+    }
+  },
+  "usageSummary": {
+    "userId": "live-smoke",
+    "period": "2026-11",
+    "pricingVersions": [
+      "live-supplier-prices-unknown"
+    ],
+    "lines": [
+      {
+        "provider": "CHANNEL3",
+        "operation": "search",
+        "status": "SUCCEEDED",
+        "billingState": "NOT_BILLABLE",
+        "provenance": "BYOK_LIVE",
+        "pricingVersion": "live-supplier-prices-unknown",
+        "operations": 1,
+        "attempts": 1,
+        "unknownCostRecords": 1,
+        "estimatedSupplierMicroUsd": null,
+        "reconciledRecords": 0,
+        "reconciledSupplierMicroUsd": 0,
+        "billableMinor": 0
+      }
+    ],
+    "totals": {
+      "knownEstimatedSupplierMicroUsd": 0,
+      "unknownCostRecords": 1,
+      "supplierCostComplete": false,
+      "billableMinor": 0,
+      "failedOperations": 0
+    },
+    "limits": {
+      "perRequestSupplierMicro": 0,
+      "monthlyBillableMinor": 0,
+      "perRequestCalls": {
+        "CHANNEL3": 1,
+        "TAVILY": 2,
+        "KERNEL": 1
+      }
+    },
+    "disclosure": "Supplier costs are estimates (or explicitly unknown), not provider invoices. Billable amounts apply only in managed mode and only to delivered service."
+  }
+}
