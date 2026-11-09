@@ -34,6 +34,7 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 | MCP payment status contract (`paymentStatus`, pending details, next action, new-attempt prohibition, merchant order vs payment) | Implemented and tested (mock) |
 | PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`; **live Sandbox use: 2 owner-approved runs** (see the Sandbox checkout row above and docs/TEST_REPORT.md) |
 | Real MCP host: Claude Code CLI → localhost | **Tested** (discovery, research → compare → prepare → status, $6,000 refusal, cross-user and scope boundaries; mock payments). See docs/HOST_TEST_EVIDENCE.md |
+| Local MCP hosts: Claude Code, OpenAI Codex CLI, xAI Grok Build, Nous Hermes Agent | **Tested, 4/4 PASS** on localhost with MOCK data (see docs/INTEROP.md) |
 | Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** Need a public HTTPS endpoint; only research-only public mode is available without OAuth |
 | Production user authentication (OAuth 2.1 for MCP) | **Not implemented.** Dev-only per-user tokens on loopback; public deployments run research-only and payment is disabled |
 | Live product research (catalog search, independent evidence) | **BYOK adapters for Channel3 (catalog) and Tavily (independent evidence)**, off by default. Bounded live smoke only (see Live evidence status below). Listing prices are never treated as checkout quotes. Without keys, all research is MOCK |
@@ -106,6 +107,7 @@ Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`
 | Integration | Live-tested | Result |
 |---|---|---|
 | Claude Code CLI as MCP host (localhost) | ✓ | Discovery, research, compare, prepare and status; $6,000 refusal; cross-user and scope boundaries |
+| Four local MCP hosts: Claude Code, Codex CLI, Grok Build, Hermes Agent (2026-11-09) | ✓ | All four **PASS**: a real host-originated `research_purchase` call over Streamable HTTP, with identical results. Host interop is live; the commerce data is MOCK fixtures. See [docs/INTEROP.md](docs/INTEROP.md) |
 | PayPal Sandbox order, buyer approval, recipient check, capture | ✓ (2 runs) | Run 1 failed closed before capture. Run 2: one capture, still `PENDING / PENDING_REVIEW` |
 | Channel3 product discovery | ✓ (2 calls total) | First run wrongly locked a "w/ Pro Stand Kit" bundle as the exact product. After the fix, the corrective run marked it `BUNDLE`; no standalone listing named the colour Black, so identity was `NOT_FOUND`, giving HOLD. Listing prices are never checkout quotes |
 | Tavily independent search | ✓ (2 calls total, 2026-11-09) | First run: a false contradiction from an over-broad negation rule. After the fix, a corrective run found Sony WH-CH720N ANC `SUFFICIENT_TRUE` from independent review sites; a comparative "isn't the very best" sentence was read correctly. A retailer page (amazon.com) was counted as independent, so retailer and marketplace domains are now excluded (fixed offline) |

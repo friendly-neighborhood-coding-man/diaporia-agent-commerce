@@ -1,6 +1,14 @@
 # Four-host MCP interoperability
 
-The same DIAPORIA MCP server (this repository at `ac0a4c1`, unchanged) was used by independent AI hosts, each through its own MCP client. **No server code, payment state machine, purchase policy or validation was changed for any host.** Everything below is MOCK: no PayPal call and no paid provider call was made.
+The same DIAPORIA MCP server was used by four independent AI hosts, each through its own MCP client. The server was this repository at `ac0a4c1`, with no changes for any host. **No payment state machine, purchase policy, authorization or validation was changed for any host.** No PayPal call and no paid research call was made.
+
+### What is live and what is mock
+
+| Layer | Evidence class | What it shows |
+|---|---|---|
+| **Host interoperability**: discovery, auth, the real host-originated `tools/call`, response shape | **LIVE**, real installed host clients on a local machine | Each host's own MCP client spoke Streamable HTTP to this server. Shown in each host's transcript and in the server's wire log. |
+| **Commerce data inside the response**: catalog, Sony fixture, manufacturer citation, listing price | **MOCK fixtures** (`dataSource` = mock fixtures, `paymentEffect` = no payment) | Deterministic data, so the four results can be compared field by field. This is not live research evidence. Live Channel3 and Tavily evidence is separate, in `docs/TEST_REPORT.md` and `docs/evidence/live-*.json`. |
+| **Model behind each host** | Live, from each host's own provider | Claude Code: its default Claude model. Codex: its default OpenAI model. Grok: its default xAI model ($0.07 for the run). Hermes: **Claude Haiku**, model alias `haiku`, through the `claude-subscription-directsdk-experimental` provider plugin on the owner's Claude subscription. |
 
 ## Result
 
@@ -10,7 +18,7 @@ The same DIAPORIA MCP server (this repository at `ac0a4c1`, unchanged) was used 
 | Claude Code | Claude Code 2.1.310 | claude-code/2.1.310 (claude-desktop, agent-sdk/0.3.317) / claude-code 2.1.310 | **PASS** | `claude -p`, model from the CLI default; native MCP tool `mcp__diaporia__research_purchase` |
 | OpenAI Codex CLI | codex-cli 0.160.0 (codex exec --json) | codex-mcp-client/0.160.0 / codex-mcp-client 0.160.0 | **PASS** | `codex exec --json`; `mcp_tool_call` item |
 | xAI Grok Build | grok 1.0.77 (50ca579fa996) [stable] | grok-cli/1.0.77 (discovery checks earlier also seen from 1.0.52) / grok-shell-diaporia 1.0.77 | **PASS** | `grok -p`; MCP tool reached through Grok’s built-in deferred-tool helper `use_tool` (`diaporia__research_purchase`) |
-| Nous Research Hermes Agent | Hermes Agent v0.22.7 (2026.9.24) · stable | python-httpx2/2.15.1 / hermes-agent 0.22.7 | **PASS** | `hermes chat --oneshot`, model via Claude subscription provider plugin (haiku); Hermes’ own MCP client executes `mcp__diaporia__research_purchase` |
+| Nous Research Hermes Agent | Hermes Agent v0.22.7 (2026.9.24) · stable | python-httpx2/2.15.1 / hermes-agent 0.22.7 | **PASS** | `hermes chat --oneshot`; model **Claude Haiku** (`haiku`) via the Claude subscription provider plugin; Hermes’ own MCP client executes `mcp__diaporia__research_purchase` |
 
 All four `research_purchase` results are identical on every compared field: mode, state, intent, identity, candidates, unknowns, data source and payment effect. Session IDs differ by design. Each session is stored under its own host user id, and each has its own hash-chained audit events (`RESEARCH_STARTED`, `RESEARCHED`) and a MOCK usage record with 0 billable. A request without a token got **401**.
 <!-- MATRIX:END -->
@@ -106,7 +114,7 @@ Launch notes:
 
 - **Discovery probe.** Claude Code 2.1.310 and Grok 1.0.52/1.0.77 first send `server/discover` with protocol `2026-07-28`. This server (MCP TypeScript SDK 1.32.2) answers 400, and both hosts fall back to `initialize` with protocol `2025-11-25`. The fallback is automatic, and nothing was changed.
 - **GET probes.** Claude Code and Hermes probe `GET /mcp` for a standalone SSE stream. The stateless server answers 405, which the spec allows, and both continue over POST.
-- **Server instructions.** The server's `instructions` text names all six tools. A token without `purchase.prepare` therefore sees `prepare_checkout` mentioned but not listed, and Claude Code pointed this out. This is cosmetic: the tool is not callable, and listing is scope-filtered.
+- **Server instructions (fixed after the run).** During the run, the server's `instructions` text named `prepare_checkout` even for tokens without `purchase.prepare`, and Claude Code pointed this out in its answer. The tool was never listed or callable, so this was text only. The instructions are now built from the same scope checks as tool registration (`serverInstructions`, `tests/mcp-instructions.test.ts`). Authorization, tool registration and business logic are unchanged. The evidence files keep the original host answers.
 
 ## Evidence
 
