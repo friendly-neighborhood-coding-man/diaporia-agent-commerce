@@ -1,6 +1,6 @@
 # Service plane: evidence routing, usage metering, community vs managed, service billing
 
-All behavior in this document is **implemented and mock-tested**. Nothing here was run against live Channel3, Tavily, KERNEL or PayPal billing.
+All behavior in this document is **implemented and mock-tested**. Bounded live Channel3 and Tavily smoke runs are recorded in `docs/TEST_REPORT.md`. KERNEL and PayPal billing have never been called live from this repository.
 
 ## Evidence Router (`src/evidence/EvidenceRouter.ts`)
 
@@ -27,7 +27,22 @@ Providers are ports (`IndependentSearchProvider`, `PageInspectionProvider`) that
 |---|---|---|
 | Discovery | Fixture catalog stands in for Channel3 | The private DIAPORIA Buy app has the live Channel3 adapter |
 | Independent search | Mock Tavily | BYOK `TavilySearch`, request shape from DIAPORIA Buy V7. Not live-tested here |
-| Page inspection | Mock KERNEL | A KERNEL BYOK adapter is not in the public repo yet |
+| Page inspection | Mock KERNEL | BYOK `KernelPageInspector` (below). Fake-HTTP tested; **not live-tested** |
+
+### KERNEL BYOK adapter (`src/evidence/KernelPageInspector.ts`)
+
+One inspection is one remote browser session: `POST /browsers` (headless, no stealth), then `POST /browsers/{id}/playwright/execute` (one bounded snippet that loads the page and returns its visible text), then `DELETE /browsers/{id}`. No SDK dependency.
+
+| Concern | Rule |
+|---|---|
+| Call limits | Router: at most 2 candidate pages per capability. Ledger: `KERNEL: 1` call per request in live mode. Adapter: hard `maxSessions` per process (`KERNEL_MAX_SESSIONS`, default 20). A blocked call is `BLOCKED_BY_LIMIT` and the capability stays unverified |
+| URL policy (free, before metering) | https only, port 443, no credentials, no IP literals, no local or reserved names, and every DNS answer must be a public address. A refused URL is `REFUSED_BY_URL_POLICY`, costs nothing and uses no call budget |
+| Browser policy | Main-frame navigation limited to the same host; images, media and fonts blocked; no CAPTCHA solving, no sign-in, no stealth |
+| Timeouts | One total deadline (default 45 s) covering create and execute; navigation timeout 15 s; the session is deleted in `finally`, even after a failure or timeout |
+| Missing evidence | Statements are extracted locally with the same keyword and negation rules as search snippets. A page yields **zero** statements if it redirects to another host, returns HTTP 400 or above, shows an access challenge, renders empty, does not name the exact model in its title or heading, or never states the capability. Zero statements keep the capability `INSUFFICIENT` |
+| Caching | Page results are cached for 30 days per (provider, URL, capability). Transient outcomes (navigation failure, 5xx, 429, 408, challenge, empty render) are not cached |
+| Cost provenance | Each call is a ledger record: provider `KERNEL`, unit `browser_second`, measured quantity (session creation to deletion), provenance `BYOK_LIVE` (community) or `MANAGED_LIVE`, and supplier price **unknown** (`NULL`) until a real price is entered. Every router step also carries `provenance` |
+| Secrets | The key is held in a private field, sent only to `api.onkernel.com` and never logged; error messages carry only the HTTP status and a templated path |
 
 ## Usage Ledger (`src/metering/UsageLedger.ts`)
 

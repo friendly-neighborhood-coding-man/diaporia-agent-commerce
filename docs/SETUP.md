@@ -48,13 +48,15 @@ npm run mandate:create -- --brand Sony --model WH-CH720N --variant Black --sku W
 |---|---|---|
 | Channel3 catalog search | `CHANNEL3_API_KEY` + `RESEARCH_PROVIDER=channel3` | Live adapter (`Channel3ResearchAdapter`); one live call made on 2026-11-09 |
 | Tavily independent search | `TAVILY_API_KEY` + `EVIDENCE_PROVIDERS=byok` | Live adapter (`TavilySearch`); one live call made on 2026-11-09 |
-| KERNEL page inspection | `KERNEL_API_KEY` | **No public adapter yet**; mock only |
+| KERNEL page inspection | `KERNEL_API_KEY` + `EVIDENCE_PROVIDERS=byok` (+ `TAVILY_API_KEY`) | BYOK adapter (`KernelPageInspector`, plain HTTPS to `api.onkernel.com`). **Paid per browser-second. Fake-HTTP tested only; no live KERNEL call has been made from this repository.** At most 1 session per request, `KERNEL_MAX_SESSIONS` per process (default 20) |
 
 A bounded live smoke test refuses to run without `--confirm-live` and enforces per-request call caps. Supplier prices are recorded as **unknown**:
 
 ```bash
 node --env-file=<your env file> --import tsx scripts/live-smoke.ts --confirm-live
 ```
+
+KERNEL is never used by the smoke test unless you also pass `--allow-kernel` (one browser session at most, `LIVE_MAX_KERNEL` to change). Run it only after deciding to spend KERNEL credit.
 
 ## 4. PayPal Sandbox (optional; Sandbox only, Live is refused)
 

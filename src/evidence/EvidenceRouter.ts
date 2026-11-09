@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CapabilityClaim, CatalogProduct } from "../domain/types.js";
 import { normalizeModel } from "../identity/ProductIdentityResolver.js";
 import type { Store } from "../store/Database.js";
+import { CAPABILITY_KEYWORDS, CAPABILITY_NEGATED, CAPABILITY_PHRASE } from "./capabilityText.js";
 import { UsageLimitError, type UsageLedger, type UsageProvenance } from "../metering/UsageLedger.js";
 
 /** Independent web search (e.g. Tavily). */
@@ -10,33 +11,33 @@ export interface IndependentSearchProvider {
   search(query: string): Promise<Array<{ url: string; title: string; snippet: string }>>;
 }
 /** Original-page inspection with a real browser (e.g. KERNEL). Returns explicit statements only. */
+export interface PageInspectionResult {
+  statements: Array<{ value: boolean; quote: string }>;
+  browserSeconds: number;
+  /** Why the page did or did not yield statements (diagnostic only; never evidence by itself). */
+  outcome?: string;
+}
 export interface PageInspectionProvider {
   readonly name: string; readonly provenance: UsageProvenance;
-  inspect(url: string, capability: string, modelToken: string): Promise<{ statements: Array<{ value: boolean; quote: string }>; browserSeconds: number }>;
+  inspect(url: string, capability: string, modelToken: string): Promise<PageInspectionResult>;
+  /** Optional free pre-check (URL/DNS policy). A non-null reason means the page is never inspected or metered. */
+  refuse?(url: string): Promise<string | null>;
 }
 
 export type Sufficiency = "SUFFICIENT_TRUE" | "SUFFICIENT_FALSE" | "CONTRADICTED" | "INSUFFICIENT";
 export interface RouterStep {
   provider: "STORE" | "TAVILY" | "KERNEL";
-  action: "REUSED_EXISTING_EVIDENCE" | "SKIPPED_SUFFICIENT" | "CALLED" | "REUSED_CACHED_QUERY" | "REUSED_CACHED_PAGE" | "BLOCKED_BY_LIMIT" | "FAILED" | "EXCLUDED_NON_INDEPENDENT_SOURCE";
+  action: "REUSED_EXISTING_EVIDENCE" | "SKIPPED_SUFFICIENT" | "CALLED" | "REUSED_CACHED_QUERY" | "REUSED_CACHED_PAGE" | "BLOCKED_BY_LIMIT" | "FAILED" | "EXCLUDED_NON_INDEPENDENT_SOURCE" | "REFUSED_BY_URL_POLICY";
   capability: string; detail: string;
+  /** Cost provenance of the provider behind this step (MOCK, BYOK_LIVE or MANAGED_LIVE). Absent for STORE steps. */
+  provenance?: UsageProvenance;
 }
 export interface RouterResult { capability: string; sufficiency: Sufficiency; claims: CapabilityClaim[]; steps: RouterStep[]; reason: string }
 
-const PHRASE: Record<string, string> = { active_noise_cancellation: "noise cancelling", wireless: "wireless bluetooth", multipoint: "multipoint", over_ear: "over-ear" };
-const KEYWORDS: Record<string, RegExp> = {
-  active_noise_cancellation: /\b(active )?noise[- ]?cancel(l)?ing\b|\banc\b/i, wireless: /\bwireless\b|\bbluetooth\b/i,
-  multipoint: /\bmulti-?point\b|\btwo devices\b/i, over_ear: /\bover[- ]ear\b/i,
-};
-/** Negation must govern the capability phrase itself ("no ANC", "lacks noise cancelling"), not any "not" in the sentence. */
-const NEGATED: Record<string, RegExp> = {
-  active_noise_cancellation: /\b(no|lacks?|without|doesn't (?:have|offer|support)|does not (?:have|offer|support))\s+(?:any\s+)?(?:active\s+)?(?:noise[- ]?cancel(?:l)?(?:ing|ation)|anc)\b/i,
-  wireless: /\b(no|lacks?|without|doesn't (?:have|offer|support)|does not (?:have|offer|support))\s+(?:any\s+)?(?:wireless|bluetooth)\b|\bwired[- ]only\b/i,
-  multipoint: /\b(no|lacks?|without|doesn't (?:have|offer|support)|does not (?:have|offer|support))\s+(?:any\s+)?multi-?point\b/i,
-  over_ear: /\bon[- ]ear\b/i,
-};
+const PHRASE = CAPABILITY_PHRASE, KEYWORDS = CAPABILITY_KEYWORDS, NEGATED = CAPABILITY_NEGATED;
 const MAX_KERNEL_PAGES = 2;
 const EVIDENCE_TTL_MS = 30 * 86400_000;
+const TRANSIENT_PAGE_OUTCOME = /^(NAVIGATION_FAILED|HTTP_5\d\d|HTTP_429|HTTP_408|ACCESS_CHALLENGE|EMPTY_DOCUMENT)/;
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 /** Retailer / marketplace pages are merchant-controlled: never counted as INDEPENDENT evidence. */
 const NOT_INDEPENDENT = /(^|\.)(amazon|ebay|walmart|bestbuy|target|aliexpress|temu|costco|newegg|bhphotovideo|sweetwater|cdw)\.[a-z.]+$/i;
@@ -118,13 +119,13 @@ export class EvidenceRouter {
     const queryKey = createHash("sha256").update(`${this.search.name}|${query.toLowerCase()}`).digest("hex");
     let hits: Array<{ url: string; title: string; snippet: string }>;
     const cached = this.store.db.prepare("SELECT hits_json, observed_at FROM evidence_query_cache WHERE query_key=?").get(queryKey) as { hits_json: string; observed_at: number } | undefined;
-    if (cached && this.now() - cached.observed_at < EVIDENCE_TTL_MS) { hits = JSON.parse(cached.hits_json); steps.push({ provider: "TAVILY", action: "REUSED_CACHED_QUERY", capability, detail: query }); }
+    if (cached && this.now() - cached.observed_at < EVIDENCE_TTL_MS) { hits = JSON.parse(cached.hits_json); steps.push({ provider: "TAVILY", action: "REUSED_CACHED_QUERY", capability, detail: query, provenance: this.search.provenance }); }
     else {
       const r = await this.metered(ctx, "TAVILY", "search", "search", 1, `tavily:${queryKey}`, this.search.provenance, () => this.search!.search(query));
-      if (!r.ok) { steps.push({ provider: "TAVILY", action: r.blocked ? "BLOCKED_BY_LIMIT" : "FAILED", capability, detail: r.reason }); return done(r.blocked ? "VERIFICATION_REQUIRED_BUT_LIMIT_REACHED" : "SEARCH_FAILED"); }
+      if (!r.ok) { steps.push({ provider: "TAVILY", action: r.blocked ? "BLOCKED_BY_LIMIT" : "FAILED", capability, detail: r.reason, provenance: this.search.provenance }); return done(r.blocked ? "VERIFICATION_REQUIRED_BUT_LIMIT_REACHED" : "SEARCH_FAILED"); }
       hits = r.value;
       this.store.db.prepare("INSERT OR REPLACE INTO evidence_query_cache(query_key,provider,hits_json,observed_at) VALUES (?,?,?,?)").run(queryKey, this.search.name, JSON.stringify(hits), this.now());
-      steps.push({ provider: "TAVILY", action: "CALLED", capability, detail: `${query} → ${hits.length} results` });
+      steps.push({ provider: "TAVILY", action: "CALLED", capability, detail: `${query} → ${hits.length} results`, provenance: this.search.provenance });
     }
     // Snippet statements count only if they name the exact model token and state the capability.
     const model = new RegExp(modelToken.replace(/[^A-Za-z0-9]/g, "[- ]?"), "i");
@@ -141,19 +142,26 @@ export class EvidenceRouter {
     if (!this.inspector) return done("NO_PAGE_INSPECTION_PROVIDER");
     // KERNEL: only pages that mention the exact model but whose snippet did not state the capability.
     for (const url of needsPage.slice(0, MAX_KERNEL_PAGES)) {
+      const prov = this.inspector.provenance;
+      // URL policy is checked BEFORE metering: a refused URL costs nothing and uses no call budget.
+      const refused = this.inspector.refuse ? await this.inspector.refuse(url) : null;
+      if (refused) { steps.push({ provider: "KERNEL", action: "REFUSED_BY_URL_POLICY", capability, detail: `${url}: ${refused}`, provenance: prov }); continue; }
       const pageKey = createHash("sha256").update(`${this.inspector.name}|${url}|${capability}`).digest("hex");
-      const pc = this.store.db.prepare("SELECT result_json FROM evidence_page_cache WHERE page_key=?").get(pageKey) as { result_json: string } | undefined;
-      let res: { statements: Array<{ value: boolean; quote: string }>; browserSeconds: number };
-      if (pc) { res = JSON.parse(pc.result_json); steps.push({ provider: "KERNEL", action: "REUSED_CACHED_PAGE", capability, detail: url }); }
+      const pc = this.store.db.prepare("SELECT result_json, observed_at FROM evidence_page_cache WHERE page_key=?").get(pageKey) as { result_json: string; observed_at: number } | undefined;
+      let res: PageInspectionResult;
+      if (pc && this.now() - pc.observed_at < EVIDENCE_TTL_MS) { res = JSON.parse(pc.result_json); steps.push({ provider: "KERNEL", action: "REUSED_CACHED_PAGE", capability, detail: url, provenance: prov }); }
       else {
-        const r = await this.metered(ctx, "KERNEL", "inspect", "browser_second", 30, `kernel:${pageKey}`, this.inspector.provenance, () => this.inspector!.inspect(url, capability, modelToken),
+        const epoch = Math.floor(this.now() / EVIDENCE_TTL_MS);
+        const r = await this.metered(ctx, "KERNEL", "inspect", "browser_second", 30, `kernel:${pageKey}:${epoch}`, prov, () => this.inspector!.inspect(url, capability, modelToken),
           (v) => Math.max(1, Math.ceil(v.browserSeconds)));
-        if (!r.ok) { steps.push({ provider: "KERNEL", action: r.blocked ? "BLOCKED_BY_LIMIT" : "FAILED", capability, detail: `${url}: ${r.reason}` }); if (r.blocked) return done("VERIFICATION_REQUIRED_BUT_LIMIT_REACHED"); continue; }
+        if (!r.ok) { steps.push({ provider: "KERNEL", action: r.blocked ? "BLOCKED_BY_LIMIT" : "FAILED", capability, detail: `${url}: ${r.reason}`, provenance: prov }); if (r.blocked) return done("VERIFICATION_REQUIRED_BUT_LIMIT_REACHED"); continue; }
         res = r.value;
-        this.store.db.prepare("INSERT OR REPLACE INTO evidence_page_cache(page_key,provider,result_json,observed_at) VALUES (?,?,?,?)").run(pageKey, this.inspector.name, JSON.stringify(res), this.now());
-        steps.push({ provider: "KERNEL", action: "CALLED", capability, detail: `${url} → ${res.statements.length} explicit statement(s)` });
+        // Transient outcomes (navigation failure, server errors, rate limits, challenges, empty renders) are not cached.
+        if (!TRANSIENT_PAGE_OUTCOME.test(res.outcome ?? ""))
+          this.store.db.prepare("INSERT OR REPLACE INTO evidence_page_cache(page_key,provider,result_json,observed_at) VALUES (?,?,?,?)").run(pageKey, this.inspector.name, JSON.stringify(res), this.now());
+        steps.push({ provider: "KERNEL", action: "CALLED", capability, detail: `${url} → ${res.statements.length} explicit statement(s)${res.outcome ? ` [${res.outcome}]` : ""}; ${Math.ceil(res.browserSeconds)} browser-second(s)`, provenance: prov });
       }
-      for (const st of res.statements) claims = this.add(claims, productKey, capability, st.value, url, "KERNEL", this.inspector.provenance, st.quote);
+      for (const st of res.statements) claims = this.add(claims, productKey, capability, st.value, url, "KERNEL", prov, st.quote);
       if (EvidenceRouter.judge(claims) !== "INSUFFICIENT") return done("PAGE_INSPECTION_SUFFICIENT");
     }
     return done("INSUFFICIENT_AFTER_ALL_ALLOWED_STEPS");
@@ -164,6 +172,9 @@ export class EvidenceRouter {
     let rec;
     try { rec = this.ledger.begin({ userId: ctx.userId, requestId: ctx.requestId, provider, operation, logicalKey, quantity: estQty, unit, provenance, billable: this.opts.billable }); }
     catch (e) { if (e instanceof UsageLimitError) return { ok: false, blocked: true, reason: e.code }; throw e; }
+    // The ledger already holds a completed record for this logical operation but our cache does not: never make
+    // an unrecorded provider call. Treat as not verified (the caller keeps the capability INSUFFICIENT).
+    if (rec.reuse) return { ok: false, blocked: true, reason: "LEDGER_RECORDED_RESULT_NOT_CACHED" };
     try {
       const value = await fn();
       this.ledger.complete(rec.record.id, { success: true, ...(actualQty ? { actualQuantity: actualQty(value) } : {}) });

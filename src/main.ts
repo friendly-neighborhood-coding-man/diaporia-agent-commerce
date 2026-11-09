@@ -9,6 +9,7 @@ import { UsageLedger, LIVE_PRICES_UNKNOWN, PLACEHOLDER_PRICING } from "./meterin
 import { Channel3ResearchAdapter } from "./research/Channel3ResearchAdapter.js";
 import { EvidenceRouter } from "./evidence/EvidenceRouter.js";
 import { MockKernelInspector, MockTavilySearch, TavilySearch } from "./evidence/providers.js";
+import { KernelPageInspector } from "./evidence/KernelPageInspector.js";
 import { MockPayPalBillingProvider } from "./billing/Billing.js";
 import { randomBytes } from "node:crypto";
 
@@ -48,14 +49,16 @@ const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY
 const ledger = byok || liveCatalog
   ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1, TAVILY: 2, KERNEL: 1 } })
   : new UsageLedger(serviceStore, PLACEHOLDER_PRICING);
+// KERNEL page inspection is paid per browser-second: it runs only when BOTH byok evidence is selected AND a KERNEL key is set.
+const kernel = byok && env.KERNEL_API_KEY ? new KernelPageInspector(env.KERNEL_API_KEY, deploymentMode, { maxSessions: Number(env.KERNEL_MAX_SESSIONS ?? 20) }) : null;
 const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
   byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode) : new MockTavilySearch(),
-  byok ? null /* KERNEL BYOK adapter is not part of the public repo yet */ : new MockKernelInspector(),
+  byok ? kernel : new MockKernelInspector(),
   { billable: deploymentMode === "managed" });
 const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
   billing: deploymentMode === "managed" ? new MockPayPalBillingProvider(serviceStore, env.MOCK_BILLING_WEBHOOK_SECRET ?? randomBytes(24).toString("hex")) : null,
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
-console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? "BYOK Tavily (KERNEL disabled)" : "MOCK"}`);
+console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? `BYOK Tavily, KERNEL ${kernel ? "BYOK (live, paid per browser-second)" : "disabled (no KERNEL_API_KEY)"}` : "MOCK"}`);
 
 const app = createApp({
   service,
