@@ -1,0 +1,601 @@
+{
+  "kind": "LIVE_PROVIDER_SMOKE",
+  "startedAt": "2026-11-09T15:45:38.074Z",
+  "finishedAt": "2026-11-09T15:45:43.753Z",
+  "budget": {
+    "CHANNEL3": 1,
+    "TAVILY": 2,
+    "KERNEL": 1
+  },
+  "availability": {
+    "CHANNEL3": true,
+    "TAVILY": true,
+    "KERNEL": false
+  },
+  "channel3HttpCalls": {
+    "afterFirstRequest": 1,
+    "total": 1
+  },
+  "firstRequest": {
+    "mode": "EXACT_PRODUCT_PURCHASE",
+    "state": "RESEARCHED",
+    "identity": {
+      "status": "LOCKED",
+      "lockedIdentity": {
+        "brand": "Sony",
+        "model": "WH-CH720N",
+        "variant": "Black",
+        "condition": "new",
+        "sku": null
+      },
+      "assumptions": [
+        "Condition not stated; locked to NEW. Refurbished or used offers will be rejected."
+      ]
+    },
+    "candidates": [
+      {
+        "productId": "ch3:VQtZitH",
+        "title": "Sony WH-CH720N Wireless Noise Cancelling Headphone Black w/ Pro Stand Kit",
+        "identity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": "Black",
+          "condition": "new",
+          "sku": null
+        },
+        "suitability": "NEEDS_VERIFICATION",
+        "mustHave": [
+          {
+            "capability": "active_noise_cancellation",
+            "status": "UNKNOWN",
+            "evidence": null
+          }
+        ],
+        "evidenceRouting": [
+          {
+            "capability": "active_noise_cancellation",
+            "sufficiency": "CONTRADICTED",
+            "reason": "INDEPENDENT_SEARCH_SUFFICIENT",
+            "steps": [
+              {
+                "provider": "TAVILY",
+                "action": "CALLED",
+                "capability": "active_noise_cancellation",
+                "detail": "\"Sony WH-CH720N\" noise cancelling review → 10 results"
+              }
+            ]
+          }
+        ],
+        "lowestListing": {
+          "lowestListingMinor": 19999,
+          "currency": "USD",
+          "note": "Search-time listing price, not a checkout total."
+        }
+      }
+    ],
+    "unknowns": [
+      "Sony WH-CH720N Wireless Noise Cancelling Headphone Black w/ Pro Stand Kit: \"active_noise_cancellation\" is not evidenced",
+      "ch3:VQtZitH: \"active_noise_cancellation\" has contradicting independent evidence",
+      "No budget given; totals will not be filtered by budget."
+    ],
+    "usage": {
+      "records": [
+        {
+          "provider": "CHANNEL3",
+          "operation": "search",
+          "status": "SUCCEEDED",
+          "billingState": "NOT_BILLABLE",
+          "provenance": "BYOK_LIVE",
+          "attempts": 1,
+          "estimatedSupplierMicroUsd": null,
+          "pricingVersion": "live-supplier-prices-unknown",
+          "billableMinor": 0
+        },
+        {
+          "provider": "TAVILY",
+          "operation": "search",
+          "status": "SUCCEEDED",
+          "billingState": "NOT_BILLABLE",
+          "provenance": "BYOK_LIVE",
+          "attempts": 1,
+          "estimatedSupplierMicroUsd": null,
+          "pricingVersion": "live-supplier-prices-unknown",
+          "billableMinor": 0
+        }
+      ],
+      "mode": "community"
+    }
+  },
+  "compare": {
+    "state": "HOLD",
+    "eligible": 0,
+    "ineligible": [
+      {
+        "merchant": "bestbuy.com",
+        "listingUrl": "https://buy.trychannel3.com/2jrMYks-p1PB-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17500,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "cdw.com",
+        "listingUrl": "https://buy.trychannel3.com/Oneo8oD-TgS4-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 9999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "bhphotovideo.com",
+        "listingUrl": "https://buy.trychannel3.com/Oneo8oD-oHaU-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 12800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "sweetwater.com",
+        "listingUrl": "https://buy.trychannel3.com/Oneo8oD-p3xj-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 12800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "macys.com",
+        "listingUrl": "https://buy.trychannel3.com/Oneo8oD-K6RA-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "macys.com",
+        "listingUrl": "https://buy.trychannel3.com/9Fz3wNP-K6RA-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "beachcamera.com",
+        "listingUrl": "https://buy.trychannel3.com/bFs7h60-RnUy-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 12999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "bestbuy.com",
+        "listingUrl": "https://buy.trychannel3.com/bFs7h60-p1PB-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 12999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "beachcamera.com",
+        "listingUrl": "https://buy.trychannel3.com/csuynE6-RnUy-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 12999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "focuscamera.com",
+        "listingUrl": "https://buy.trychannel3.com/7kMbO8I-ZQQu-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 8800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "bestbuy.com",
+        "listingUrl": "https://buy.trychannel3.com/7kMbO8I-p1PB-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "officedepot.com",
+        "listingUrl": "https://buy.trychannel3.com/7kMbO8I-6Uzl-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "microcenter.com",
+        "listingUrl": "https://buy.trychannel3.com/7kMbO8I-yqJJ-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "adorama.com",
+        "listingUrl": "https://buy.trychannel3.com/7kMbO8I-T9Fg-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 19000,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "macys.com",
+        "listingUrl": "https://buy.trychannel3.com/VQtZitH-K6RA-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": "Black",
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": true,
+        "listingPriceMinor": 19999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "beachcamera.com",
+        "listingUrl": "https://buy.trychannel3.com/VQtZitH-RnUy-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": "Black",
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": true,
+        "listingPriceMinor": 19999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "bestbuy.com",
+        "listingUrl": "https://buy.trychannel3.com/VQtZitH-p1PB-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": "Black",
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": true,
+        "listingPriceMinor": 19999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "newegg.com",
+        "listingUrl": "https://buy.trychannel3.com/mWNyIx2-LPzf-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 7999,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "macys.com",
+        "listingUrl": "https://buy.trychannel3.com/mWNyIx2-K6RA-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "beachcamera.com",
+        "listingUrl": "https://buy.trychannel3.com/mWNyIx2-RnUy-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WH-CH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 17800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      },
+      {
+        "merchant": "focuscamera.com",
+        "listingUrl": "https://buy.trychannel3.com/qFqLjb6-ZQQu-P7Wpc6",
+        "listedIdentity": {
+          "brand": "Sony",
+          "model": "WHCH720N",
+          "variant": null,
+          "condition": "new",
+          "sku": null
+        },
+        "identityMatch": false,
+        "listingPriceMinor": 8800,
+        "issues": [
+          "MERCHANT_IDENTITY_UNKNOWN",
+          "IDENTITY_MISMATCH_VARIANT",
+          "NO_MERCHANT_QUOTE"
+        ],
+        "evidenceClass": "UNVERIFIED_OFFER"
+      }
+    ],
+    "holdReasons": [
+      "No offer has a verified, fully known total that meets every requirement."
+    ]
+  },
+  "secondRequest": {
+    "state": "RESEARCHED",
+    "identity": "LOCKED",
+    "evidenceRouting": [
+      [
+        {
+          "capability": "active_noise_cancellation",
+          "sufficiency": "CONTRADICTED",
+          "reason": "EXISTING_EVIDENCE_SUFFICIENT",
+          "steps": [
+            {
+              "provider": "STORE",
+              "action": "REUSED_EXISTING_EVIDENCE",
+              "capability": "active_noise_cancellation",
+              "detail": "previously verified independent evidence (fresh)"
+            },
+            {
+              "provider": "STORE",
+              "action": "SKIPPED_SUFFICIENT",
+              "capability": "active_noise_cancellation",
+              "detail": "existing evidence meets the sufficiency rule"
+            }
+          ]
+        }
+      ]
+    ],
+    "usage": {
+      "records": [],
+      "mode": "community"
+    }
+  },
+  "usageSummary": {
+    "userId": "live-smoke",
+    "period": "2026-11",
+    "pricingVersions": [
+      "live-supplier-prices-unknown"
+    ],
+    "lines": [
+      {
+        "provider": "CHANNEL3",
+        "operation": "search",
+        "status": "SUCCEEDED",
+        "billingState": "NOT_BILLABLE",
+        "provenance": "BYOK_LIVE",
+        "pricingVersion": "live-supplier-prices-unknown",
+        "operations": 1,
+        "attempts": 1,
+        "unknownCostRecords": 1,
+        "estimatedSupplierMicroUsd": null,
+        "reconciledRecords": 0,
+        "reconciledSupplierMicroUsd": 0,
+        "billableMinor": 0
+      },
+      {
+        "provider": "TAVILY",
+        "operation": "search",
+        "status": "SUCCEEDED",
+        "billingState": "NOT_BILLABLE",
+        "provenance": "BYOK_LIVE",
+        "pricingVersion": "live-supplier-prices-unknown",
+        "operations": 1,
+        "attempts": 1,
+        "unknownCostRecords": 1,
+        "estimatedSupplierMicroUsd": null,
+        "reconciledRecords": 0,
+        "reconciledSupplierMicroUsd": 0,
+        "billableMinor": 0
+      }
+    ],
+    "totals": {
+      "knownEstimatedSupplierMicroUsd": 0,
+      "unknownCostRecords": 2,
+      "supplierCostComplete": false,
+      "billableMinor": 0,
+      "failedOperations": 0
+    },
+    "limits": {
+      "perRequestSupplierMicro": 0,
+      "monthlyBillableMinor": 0,
+      "perRequestCalls": {
+        "CHANNEL3": 1,
+        "TAVILY": 2,
+        "KERNEL": 1
+      }
+    },
+    "disclosure": "Supplier costs are estimates (or explicitly unknown), not provider invoices. Billable amounts apply only in managed mode and only to delivered service."
+  }
+}

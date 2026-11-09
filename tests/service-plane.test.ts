@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/store/Database.js";
-import { UsageLedger, UsageLimitError, PLACEHOLDER_PRICING } from "../src/metering/UsageLedger.js";
+import { UsageLedger, UsageLimitError, PLACEHOLDER_PRICING, LIVE_PRICES_UNKNOWN } from "../src/metering/UsageLedger.js";
 import { EvidenceRouter } from "../src/evidence/EvidenceRouter.js";
 import { MockKernelInspector, MockTavilySearch, TavilySearch } from "../src/evidence/providers.js";
 import { MockPayPalBillingProvider } from "../src/billing/Billing.js";
@@ -55,6 +55,12 @@ describe("Evidence Router (deterministic, explicit sufficiency)", () => {
     expect(EvidenceRouter.judge([claim("https://a.example/1", true), claim("https://a.example/2", true)])).toBe("INSUFFICIENT"); // same host
     expect(EvidenceRouter.judge([claim("https://a.example/1", true), claim("https://b.example/1", true)])).toBe("SUFFICIENT_TRUE");
     expect(EvidenceRouter.judge([claim("https://m.example", false, "MANUFACTURER"), claim("https://b.example/1", true)])).toBe("CONTRADICTED");
+    // Subdomains of one site, and syndicated copies of one statement on other domains, count as one source.
+    expect(EvidenceRouter.judge([claim("https://news.a.example/1", true), claim("https://shop.a.example/2", true)])).toBe("INSUFFICIENT");
+    const said = (url: string, quote: string) => ({ capability: "x", value: true, source: { kind: "INDEPENDENT_REVIEW" as const, url, title: `mock-tavily [MOCK]: ${quote}`, retrievedAt: "" } });
+    const q = "The Lumen Q3 noise cancelling cut cabin rumble in our flight test.";
+    expect(EvidenceRouter.judge([said("https://a.example/1", q), said("https://syndicate.example/x", q)])).toBe("INSUFFICIENT");
+    expect(EvidenceRouter.judge([said("https://a.example/1", q), said("https://b.example/2", "Our lab measured 20 dB of low frequency reduction on the Q3.")])).toBe("SUFFICIENT_TRUE");
   });
 
   it("a cost limit never makes verification optional; provider timeouts are recorded as failed, not billed", async () => {
@@ -86,15 +92,39 @@ describe("Usage Ledger (integer accounting)", () => {
     const a = ledger.begin(op); ledger.complete(a.record.id, { success: false, failureReason: "timeout" });
     const b = ledger.begin(op); expect(b.reuse).toBe(false); expect(b.record.attempts).toBe(2);
     const done = ledger.complete(b.record.id, { success: true });
-    expect(done).toMatchObject({ status: "SUCCEEDED", attempts: 2, estSupplierMicro: 16_000, billableMinor: 2 });
+    expect(done).toMatchObject({ status: "SUCCEEDED", attempts: 2, estSupplierMicro: 16_000, billableMinor: 0, billingState: "PENDING_DELIVERY" });
+    ledger.settleRequest("req1", "alice"); ledger.settleRequest("req1", "alice"); // settle is idempotent
     const dup = ledger.begin(op); expect(dup.reuse).toBe(true);
     ledger.complete(done.id, { success: true }); // idempotent
     const s = ledger.summary("alice");
-    expect(s.totals).toMatchObject({ billableMinor: 2, estimatedSupplierMicroUsd: 16_000 });
-    expect(Number.isInteger(s.totals.estimatedSupplierMicroUsd)).toBe(true);
+    expect(s.totals).toMatchObject({ billableMinor: 2, knownEstimatedSupplierMicroUsd: 16_000, unknownCostRecords: 0, supplierCostComplete: true });
+    expect(Number.isInteger(s.totals.knownEstimatedSupplierMicroUsd)).toBe(true);
     expect(done.finalSupplierMicro).toBeNull(); // an estimate is not an invoice
     ledger.reconcileSupplierCost(done.id, 15_500);
     expect(ledger.summary("alice").lines[0]).toMatchObject({ reconciledRecords: 1, reconciledSupplierMicroUsd: 15_500 });
+  });
+
+  it("supplier cost is kept when the service then fails; the user is not charged", () => {
+    const { ledger } = plane("managed");
+    const op = { userId: "alice", requestId: "reqF", provider: "TAVILY" as const, operation: "search", logicalKey: "tavily:f", quantity: 1, unit: "search", provenance: "MOCK" as const, billable: true };
+    ledger.complete(ledger.begin(op).record.id, { success: true });
+    ledger.abandonRequest("reqF", "alice");
+    ledger.settleRequest("reqF", "alice");
+    const line = ledger.summary("alice").lines[0]!;
+    expect(line).toMatchObject({ status: "SUCCEEDED", billingState: "NOT_BILLED_SERVICE_FAILED", estimatedSupplierMicroUsd: 8_000, billableMinor: 0 });
+  });
+
+  it("unknown prices stay unknown and require an explicit call cap; pricing versions are immutable", () => {
+    const store = new Store(":memory:");
+    const live = (k: string) => ({ userId: "u", requestId: "r", provider: "CHANNEL3" as const, operation: "search", logicalKey: k, quantity: 1, unit: "search", provenance: "BYOK_LIVE" as const, billable: false });
+    expect(() => new UsageLedger(store, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0 }).begin(live("c:1"))).toThrow(/call cap/);
+    const l = new UsageLedger(store, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1 } });
+    l.complete(l.begin(live("c:1")).record.id, { success: true });
+    expect(() => l.begin(live("c:2"))).toThrow(/call cap/);
+    const s = l.summary("u");
+    expect(s.totals).toMatchObject({ unknownCostRecords: 1, supplierCostComplete: false, knownEstimatedSupplierMicroUsd: 0 });
+    expect(s.lines[0]!.estimatedSupplierMicroUsd).toBeNull();
+    expect(() => new UsageLedger(store, { ...PLACEHOLDER_PRICING, version: LIVE_PRICES_UNKNOWN.version })).toThrow(/already exists with different prices/);
   });
 
   it("enforces per-request supplier caps and monthly billable caps before any provider call", () => {
@@ -102,6 +132,7 @@ describe("Usage Ledger (integer accounting)", () => {
     const op = (k: string, req = "r1") => ({ userId: "alice", requestId: req, provider: "TAVILY" as const, operation: "search", logicalKey: k, quantity: 1, unit: "search", provenance: "MOCK" as const, billable: true });
     ledger.complete(ledger.begin(op("a")).record.id, { success: true });
     ledger.complete(ledger.begin(op("b")).record.id, { success: true });
+    ledger.settleRequest("r1", "alice");
     expect(() => ledger.begin(op("c"))).toThrow(UsageLimitError); // 24,000 > 20,000 per request
     expect(() => ledger.begin(op("d", "r2"))).toThrow(/Monthly billable/); // 2+2+2 > 4
     expect(ledger.summary("bob").totals.billableMinor).toBe(0); // per-user isolation
@@ -115,6 +146,7 @@ describe("Usage Ledger (integer accounting)", () => {
     const s2 = new Store(path); const l2 = new UsageLedger(s2);
     const again = l2.begin(op); expect(again.record.attempts).toBe(2);
     l2.complete(again.record.id, { success: true, actualQuantity: 12 });
+    l2.settleRequest("r", "alice");
     expect(l2.summary("alice").totals.billableMinor).toBe(5);
     expect(l2.begin(op).reuse).toBe(true);
     s2.close();

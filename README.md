@@ -47,7 +47,7 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 109 tests
+npm test            # 114 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
@@ -100,6 +100,20 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/MCP_TOOLS.md](doc
 - Known gaps: no OAuth, in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
 
 Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) for the Sandbox path, and a public HTTPS tunnel or host for remote AI clients.
+
+## Live evidence status (2026-11-09)
+
+| Integration | Live-tested | Result |
+|---|---|---|
+| Claude Code CLI as MCP host (localhost) | ✓ | Discovery, research, compare, prepare and status; $6,000 refusal; cross-user and scope boundaries |
+| PayPal Sandbox order, buyer approval, recipient check, capture | ✓ (2 runs) | Run 1 failed closed before capture. Run 2: one capture, still `PENDING / PENDING_REVIEW` |
+| Channel3 product discovery | ✓ (1 call) | Exact model found. The listing price is not a checkout quote, so the result is HOLD (`NO_MERCHANT_QUOTE`) |
+| Tavily independent search | ✓ (1 call) | It returned 10 results. The router's decision was wrong (a false contradiction caused by an over-broad negation rule); fixed and unit-tested afterwards, **not re-run live** |
+| KERNEL page inspection | — | No public adapter yet |
+| Shopify Storefront Cart | — | Fixtures only |
+| Production OAuth, managed billing, merchant orders | — | Not implemented |
+
+Raw evidence (sanitized) is in `docs/evidence/live-smoke-2026-11-09.json`. Setup is in [docs/SETUP.md](docs/SETUP.md), and the judge walkthrough is in [docs/HACKATHON_DEMO.md](docs/HACKATHON_DEMO.md).
 
 ## Community and managed service foundation
 
@@ -170,4 +184,4 @@ References: [Agent Ready](https://developer.paypal.com/agent-ready/overview/) ·
 
 ## License
 
-Not yet in effect. MIT is proposed in `LICENSE.MIT.proposed` pending the owner's approval and code-ownership confirmation; all 95 production dependencies are MIT/ISC/BSD. Until a `LICENSE` file exists, all rights are reserved.
+Not yet in effect. MIT is proposed in `LICENSE.MIT.proposed` (third-party notices in `THIRD_PARTY_NOTICES.md`) pending the owner's approval and code-ownership confirmation; all 95 production dependencies are MIT/ISC/BSD. Until a `LICENSE` file exists, all rights are reserved.

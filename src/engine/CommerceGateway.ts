@@ -116,12 +116,27 @@ export class CommerceGateway {
 
   // ---------------------------------------------------------------- research_purchase
   async researchPurchase(userId: string, input: PurchaseRequestInput) {
+    const ctx: { requestId: string | null } = { requestId: null };
+    try {
+      const out = await this.researchPurchaseInner(userId, input, ctx);
+      // Service delivered: bill its metered operations once (managed mode); supplier costs are already recorded.
+      if (this.config.service && ctx.requestId) { this.config.service.ledger.settleRequest(ctx.requestId, userId); out.usage = this.requestUsage(ctx.requestId, userId); }
+      return out;
+    } catch (e) {
+      // Service not delivered: provider calls that happened keep their supplier cost, nothing is billed.
+      if (this.config.service && ctx.requestId) this.config.service.ledger.abandonRequest(ctx.requestId, userId);
+      throw e;
+    }
+  }
+
+  private async researchPurchaseInner(userId: string, input: PurchaseRequestInput, ctx: { requestId: string | null }) {
     if (typeof input.request !== "string" || !input.request.trim()) throw new CommerceError("INVALID_INPUT", "request is required");
     if (input.budgetMinor !== undefined && !isMinor(input.budgetMinor)) throw new CommerceError("INVALID_INPUT", "budgetMinor must be integer minor units");
     if (input.currency !== undefined && !isCurrency(input.currency)) throw new CommerceError("INVALID_INPUT", "unsupported currency");
     await this.assertServiceAuthorized(userId);
     const intent = this.router.route(input);
     let ps = this.sessions.createPurchaseSession(userId, input.request, intent);
+    ctx.requestId = ps.purchaseSessionId;
     this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_STARTED", { mode: intent.mode, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource });
     const unknowns: string[] = [];
     let identityResult: Record<string, unknown> = { status: "NOT_APPLICABLE" };
@@ -165,7 +180,8 @@ export class CommerceGateway {
         listingPrice: { lowestListingMinor: lowest, currency: intent.currency, note: "Search-time listing price, not a checkout total." },
         budgetFit: lowest === null || intent.budgetMinor === null ? "UNKNOWN" : lowest <= intent.budgetMinor ? "LISTING_WITHIN_BUDGET" : "LISTING_OVER_BUDGET",
         untrustedContent: [p.description, ...p.reviews].filter((x): x is NonNullable<typeof x> => !!x).map(inspectUntrusted),
-        evidenceRouting: (routing[p.productId] ?? []).map((r) => ({ capability: r.capability, sufficiency: r.sufficiency, reason: r.reason, steps: r.steps })),
+        evidenceRouting: (routing[p.productId] ?? []).map((r) => ({ capability: r.capability, sufficiency: r.sufficiency, reason: r.reason, steps: r.steps,
+          claims: r.claims.filter((c) => c.source.kind !== "CATALOG_LISTING").map((c) => ({ value: c.value, kind: c.source.kind, url: c.source.url, statement: c.source.title.slice(0, 220) })) })),
       };
     }));
     const order = { SUITABLE: 0, NEEDS_VERIFICATION: 1, NOT_SUITABLE: 2 } as const;
@@ -223,8 +239,8 @@ export class CommerceGateway {
 
   private requestUsage(requestId: string, userId: string) {
     const recs = this.config.service!.ledger.forRequest(requestId, userId);
-    return { records: recs.map((r) => ({ provider: r.provider, operation: r.operation, status: r.status, provenance: r.provenance, attempts: r.attempts,
-      estimatedSupplierMicroUsd: r.estSupplierMicro, billableMinor: r.billableMinor })), mode: this.config.service!.mode };
+    return { records: recs.map((r) => ({ provider: r.provider, operation: r.operation, status: r.status, billingState: r.billingState, provenance: r.provenance, attempts: r.attempts,
+      estimatedSupplierMicroUsd: r.estSupplierMicro, pricingVersion: r.pricingVersion, billableMinor: r.billableMinor })), mode: this.config.service!.mode };
   }
 
   /** Read-only usage and (managed) simulated service-billing summary for the calling user only. */

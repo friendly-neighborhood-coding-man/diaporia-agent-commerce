@@ -234,3 +234,45 @@ A real PayPal webhook delivery, a real Sandbox capture transitioning out of `PEN
 - **Demo.** `npm run demo:service` shows the same flow in both community and simulated managed mode.
   - Tavily is called twice (Lumen ANC listing claim, Contoso missing ANC evidence) and KERNEL once (Lumen page). Products with manufacturer evidence get no extra calls.
   - The managed simulation produces a `DRAFT_NOT_INVOICED` mock billing summary.
+
+## Live evidence & submission gate round (2026-11-09/10)
+
+### Phase A: bounded LIVE provider smoke (`scripts/live-smoke.ts --confirm-live`, started 2026-11-09T15:45:38Z)
+
+**Budget, set before execution and enforced by the ledger's per-request call caps:**
+- Channel3: at most 1 search
+- Tavily: at most 2 searches
+- KERNEL: at most 1 page
+- Supplier prices recorded as UNKNOWN (NULL), never 0
+
+**Credentials:** `CHANNEL3_API_KEY` came from the private V7 env file, and `TAVILY_API_KEY` was present in the machine environment. No public KERNEL adapter exists, so KERNEL was unavailable.
+
+**Calls made: 1 Channel3 search and 1 Tavily search. Nothing else live.** No checkout and no PayPal call.
+
+**Observations** (raw, sanitized: `docs/evidence/live-smoke-2026-11-09.json`):
+- **Channel3** (query "Sony WH-CH720N", limit 10): the only candidate with an exact model token and the colour Black was "Sony WH-CH720N Wireless Noise Cancelling Headphone Black w/ Pro Stand Kit". **Defect:** a bundle was locked as the exact product.
+- **Merchant listings:** 21 Channel3 listings (bestbuy.com, cdw.com, bhphotovideo.com, sweetwater.com, …) had no colour in the title, so `IDENTITY_MISMATCH_VARIANT` applied. Channel3 has no merchant quote (`NO_MERCHANT_QUOTE`), and the outcome was **HOLD**. Correct: listing prices are not checkout totals.
+- **Tavily** (`"Sony WH-CH720N" noise cancelling review`): 10 results. The router concluded `CONTRADICTED`, which is **wrong**: the negation rule treated any "not/no" in a sentence (for example "not as strong as") as a denial. The candidate correctly stayed `NEEDS_VERIFICATION`; the defect never made a product purchase-ready.
+- **Repeat of the same request:** 0 new Channel3 calls and 0 new Tavily calls. Stored evidence and the cached query were reused.
+- **Ledger:** 2 records (`CHANNEL3:search`, `TAVILY:search`), both `BYOK_LIVE`, `unknownCostRecords: 2`, `supplierCostComplete: false`, 0 billable (community mode).
+
+**Fixes after the live run, offline-tested in `tests/live-adapters.test.ts`, not re-run live:**
+- Bundle and kit titles become `variant: "<colour> BUNDLE"` and are never the exact product.
+- Negation must govern the capability phrase.
+- `CONTRADICTED` results are labelled `CONTRADICTED_EVIDENCE_NEEDS_REVIEW`.
+- Routing output now includes each claim's URL and statement.
+
+### Phase B: ledger correctness
+
+The ledger was moved to v2:
+- supplier cost is kept when the service fails, and billing happens only on delivered service (`settleRequest` / `abandonRequest`);
+- unknown prices are NULL, and unpriced providers require call caps;
+- price-book versions are immutable;
+- retries are billed once;
+- caps are checked in IMMEDIATE transactions.
+
+Evidence independence now counts subdomains of one site, and syndicated copies of one statement on other domains, as a single source.
+
+### Suite
+
+`npm test` gives **9 files, 114 passed, 0 failed**.

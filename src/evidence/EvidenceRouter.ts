@@ -28,10 +28,27 @@ const KEYWORDS: Record<string, RegExp> = {
   active_noise_cancellation: /\b(active )?noise[- ]?cancel(l)?ing\b|\banc\b/i, wireless: /\bwireless\b|\bbluetooth\b/i,
   multipoint: /\bmulti-?point\b|\btwo devices\b/i, over_ear: /\bover[- ]ear\b/i,
 };
-const NEGATION = /\b(no|lacks|without|does not|doesn't|not)\b/i;
+/** Negation must govern the capability phrase itself ("no ANC", "lacks noise cancelling"), not any "not" in the sentence. */
+const NEGATED: Record<string, RegExp> = {
+  active_noise_cancellation: /\b(no|lacks?|without|doesn't (?:have|offer|support)|does not (?:have|offer|support))\s+(?:any\s+)?(?:active\s+)?(?:noise[- ]?cancel(?:l)?(?:ing|ation)|anc)\b/i,
+  wireless: /\b(no|lacks?|without|doesn't (?:have|offer|support)|does not (?:have|offer|support))\s+(?:any\s+)?(?:wireless|bluetooth)\b|\bwired[- ]only\b/i,
+  multipoint: /\b(no|lacks?|without|doesn't (?:have|offer|support)|does not (?:have|offer|support))\s+(?:any\s+)?multi-?point\b/i,
+  over_ear: /\bon[- ]ear\b/i,
+};
 const MAX_KERNEL_PAGES = 2;
 const EVIDENCE_TTL_MS = 30 * 86400_000;
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+/** Naive registrable domain (last two labels; known two-label public suffixes handled). */
+function registrableDomain(h: string): string {
+  const parts = h.split(".").filter(Boolean);
+  const twoLabelSuffix = /^(co|com|org|net|ac|gov)\.(uk|kr|jp|au|nz|br|in)$/;
+  return parts.length > 2 && twoLabelSuffix.test(parts.slice(-2).join(".")) ? parts.slice(-3).join(".") : parts.slice(-2).join(".");
+}
+/** Normalized statement fingerprint: lowercase words, first 12, without punctuation. Empty if too short. */
+function fingerprint(text: string): string {
+  const words = text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean);
+  return words.length >= 6 ? words.slice(0, 12).join(" ") : "";
+}
 
 /**
  * Deterministic evidence routing. Explicit sufficiency rule per must-have capability:
@@ -58,8 +75,23 @@ export class EvidenceRouter {
     const strong = [...manu, ...indep];
     if (strong.some((c) => c.value) && strong.some((c) => !c.value)) return "CONTRADICTED";
     if (manu.length) return manu[0]!.value ? "SUFFICIENT_TRUE" : "SUFFICIENT_FALSE";
-    for (const v of [true, false]) if (new Set(indep.filter((c) => c.value === v).map((c) => host(c.source.url))).size >= 2) return v ? "SUFFICIENT_TRUE" : "SUFFICIENT_FALSE";
+    for (const v of [true, false]) if (EvidenceRouter.independentSources(indep.filter((c) => c.value === v)) >= 2) return v ? "SUFFICIENT_TRUE" : "SUFFICIENT_FALSE";
     return "INSUFFICIENT";
+  }
+
+  /**
+   * Counts genuinely independent sources: subdomains of one registrable domain count once, and pages on
+   * different domains that reproduce the same statement (syndicated / copied text) count once.
+   */
+  static independentSources(claims: CapabilityClaim[]): number {
+    const groups: Array<{ domains: Set<string>; prints: Set<string> }> = [];
+    for (const c of claims) {
+      const d = registrableDomain(host(c.source.url));
+      const fp = fingerprint(c.source.title.includes("]: ") ? c.source.title.split("]: ").slice(1).join("]: ") : "");
+      const g = groups.find((x) => x.domains.has(d) || (fp !== "" && x.prints.has(fp)));
+      if (g) { g.domains.add(d); if (fp) g.prints.add(fp); } else groups.push({ domains: new Set([d]), prints: new Set(fp ? [fp] : []) });
+    }
+    return groups.length;
   }
 
   async verify(product: CatalogProduct, capability: string, ctx: { userId: string; requestId: string }): Promise<RouterResult> {
@@ -68,8 +100,15 @@ export class EvidenceRouter {
     const modelToken = product.identity.model;
     let claims = [...product.capabilities.filter((c) => c.capability === capability), ...this.stored(productKey, capability)];
     if (claims.length > product.capabilities.filter((c) => c.capability === capability).length) steps.push({ provider: "STORE", action: "REUSED_EXISTING_EVIDENCE", capability, detail: "previously verified independent evidence (fresh)" });
-    const done = (reason: string): RouterResult => ({ capability, sufficiency: EvidenceRouter.judge(claims), claims, steps, reason });
-    if (EvidenceRouter.judge(claims) !== "INSUFFICIENT") { steps.push({ provider: "STORE", action: "SKIPPED_SUFFICIENT", capability, detail: "existing evidence meets the sufficiency rule" }); return done("EXISTING_EVIDENCE_SUFFICIENT"); }
+    const done = (reason: string): RouterResult => {
+      const sufficiency = EvidenceRouter.judge(claims);
+      return { capability, sufficiency, claims, steps, reason: sufficiency === "CONTRADICTED" ? "CONTRADICTED_EVIDENCE_NEEDS_REVIEW" : reason };
+    };
+    const existing = EvidenceRouter.judge(claims);
+    if (existing !== "INSUFFICIENT") {
+      steps.push({ provider: "STORE", action: "SKIPPED_SUFFICIENT", capability, detail: existing === "CONTRADICTED" ? "existing evidence is contradictory; more searching cannot resolve it automatically" : "existing evidence meets the sufficiency rule" });
+      return done("EXISTING_EVIDENCE_SUFFICIENT");
+    }
     if (!this.search) return done("NO_INDEPENDENT_SEARCH_PROVIDER");
 
     // Tavily: one normalized query per (product, capability), cached.
@@ -92,7 +131,7 @@ export class EvidenceRouter {
       if (!model.test(`${h.title} ${h.snippet}`)) continue;
       const kw = KEYWORDS[capability];
       const sentence = kw ? h.snippet.split(/(?<=[.!?])\s+/).find((s) => kw.test(s)) : undefined;
-      if (sentence) claims = this.add(claims, productKey, capability, !NEGATION.test(sentence), h.url, "TAVILY", this.search.provenance, sentence);
+      if (sentence) claims = this.add(claims, productKey, capability, !(NEGATED[capability]?.test(sentence) ?? false), h.url, "TAVILY", this.search.provenance, sentence);
       else needsPage.push(h.url);
     }
     if (EvidenceRouter.judge(claims) !== "INSUFFICIENT") return done("INDEPENDENT_SEARCH_SUFFICIENT");

@@ -5,7 +5,8 @@ import { PayPalSandboxProvider } from "./payment/PayPalCheckoutAdapter.js";
 import { MockPayPalProvider } from "./payment/MockPayPalProvider.js";
 import { PayPalWebhookSignatureVerifier } from "./payment/PayPalWebhook.js";
 import { Store } from "./store/Database.js";
-import { UsageLedger } from "./metering/UsageLedger.js";
+import { UsageLedger, LIVE_PRICES_UNKNOWN, PLACEHOLDER_PRICING } from "./metering/UsageLedger.js";
+import { Channel3ResearchAdapter } from "./research/Channel3ResearchAdapter.js";
 import { EvidenceRouter } from "./evidence/EvidenceRouter.js";
 import { MockKernelInspector, MockTavilySearch, TavilySearch } from "./evidence/providers.js";
 import { MockPayPalBillingProvider } from "./billing/Billing.js";
@@ -41,8 +42,12 @@ if (authMode === "dev" && !isLoopbackUrl(baseUrl)) {
 const deploymentMode = env.DIAPORIA_DEPLOYMENT_MODE === "managed" ? "managed" : "community";
 const servicePath = env.DIAPORIA_DB_PATH === ":memory:" ? ":memory:" : (env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite").replace(/\.sqlite$/, "") + "-service.sqlite";
 const serviceStore = new Store(servicePath);
-const ledger = new UsageLedger(serviceStore);
 const byok = env.EVIDENCE_PROVIDERS === "byok" && env.TAVILY_API_KEY;
+const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY ? new Channel3ResearchAdapter(env.CHANNEL3_API_KEY) : null;
+// Live providers: supplier prices are UNKNOWN (never assumed), so explicit per-request call caps bound spending.
+const ledger = byok || liveCatalog
+  ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1, TAVILY: 2, KERNEL: 1 } })
+  : new UsageLedger(serviceStore, PLACEHOLDER_PRICING);
 const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
   byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode) : new MockTavilySearch(),
   byok ? null /* KERNEL BYOK adapter is not part of the public repo yet */ : new MockKernelInspector(),
@@ -50,10 +55,11 @@ const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
 const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
   billing: deploymentMode === "managed" ? new MockPayPalBillingProvider(serviceStore, env.MOCK_BILLING_WEBHOOK_SECRET ?? randomBytes(24).toString("hex")) : null,
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
-console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, evidence providers=${byok ? "BYOK Tavily (KERNEL disabled)" : "MOCK"}`);
+console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? "BYOK Tavily (KERNEL disabled)" : "MOCK"}`);
 
 const app = createApp({
   service,
+  ...(liveCatalog ? { research: liveCatalog } : {}),
   host, port, baseUrl, authMode, auth,
   webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath: env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite",
   payments: (url) => provider === "paypal_sandbox"
