@@ -365,10 +365,14 @@ export class CommerceGateway {
     catch (e) { return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: `Could not read the order recipient: ${errorText(e)}` } }; }
     const actual = order.payee.merchantId;
     if (!actual) return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: "Payment provider did not report the order recipient" } };
+    // The merchant id is the authoritative recipient and is always required (checked below).
+    // PayPal echoes payee.email_address only when the order was created with it; DIAPORIA creates
+    // orders with merchant_id only (observed in the 2026-11-09 Sandbox run). So the configured email is
+    // a secondary check: if PayPal reports an email it must match; if it reports none, that is recorded.
     const expectedEmail = this.payments.name === "PAYPAL_SANDBOX" ? (this.config.sandboxPlatformPayeeEmail ?? null) : null;
-    if (expectedEmail) {
-      const actualEmail = order.payee.emailAddress ?? null;
-      if (!actualEmail) return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: "Payment provider did not report the recipient email that is configured for verification" } };
+    const actualEmail = order.payee.emailAddress ?? null;
+    if (expectedEmail && !actualEmail) this.audit.append(cs.checkoutSessionId, cs.userId, "RECIPIENT_EMAIL_NOT_REPORTED", { verifiedBy: "merchant_id" });
+    if (expectedEmail && actualEmail) {
       if (actualEmail.trim().toLowerCase() !== expectedEmail.trim().toLowerCase()) {
         this.audit.append(cs.checkoutSessionId, cs.userId, "MERCHANT_RECIPIENT_MISMATCH", { field: "email" });
         return { fail: { code: "MERCHANT_RECIPIENT_MISMATCH", detail: "The order recipient email differs from the configured Sandbox business account" } };
@@ -455,7 +459,9 @@ export class CommerceGateway {
       checkoutSessionId: cs.checkoutSessionId, state: expired ? "EXPIRED" as const : cs.state, stateIsServerVerified: true,
       amount: { totalMinor: cs.totalMinor, currency: cs.currency }, quantity: cs.quantity, productIdentity: cs.identity,
       approval: { required: cs.state === "APPROVAL_REQUIRED", approvalUrl: cs.state === "APPROVAL_REQUIRED" ? cs.approvalUrl : null,
-        buyerApprovalVerified: ["APPROVED", "CAPTURE_PENDING", "COMPLETED"].includes(cs.state) },
+        // Also true for checkouts that failed AFTER verified buyer approval (from the audit journal).
+        buyerApprovalVerified: ["APPROVED", "CAPTURE_PENDING", "COMPLETED"].includes(cs.state) ||
+          this.audit.timeline([cs.checkoutSessionId], userId).some((e) => e.type === "BUYER_APPROVAL_VERIFIED") },
       capture: { captureId: cs.captureId, status: cs.captureStatus },
       failure: cs.failureCode ? { code: cs.failureCode, reason: cs.failureReason } : null,
       uncertainty: cs.state === "UNKNOWN" ? "Payment outcome is not known; the server will reconcile with the provider before any retry." : cs.state === "CAPTURE_PENDING" ? "Provider has not confirmed final settlement." : null,

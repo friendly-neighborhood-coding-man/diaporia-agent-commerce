@@ -30,6 +30,37 @@ MCP tests use the SDK's real `Client` + `StreamableHTTPClientTransport` against 
 
 Additional: PayPal adapter against a fake `fetch` (Sandbox-only host, idempotency header, CAPTURE body, error mapping, no secret leakage), HTTP hardening (413 body limit, 421 foreign Host, 403 foreign Origin), public deployment disables payment, public read-only mode exposes no payment tool, malformed mandates → 400, AI token cannot create mandates.
 
+## LIVE PayPal Sandbox E2E — run 1 (2026-11-09), owner-authorized, ONE order
+
+**Evidence class: LIVE PayPal Sandbox. No real money moved.** Build `bb60b58`; MCP host Claude Code CLI 2.1.310 talking to `http://127.0.0.1:8790/mcp`; payments `PAYPAL_SANDBOX`; merchant: the fictional demo merchant alpha-audio.example (this was not a retail purchase). The owner configured the expected recipient, their Sandbox business Merchant ID and email, locally; these values are not recorded here.
+
+| Step | Time (UTC) | Observed |
+|---|---|---|
+| Preflight | 09:44 | READY_FOR_SANDBOX_E2E (9/9). Sandbox OAuth HTTP 200; $6,000 under a $60 mandate → HOLD / AMOUNT_EXCEEDED with 0 PayPal calls |
+| research → compare → prepare (via Claude Code, no mandate) | 09:46 | `cs_3a394e37…` APPROVAL_REQUIRED; 5939 USD (5499 + 0 + 440); intended payee = configured Merchant ID (`DIAPORIA_SANDBOX_PLATFORM_ACCOUNT`); no PayPal order |
+| Owner GO; owner page submitted with a $60.00 single-use limit | 09:51:04 | Mandate reserved 5939; **one** order created, `9DL148415W2504835`; approval link host `www.sandbox.paypal.com/checkoutnow` |
+| Owner approved as the Sandbox Personal buyer; PayPal returned to `127.0.0.1:8790/paypal/return` | 09:55:53 | The localhost return URL was accepted. Server GET order → `APPROVED`, amount and `custom_id` match → APPROVED |
+| Pre-capture recipient check | 09:55:54 | **FAILED, MERCHANT_RECIPIENT_UNVERIFIED**: PayPal did not report the payee email configured for verification. **0 captures**; reservation released (mandate reserved 0, transactions_used 0) |
+| Read-only diagnosis (GET order only) | ~09:58 | HTTP 200, status APPROVED, intent CAPTURE, amount 59.39 USD, captures 0. `payee` keys: `merchant_id`, `display_data`. **merchant_id equals the configured Merchant ID**; no `email_address` field |
+| Status + receipt via Claude Code | ~10:00 | FAILED / MERCHANT_RECIPIENT_UNVERIFIED; captureId null; paymentResult null; merchantOrder NOT_VERIFIED; audit chain ends BUYER_APPROVAL_VERIFIED → CHECKOUT_FAILED |
+
+**Result: no payment completed.**
+- The fail-closed path worked: buyer approval was verified but there was no capture, and no replacement order was created.
+- Root cause: a design assumption that did not hold. When an order is created with `payee.merchant_id` only, PayPal's order GET returns `merchant_id` but **not** `email_address`. The email binding therefore could never be satisfied.
+- The authoritative recipient check, the merchant id, was satisfied according to the real PayPal data.
+
+Follow-up code changes (not yet live-tested):
+- The merchant id stays mandatory.
+- A configured email must match **if PayPal reports one**. If PayPal reports none, this is recorded as `RECIPIENT_EMAIL_NOT_REPORTED`.
+- `buyerApprovalVerified` now stays true after a post-approval failure.
+
+Order `9DL148415W2504835` remains APPROVED and uncaptured in Sandbox. DIAPORIA will not capture it, because its checkout is terminal (FAILED).
+
+Idempotency observations:
+- One `PayPal-Request-Id` was used for the create call, and exactly one order exists.
+- No capture request was sent.
+- The buyer return was processed once.
+
 ## Merchant identity (MOCK providers only)
 
 `tests/merchant-identity.test.ts` (14 tests) covers the following. All of it is MOCK evidence.
@@ -83,4 +114,4 @@ The missing integration is a merchant checkout-quote source (final total with sh
 
 ## Not verified
 
-Live PayPal Sandbox order/approval/capture; remote AI hosts (claude.ai connector, ChatGPT, Grok); live catalog/evidence research through the private adapter; multi-process concurrency; webhooks.
+Live PayPal Sandbox **capture** (order creation, buyer approval, return and order read were observed live in run 1); remote AI hosts (claude.ai connector, ChatGPT, Grok); live catalog/evidence research through the private adapter; multi-process concurrency; webhooks.

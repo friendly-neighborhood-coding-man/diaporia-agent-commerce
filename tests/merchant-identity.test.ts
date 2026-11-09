@@ -201,7 +201,6 @@ describe("checkout-time merchant identity binding (MCP, mock payments)", () => {
       ["other merchant id", "OTHERBUSINESS99", "sb-platform@business.example.com", "MERCHANT_RECIPIENT_MISMATCH"],
       ["other email", "SANDBOXPLATFORM01", "sb-attacker@business.example.com", "MERCHANT_RECIPIENT_MISMATCH"],
       ["payee not reported", null, null, "MERCHANT_RECIPIENT_UNVERIFIED"],
-      ["email not reported", "SANDBOXPLATFORM01", null, "MERCHANT_RECIPIENT_UNVERIFIED"],
     ];
     for (const [label, id, email, code] of cases) {
       const { h, client, args } = await setup(cfg);
@@ -211,9 +210,20 @@ describe("checkout-time merchant identity binding (MCP, mock payments)", () => {
       h.mock.substitutePayee(orderId, id, email);
       await buyer(h, prep.approvalUrl);
       const s = await call(client, "get_checkout_status", { checkoutSessionId: prep.checkoutSessionId });
-      expect([label, s.state, s.failure?.code, h.mock.calls.captureOrder]).toEqual([label, "FAILED", code, 0]);
+      expect([label, s.state, s.failure?.code, h.mock.calls.captureOrder, s.approval.buyerApprovalVerified]).toEqual([label, "FAILED", code, 0, true]);
       await client.close();
     }
+    // Real PayPal behaviour (observed in the Sandbox run): payee carries merchant_id but no email when the order
+    // was created with merchant_id only. The merchant id decides; the missing email is recorded, not fatal.
+    const noEmail = await setup(cfg);
+    const pe = await call(noEmail.client, "prepare_checkout", noEmail.args);
+    noEmail.h.mock.substitutePayee(new URL(pe.approvalUrl).pathname.split("/").pop()!, "SANDBOXPLATFORM01", null);
+    await buyer(noEmail.h, pe.approvalUrl);
+    const se = await call(noEmail.client, "get_checkout_status", { checkoutSessionId: pe.checkoutSessionId });
+    expect(se.state).toBe("COMPLETED");
+    const re = await call(noEmail.client, "get_purchase_receipt", { checkoutSessionId: pe.checkoutSessionId });
+    expect(re.auditTimeline.map((e: any) => e.type)).toContain("RECIPIENT_EMAIL_NOT_REPORTED");
+    await noEmail.client.close();
     // Control: the expected account (id and email) is captured exactly once.
     const ok = await setup(cfg);
     const p = await call(ok.client, "prepare_checkout", ok.args);
