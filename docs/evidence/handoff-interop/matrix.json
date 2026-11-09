@@ -1,0 +1,152 @@
+{
+  "kind": "HANDOFF_FOUR_HOST_INTEROP_MOCK",
+  "at": "2026-11-09T18:35:56.955Z",
+  "server": "dist/src/main.js HANDOFF_DRIVER=fixture PAYMENT_PROVIDER=mock (offline fixture merchant, local Chromium)",
+  "note": "Research/compare were seeded per host token directly against the server; the host made only the prepare_browser_checkout call through the audit proxy. MOCK only: no PayPal, no KERNEL, no paid research.",
+  "rows": [
+    {
+      "host": "claude-code",
+      "userAgent": "claude-code/2.1.310 (sdk-cli, agent-sdk/0.3.317)",
+      "clientInfo": {
+        "name": "claude-code",
+        "title": "Claude Code",
+        "version": "2.1.310",
+        "description": "Anthropic's agentic coding tool",
+        "websiteUrl": "https://claude.com/claude-code"
+      },
+      "hostOriginatedToolCalls": [
+        "prepare_browser_checkout"
+      ],
+      "httpStatus": 200,
+      "contract": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "checkoutPath": "BROWSER_CHECKOUT_HANDOFF",
+        "humanAction": {
+          "kind": "OPEN_HANDOFF_PAGE",
+          "authentication": "OWNER_KEY",
+          "presentation": {
+            "cliHosts": "OPEN_LINK_IN_DEFAULT_BROWSER",
+            "uiHosts": "OPEN_LINK_OR_EMBED_AUTHENTICATED_PAGE",
+            "inChatPaymentModal": "NOT_ASSUMED"
+          },
+          "urlIsLoopback": true
+        },
+        "capturedTotalMinor": 5998,
+        "paymentEffect": "NONE_BY_DIAPORIA",
+        "diaporiaCreatedPaymentOrder": false
+      },
+      "serverHandoffRow": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "userId": "interop-claude-code"
+      },
+      "hostTranscriptShowsCall": true,
+      "result": "PASS"
+    },
+    {
+      "host": "codex-cli",
+      "userAgent": "codex-mcp-client/0.160.0",
+      "clientInfo": {
+        "name": "codex-mcp-client",
+        "title": "Codex",
+        "version": "0.160.0"
+      },
+      "hostOriginatedToolCalls": [
+        "prepare_browser_checkout"
+      ],
+      "httpStatus": 200,
+      "contract": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "checkoutPath": "BROWSER_CHECKOUT_HANDOFF",
+        "humanAction": {
+          "kind": "OPEN_HANDOFF_PAGE",
+          "authentication": "OWNER_KEY",
+          "presentation": {
+            "cliHosts": "OPEN_LINK_IN_DEFAULT_BROWSER",
+            "uiHosts": "OPEN_LINK_OR_EMBED_AUTHENTICATED_PAGE",
+            "inChatPaymentModal": "NOT_ASSUMED"
+          },
+          "urlIsLoopback": true
+        },
+        "capturedTotalMinor": 5998,
+        "paymentEffect": "NONE_BY_DIAPORIA",
+        "diaporiaCreatedPaymentOrder": false
+      },
+      "serverHandoffRow": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "userId": "interop-codex-cli"
+      },
+      "hostTranscriptShowsCall": true,
+      "result": "PASS"
+    },
+    {
+      "host": "grok-build",
+      "userAgent": "grok-cli/1.0.77",
+      "clientInfo": {
+        "name": "grok-shell-diaporia",
+        "version": "1.0.77"
+      },
+      "hostOriginatedToolCalls": [
+        "prepare_browser_checkout"
+      ],
+      "httpStatus": 200,
+      "contract": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "checkoutPath": "BROWSER_CHECKOUT_HANDOFF",
+        "humanAction": {
+          "kind": "OPEN_HANDOFF_PAGE",
+          "authentication": "OWNER_KEY",
+          "presentation": {
+            "cliHosts": "OPEN_LINK_IN_DEFAULT_BROWSER",
+            "uiHosts": "OPEN_LINK_OR_EMBED_AUTHENTICATED_PAGE",
+            "inChatPaymentModal": "NOT_ASSUMED"
+          },
+          "urlIsLoopback": true
+        },
+        "capturedTotalMinor": 5998,
+        "paymentEffect": "NONE_BY_DIAPORIA",
+        "diaporiaCreatedPaymentOrder": false
+      },
+      "serverHandoffRow": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "userId": "interop-grok-build"
+      },
+      "hostTranscriptShowsCall": true,
+      "result": "PASS"
+    },
+    {
+      "host": "hermes-agent",
+      "userAgent": "python-httpx2/2.15.1",
+      "clientInfo": {
+        "name": "hermes-agent",
+        "version": "0.22.7"
+      },
+      "hostOriginatedToolCalls": [
+        "prepare_browser_checkout"
+      ],
+      "httpStatus": 200,
+      "contract": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "checkoutPath": "BROWSER_CHECKOUT_HANDOFF",
+        "humanAction": {
+          "kind": "OPEN_HANDOFF_PAGE",
+          "authentication": "OWNER_KEY",
+          "presentation": {
+            "cliHosts": "OPEN_LINK_IN_DEFAULT_BROWSER",
+            "uiHosts": "OPEN_LINK_OR_EMBED_AUTHENTICATED_PAGE",
+            "inChatPaymentModal": "NOT_ASSUMED"
+          },
+          "urlIsLoopback": true
+        },
+        "capturedTotalMinor": 5998,
+        "paymentEffect": "NONE_BY_DIAPORIA",
+        "diaporiaCreatedPaymentOrder": false
+      },
+      "serverHandoffRow": {
+        "state": "HUMAN_ACTION_REQUIRED",
+        "userId": "interop-hermes-agent"
+      },
+      "hostTranscriptShowsCall": true,
+      "result": "PASS"
+    }
+  ]
+}

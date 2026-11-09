@@ -83,7 +83,7 @@ Both drivers execute the **same** snippets (`buildPrepareScript`, `buildObserveS
 | A, offline fixture | **Done.** 20 browser tests, 31 unit and KERNEL-wire tests, and an offline demo (`npm run demo:handoff`, with `--headed` or `--interactive`). |
 | B, KERNEL Live View | **Not run.** There is no KERNEL key on the build machine, and it needs the owner's budget approval first. The script is ready: one headful browser, 10-minute hard timeout, about $0.08 at KERNEL's published $0.000133/s headful rate. It uses a `data:` test page with a `window.open` popup button and opens no payment page. |
 | C, PayPal Sandbox through a controlled sandbox merchant | **Not started.** It needs separate owner authorization. Existing Sandbox orders must never be reused. |
-| D, cross-host | **Offline part done.** Four host-named MCP clients get an identical contract (`tests/handoff-host-contract.test.ts`). Real host runs have not been done. See `docs/HANDOFF_HOST_MATRIX.md`. |
+| D, cross-host | **Done (MOCK).** All four real hosts made a host-originated `prepare_browser_checkout` call and got the same contract: 4/4 PASS. See `docs/HANDOFF_HOST_MATRIX.md`. |
 
 ## Run it
 
