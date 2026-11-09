@@ -51,6 +51,14 @@ Output: `state`, `stateIsServerVerified: true`, `amount`, `approval {required, a
 Output: `paymentResult` (only when `COMPLETED`), `paymentStatusNote` (MOCK vs Sandbox), `merchantOrder.status: "NOT_VERIFIED"`, `purchaseSummary`, `auditTimeline[]`.
 
 
+## prepare_browser_checkout (browser handoff; only when `HANDOFF_DRIVER` is set)
+
+Scope `purchase.prepare`, dev auth on loopback only. Input is `{ purchaseSessionId, offerId, quantity (1..5), maximumApprovedTotalMinor, currency }`, and the offer must be an EXTERNAL offer from a merchant that has a DIAPORIA recipe. It prepares the merchant cart in an isolated browser, captures what the merchant displays, applies constraints and stops before payment. It returns the handoff contract: `handoffId`, `state`, `capturedCart`, `constraints { violations, unknowns, effectiveMaximumMinor }`, `humanAction { kind: OPEN_HANDOFF_PAGE, url, authentication: OWNER_KEY, presentation }`, `orderStatus`, `paymentEffect: NONE_BY_DIAPORIA` and `diaporiaCreatedPaymentOrder: false`. See `docs/BROWSER_CHECKOUT_HANDOFF.md`.
+
+## get_browser_checkout_status
+
+Scope `purchase.read`, read-only. The same contract, plus `observation` (read-only, after takeover) and `sellerConfirmation`. `ORDER_CONFIRMED` requires authenticated seller-side confirmation.
+
 ## Payment status fields (lifecycle round)
 
 `get_checkout_status` and `get_purchase_receipt` also return `paymentStatus`, `payment { paymentEnvironment, providerOrderId, captureId, providerCaptureStatus, pendingReason, lastAuthoritativeVerificationAt, recommendedNextAction, newPaymentAttemptProhibited }` and `merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED"`. The receipt adds `isFinalPaymentReceipt` and `refund`. A `CAPTURE_PENDING` payment is never a completed receipt. See PAYMENT_LIFECYCLE.md.

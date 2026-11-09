@@ -293,3 +293,16 @@ Evidence independence now counts subdomains of one site, and syndicated copies o
 - **New finding:** amazon.com (a retailer) was among the counted sources. Retailer and marketplace domains are now excluded from independent evidence (tested offline, not re-run live). Without amazon.com the claim remains sufficient from editorial review sites. reddit.com is still counted; it is user-generated.
 - **Ledger:** both runs recorded `BYOK_LIVE` usage with **unknown** supplier cost (not 0) and 0 billable.
 - **Suite:** `npm test`: **9 files, 115 passed, 0 failed**.
+
+## Browser Checkout Handoff V0 (2026-11-10, offline only)
+
+`npm test`: **14 files, 171 passed, 0 failed.** The previous 119 tests are unchanged and still pass.
+
+The new handoff tests:
+
+- `handoff-fixture` (20): real local Chromium against the synthetic merchant.
+- `handoff-unit`: states, constraints, money parsing, recipes and module boundaries.
+- `handoff-kernel-wire`: KERNEL REST shapes, run against a fake backend that executes the same snippets locally.
+- `handoff-host-contract`: four host-named MCP clients receive the same contract.
+
+No KERNEL, PayPal or real-merchant call was made. Phases B and C are not run.

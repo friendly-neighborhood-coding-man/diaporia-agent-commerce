@@ -74,6 +74,17 @@ To use PayPal Sandbox instead of the mock, set `PAYMENT_PROVIDER=paypal_sandbox`
 
 Every research, compare, prepare, status and receipt result carries `paymentEnvironment` (`MOCK` = no PayPal API at all, `PAYPAL_SANDBOX` = PayPal test environment) and `liveMerchantCheckout: false`. Live PayPal and live merchant checkout are not supported.
 
+## Browser Checkout Handoff V0 (KERNEL)
+
+This is a separate path for real merchants that DIAPORIA does not pay. It works in four steps:
+
+1. An isolated browser prepares the cart on an authorized merchant's own website.
+2. It captures the displayed total, shipping, tax and any unknowns, then stops before payment.
+3. The human takes over the same browser through an owner-authenticated, short-lived page and uses the merchant's own PayPal button.
+4. Only authenticated seller-side confirmation yields `ORDER_CONFIRMED`.
+
+Phase A (offline fixture) is verified, with `npm run demo:handoff`. KERNEL Live View (Phase B) and the PayPal Sandbox step (Phase C) are **not yet run**. See [docs/BROWSER_CHECKOUT_HANDOFF.md](docs/BROWSER_CHECKOUT_HANDOFF.md), [the security review](docs/HANDOFF_SECURITY_REVIEW.md) and [the host matrix](docs/HANDOFF_HOST_MATRIX.md).
+
 ## Architecture
 
 ```
