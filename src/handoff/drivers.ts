@@ -209,5 +209,7 @@ export class KernelSession extends PhasedSession implements BrowserSession {
     this.markClosed();
     await this.driver.api("DELETE", `/browsers/${encodeURIComponent(this.#id)}`, undefined, 10_000).catch(() => undefined);
   }
+  /** Browser id, for out-of-process cleanup watchdogs only (not a capability: deleting needs the API key). */
+  sessionIdForCleanupOnly(): string { return this.#id; }
   toJSON() { return { provider: this.provider, phase: this.phase, liveView: "[SECRET]" }; }
 }
