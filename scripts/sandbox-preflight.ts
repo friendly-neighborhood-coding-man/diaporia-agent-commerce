@@ -11,12 +11,13 @@ import { createApp } from "../src/http/server.js";
 import { ALL_CLIENT_SCOPES, DevAuth, randomSecret } from "../src/auth/devAuth.js";
 import { PayPalSandboxProvider, PAYPAL_SANDBOX_API } from "../src/payment/PayPalCheckoutAdapter.js";
 
-const { values } = parseArgs({ options: { "env-file": { type: "string" } } });
+const { values } = parseArgs({ options: { "env-file": { type: "string", multiple: true } } });
 const env: Record<string, string | undefined> = { ...process.env };
-if (values["env-file"]) {
-  for (const line of readFileSync(values["env-file"], "utf8").split(/\r?\n/)) {
+for (const file of values["env-file"] ?? []) {
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
-    if (m && ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_ENV", "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID"].includes(m[1]!)) env[m[1]!] = m[2]!.replace(/^["']|["']$/g, "");
+    // Later files override earlier ones; empty values do not override.
+    if (m && m[2] && ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_ENV", "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID", "PAYPAL_SANDBOX_PAYEE_EMAIL"].includes(m[1]!)) env[m[1]!] = m[2].replace(/^["']|["']$/g, "");
   }
 }
 const results: Array<[string, "PASS" | "FAIL", string]> = [];
@@ -26,6 +27,8 @@ const id = env.PAYPAL_CLIENT_ID ?? "", secret = env.PAYPAL_CLIENT_SECRET ?? "", 
 check("credentials present", id.length > 20 && secret.length > 20, `client id length ${id.length}, secret length ${secret.length} (values not shown)`);
 check("PAYPAL_ENV is SANDBOX", ppEnv.toUpperCase() === "SANDBOX", `PAYPAL_ENV=${ppEnv.toUpperCase() === "SANDBOX" ? "SANDBOX" : "(not SANDBOX)"}`);
 const payee = env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID ?? "";
+const payeeEmail = env.PAYPAL_SANDBOX_PAYEE_EMAIL ?? "";
+check("Sandbox payee email (optional) well-formed", payeeEmail === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payeeEmail), payeeEmail ? "PAYPAL_SANDBOX_PAYEE_EMAIL set; order payee email must match" : "not set (merchant id only)");
 check("Sandbox platform payee configured", /^[A-Z0-9]{8,20}$/.test(payee), payee ? "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID set (value not shown); the order recipient will be verified against it" : "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID missing: merchant identity binding cannot verify the Sandbox order recipient, so checkouts HOLD");
 check("API host is Sandbox", PAYPAL_SANDBOX_API === "https://api-m.sandbox.paypal.com", PAYPAL_SANDBOX_API);
 let liveRefused = false;

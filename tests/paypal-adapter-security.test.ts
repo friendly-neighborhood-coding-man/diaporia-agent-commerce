@@ -65,7 +65,7 @@ describe("PayPalSandboxProvider (offline, fake fetch)", () => {
     const p = new PayPalSandboxProvider({ clientId: "id", clientSecret: fakeSecret, env: "SANDBOX", fetchImpl: f });
     await p.createOrder({ checkoutSessionId: "cs_1", amount: { currency: "USD", amountMinor: 5939 }, description: "d", returnUrl: "http://127.0.0.1/r", cancelUrl: "http://127.0.0.1/c", idempotencyKey: "k", payeeMerchantId: "SANDBOXPLATFORM01" });
     expect(JSON.parse(String(calls[1]!.init.body)).purchase_units[0].payee).toEqual({ merchant_id: "SANDBOXPLATFORM01" });
-    expect((await p.getOrder("5O190127TN364715T")).payee).toEqual({ merchantId: "SANDBOXPLATFORM01" });
+    expect((await p.getOrder("5O190127TN364715T")).payee).toEqual({ merchantId: "SANDBOXPLATFORM01", emailAddress: null });
   });
 
   it("parses PENDING captures and reads money as integer minor units", async () => {

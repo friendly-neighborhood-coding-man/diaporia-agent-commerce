@@ -95,8 +95,9 @@ export class PayPalSandboxProvider implements PaymentProvider {
     const pu = obj(Array.isArray(r.purchase_units) ? r.purchase_units[0] : null);
     const caps = Array.isArray(obj(pu.payments).captures) ? (obj(pu.payments).captures as unknown[]).map(parseCapture) : [];
     const payeeId = obj(pu.payee).merchant_id;
+    const payeeEmail = obj(pu.payee).email_address;
     return { orderId: String(r.id), status: orderStatus(r.status), amount: money(pu.amount), customId: typeof pu.custom_id === "string" ? pu.custom_id : null, captures: caps,
-      payee: { merchantId: typeof payeeId === "string" ? payeeId : null } };
+      payee: { merchantId: typeof payeeId === "string" ? payeeId : null, emailAddress: typeof payeeEmail === "string" ? payeeEmail : null } };
   }
 
   async captureOrder(orderId: string, idempotencyKey: string): Promise<ProviderCapture> {

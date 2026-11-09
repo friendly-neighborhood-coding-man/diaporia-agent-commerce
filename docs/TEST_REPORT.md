@@ -5,7 +5,7 @@ Run date: 2026-11-09, Windows 11, Node.js 24.22.1, vitest 5.1.0, TypeScript 7.0.
 
 ## Automated suite (this repo)
 
-`npm test` → **5 files, 67 passed, 0 failed, 0 skipped** (merchant identity round, 2026-11-09). Before that round: 4 files, 51 passed (commit c12581f). `npm run typecheck` clean, `npm run build` clean, `npm run demo:e2e` completes, `npm run scan:secrets` no findings.
+`npm test` → **5 files, 69 passed, 0 failed, 0 skipped** (merchant identity round, 2026-11-09). Before that round: 4 files, 51 passed (commit c12581f). `npm run typecheck` clean, `npm run build` clean, `npm run demo:e2e` completes, `npm run scan:secrets` no findings.
 
 MCP tests use the SDK's real `Client` + `StreamableHTTPClientTransport` against the real HTTP server; the client lists tools first, so every `structuredContent` is validated against the published `outputSchema`.
 
@@ -51,6 +51,10 @@ Additional: PayPal adapter against a fake `fetch` (Sandbox-only host, idempotenc
 - The mandate, budget and idempotency protections are unchanged.
 
 `npm run demo:identity` runs a valid merchant against the impersonator, then a recipient substitution, then a clean capture. No official registry and no PayPal identity attestation was contacted.
+
+**Sandbox payee binding (follow-up):** when the Sandbox provider is used, the order payee that PayPal reports (`payee.merchant_id`, plus `payee.email_address` if `PAYPAL_SANDBOX_PAYEE_EMAIL` is set) must equal the configured Sandbox business account. Otherwise the checkout fails closed before capture. Tests:
+- Mock-provider double: another merchant id, another email, payee not reported, and email not reported each end in FAILED with no capture. The control case (same id, email differing only in case) captures exactly once.
+- Real `PayPalSandboxProvider` over fake PayPal HTTP, where the order payee is `ATTACKERBIZ0001`: FAILED / MERCHANT_RECIPIENT_MISMATCH, with 0 capture calls.
 
 **Sandbox preflight after this change:** `NOT_READY`, only because `PAYPAL_SANDBOX_PAYEE_MERCHANT_ID` (DIAPORIA's own Sandbox business account merchant id) is not configured. The other 7 checks pass. The Sandbox OAuth call returned HTTP 200 again; no order was created.
 

@@ -88,7 +88,7 @@ export class MockPayPalProvider implements PaymentProvider {
   }
 
   /** Test hook: simulate an order whose recipient was substituted after creation. */
-  substitutePayee(orderId: string, merchantId: string) { this.mustGet(orderId).payee = { merchantId }; }
+  substitutePayee(orderId: string, merchantId: string | null, emailAddress?: string | null) { this.mustGet(orderId).payee = { merchantId, ...(emailAddress !== undefined ? { emailAddress } : {}) }; }
 
   /** Test hook: move a pending capture to a final state, as PayPal would later. */
   settleCapture(captureId: string, status: "COMPLETED" | "DECLINED") {

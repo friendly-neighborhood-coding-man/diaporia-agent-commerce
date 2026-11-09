@@ -6,6 +6,7 @@ import {
 import { ATTESTATIONS, KR_REGISTRY, MERCHANT_CLAIMS, US_REGISTRY } from "../src/merchant-identity/fixtures.js";
 import { krBrnChecksumValid, normalizeIdentifier } from "../src/merchant-identity/identifiers.js";
 import { MockPayPalProvider } from "../src/payment/MockPayPalProvider.js";
+import { PayPalSandboxProvider } from "../src/payment/PayPalCheckoutAdapter.js";
 import { buyer, CA, call, callError, createMandate, mcpClient, OWNER, researchAndCompare, SONY_BLACK, startHarness, TOKENS, type Harness } from "./helpers.js";
 
 function world() {
@@ -191,6 +192,62 @@ describe("checkout-time merchant identity binding (MCP, mock payments)", () => {
     expect(prep.purchaseSummary.merchantIdentity).toMatchObject({ intendedPayeeId: "SANDBOXPLATFORM01", attestedPayeeId: "MOCKPAYEE-ALPHA", payeeRelationship: "DIAPORIA_SANDBOX_PLATFORM_ACCOUNT" });
     expect(prep.paymentEnvironment).toBe("PAYPAL_SANDBOX");
     await set.client.close();
+  });
+
+  it("Sandbox mode: the PayPal order's actual payee differs from the expected business account → fail closed", async () => {
+    class FakeSandbox extends MockPayPalProvider { override readonly name = "PAYPAL_SANDBOX" as any; }
+    const cfg = { payments: (b: string) => new FakeSandbox(b), sandboxPlatformPayeeId: "SANDBOXPLATFORM01", sandboxPlatformPayeeEmail: "sb-platform@business.example.com" };
+    const cases: Array<[string, string | null, string | null | undefined, string]> = [
+      ["other merchant id", "OTHERBUSINESS99", "sb-platform@business.example.com", "MERCHANT_RECIPIENT_MISMATCH"],
+      ["other email", "SANDBOXPLATFORM01", "sb-attacker@business.example.com", "MERCHANT_RECIPIENT_MISMATCH"],
+      ["payee not reported", null, null, "MERCHANT_RECIPIENT_UNVERIFIED"],
+      ["email not reported", "SANDBOXPLATFORM01", null, "MERCHANT_RECIPIENT_UNVERIFIED"],
+    ];
+    for (const [label, id, email, code] of cases) {
+      const { h, client, args } = await setup(cfg);
+      const prep = await call(client, "prepare_checkout", args);
+      const orderId = new URL(prep.approvalUrl).pathname.split("/").pop()!;
+      expect(h.mock.describe(orderId)!.payee.merchantId).toBe("SANDBOXPLATFORM01");
+      h.mock.substitutePayee(orderId, id, email);
+      await buyer(h, prep.approvalUrl);
+      const s = await call(client, "get_checkout_status", { checkoutSessionId: prep.checkoutSessionId });
+      expect([label, s.state, s.failure?.code, h.mock.calls.captureOrder]).toEqual([label, "FAILED", code, 0]);
+      await client.close();
+    }
+    // Control: the expected account (id and email) is captured exactly once.
+    const ok = await setup(cfg);
+    const p = await call(ok.client, "prepare_checkout", ok.args);
+    ok.h.mock.substitutePayee(new URL(p.approvalUrl).pathname.split("/").pop()!, "SANDBOXPLATFORM01", "SB-Platform@business.example.com");
+    await buyer(ok.h, p.approvalUrl);
+    const s = await call(ok.client, "get_checkout_status", { checkoutSessionId: p.checkoutSessionId });
+    expect(s).toMatchObject({ state: "COMPLETED", recipient: { intendedPayeeId: "SANDBOXPLATFORM01", actualRecipientId: "SANDBOXPLATFORM01", verified: true } });
+    expect(ok.h.mock.calls.captureOrder).toBe(1);
+    await ok.client.close();
+  });
+
+  it("real Sandbox adapter (fake PayPal HTTP): order payee reported by PayPal differs from the configured account → no capture", async () => {
+    const order = { id: "5O190127TN364715T", customId: "", captureCalls: 0 };
+    const fakeFetch = (async (url: string | URL, init: RequestInit = {}) => {
+      const u = String(url); const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+      if (u.endsWith("/v1/oauth2/token")) return json(200, { access_token: "A21AAfake-token-for-test-only-0000000000000", expires_in: 3600 });
+      if (u.endsWith("/v2/checkout/orders") && init.method === "POST") {
+        order.customId = JSON.parse(String(init.body)).purchase_units[0].custom_id;
+        return json(201, { id: order.id, links: [{ rel: "payer-action", href: `https://www.sandbox.paypal.com/checkoutnow?token=${order.id}` }] });
+      }
+      if (u.endsWith(`/v2/checkout/orders/${order.id}`)) return json(200, { id: order.id, status: "APPROVED", purchase_units: [{ custom_id: order.customId,
+        amount: { currency_code: "USD", value: "59.39" }, payee: { merchant_id: "ATTACKERBIZ0001", email_address: "sb-attacker@business.example.com" } }] });
+      if (u.includes("/capture")) { order.captureCalls++; return json(201, {}); }
+      return json(404, {});
+    }) as typeof fetch;
+    const { h, client, args } = await setup({ payments: () => new PayPalSandboxProvider({ clientId: "x".repeat(30), clientSecret: "y".repeat(30), env: "SANDBOX", fetchImpl: fakeFetch }),
+      sandboxPlatformPayeeId: "SANDBOXPLATFORM01", sandboxPlatformPayeeEmail: "sb-platform@business.example.com" });
+    const prep = await call(client, "prepare_checkout", args);
+    expect(prep.approvalUrl).toMatch(/^https:\/\/www\.sandbox\.paypal\.com\//);
+    await fetch(`${h.url}/paypal/return?checkout=${prep.checkoutSessionId}&token=${order.id}`);
+    const s = await call(client, "get_checkout_status", { checkoutSessionId: prep.checkoutSessionId });
+    expect(s).toMatchObject({ state: "FAILED", failure: { code: "MERCHANT_RECIPIENT_MISMATCH" }, paymentEnvironment: "PAYPAL_SANDBOX" });
+    expect(order.captureCalls).toBe(0);
+    await client.close();
   });
 
   it("existing budget, mandate and idempotency protections are unchanged", async () => {

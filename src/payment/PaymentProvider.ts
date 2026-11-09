@@ -9,7 +9,7 @@ export interface ProviderCapture { captureId: string; status: ProviderCaptureSta
 export interface ProviderOrder {
   orderId: string; status: ProviderOrderStatus; amount: ProviderMoney | null; customId: string | null; captures: ProviderCapture[];
   /** Recipient as reported by the payment provider for this order (null if not reported). */
-  payee: { merchantId: string | null };
+  payee: { merchantId: string | null; emailAddress?: string | null };
 }
 
 export interface CreateOrderInput {

@@ -67,7 +67,7 @@ Budget, mandate, idempotency and approval protections run unchanged. Identity is
 | Order recipient check | MOCK order data | PayPal order `payee.merchant_id` (PAYMENT_PROVIDER), compared with the configured account |
 | What it proves | Workflow logic only | That the Sandbox order pays DIAPORIA's own test account. The fictional merchant is **not** paid and is not the recipient. |
 
-If `PAYPAL_SANDBOX_PAYEE_MERCHANT_ID` is unset, Sandbox checkouts are rejected with `MERCHANT_RECIPIENT_UNKNOWN`.
+If `PAYPAL_SANDBOX_PAYEE_MERCHANT_ID` is unset, Sandbox checkouts are rejected with `MERCHANT_RECIPIENT_UNKNOWN`. If `PAYPAL_SANDBOX_PAYEE_EMAIL` is also set, the order's `payee.email_address` must match it (case-insensitive). A missing or different email fails closed, like a different merchant id.
 
 ## Personal data
 

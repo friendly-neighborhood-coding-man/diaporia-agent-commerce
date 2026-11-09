@@ -34,6 +34,8 @@ export interface GatewayConfig {
    * recipient of every Sandbox demo payment. Unset = recipient cannot be verified = checkout HOLDs.
    */
   sandboxPlatformPayeeId?: string | null;
+  /** PayPal Sandbox only, optional: the same account's email. When set, the order payee email must match too. */
+  sandboxPlatformPayeeEmail?: string | null;
 }
 
 export function defaultMockMerchantIdentityVerifier(now: () => number = Date.now): MerchantIdentityVerifier {
@@ -363,6 +365,15 @@ export class CommerceGateway {
     catch (e) { return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: `Could not read the order recipient: ${errorText(e)}` } }; }
     const actual = order.payee.merchantId;
     if (!actual) return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: "Payment provider did not report the order recipient" } };
+    const expectedEmail = this.payments.name === "PAYPAL_SANDBOX" ? (this.config.sandboxPlatformPayeeEmail ?? null) : null;
+    if (expectedEmail) {
+      const actualEmail = order.payee.emailAddress ?? null;
+      if (!actualEmail) return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: "Payment provider did not report the recipient email that is configured for verification" } };
+      if (actualEmail.trim().toLowerCase() !== expectedEmail.trim().toLowerCase()) {
+        this.audit.append(cs.checkoutSessionId, cs.userId, "MERCHANT_RECIPIENT_MISMATCH", { field: "email" });
+        return { fail: { code: "MERCHANT_RECIPIENT_MISMATCH", detail: "The order recipient email differs from the configured Sandbox business account" } };
+      }
+    }
     if (actual !== cs.intendedPayeeId) {
       this.audit.append(cs.checkoutSessionId, cs.userId, "MERCHANT_RECIPIENT_MISMATCH", { intended: cs.intendedPayeeId, actual });
       return { fail: { code: "MERCHANT_RECIPIENT_MISMATCH", detail: "The order would pay a different account than the one bound to the verified merchant" } };
