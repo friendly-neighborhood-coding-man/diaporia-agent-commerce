@@ -5,6 +5,7 @@ import { PayPalSandboxProvider } from "./payment/PayPalCheckoutAdapter.js";
 import { MockPayPalProvider } from "./payment/MockPayPalProvider.js";
 import { PayPalWebhookSignatureVerifier } from "./payment/PayPalWebhook.js";
 import { Store } from "./store/Database.js";
+import { createManagedBilling } from "./billing/subscriptions/factory.js";
 import { UsageLedger, LIVE_PRICES_UNKNOWN, PLACEHOLDER_PRICING } from "./metering/UsageLedger.js";
 import { Channel3ResearchAdapter } from "./research/Channel3ResearchAdapter.js";
 import { EvidenceRouter } from "./evidence/EvidenceRouter.js";
@@ -53,7 +54,7 @@ const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
   byok ? null /* KERNEL BYOK adapter is not part of the public repo yet */ : new MockKernelInspector(),
   { billable: deploymentMode === "managed" });
 const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
-  billing: deploymentMode === "managed" ? new MockPayPalBillingProvider(serviceStore, env.MOCK_BILLING_WEBHOOK_SECRET ?? randomBytes(24).toString("hex")) : null,
+  billing: deploymentMode === "managed" ? createManagedBilling(env, serviceStore, ledger, baseUrl) : null, // MANAGED_BILLING=legacy-mock keeps MockPayPalBillingProvider
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
 console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? "BYOK Tavily (KERNEL disabled)" : "MOCK"}`);
 

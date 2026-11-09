@@ -9,6 +9,7 @@ import { MockPayPalProvider } from "../payment/MockPayPalProvider.js";
 import type { PaymentProvider } from "../payment/PaymentProvider.js";
 import { DevAuth, SCOPES, type Principal } from "../auth/devAuth.js";
 import { createCommerceMcpServer } from "../mcp/MCPCommerceAdapter.js";
+import { handleSubscriptionRoutes } from "../billing/subscriptions/http.js";
 import { parseDecimalToMinor } from "../domain/money.js";
 import { NotFoundError } from "../checkout/CheckoutSessionManager.js";
 import { esc, money, page } from "./html.js";
@@ -176,6 +177,9 @@ export function createApp(cfg: AppConfig): App {
         }
         return send(res, 400, { error: "Unknown action" });
       }
+
+      // ---- Managed subscription billing (owner subscribe/cancel, buyer return, verified PayPal billing webhook) ----
+      if (await handleSubscriptionRoutes(req, res, url, { billing: cfg.service?.billing ?? null, auth: cfg.auth, allowedOrigins, send, html, readJson, readText, header, sameOrigin })) return;
 
       // ---- Mock service-billing webhook (simulation only; HMAC-signed) ----
       if (url.pathname === "/billing/webhook/mock" && req.method === "POST") {

@@ -20,6 +20,8 @@
     "preflight:sandbox": "tsx scripts/sandbox-preflight.ts",
     "demo:identity": "tsx scripts/demo-merchant-identity.ts",
     "demo:quote": "tsx scripts/demo-merchant-quote.ts",
+    "demo:subscription": "tsx scripts/demo-subscription.ts",
+    "sandbox:subscription": "tsx scripts/subscription-sandbox.ts",
     "smoke:shopify": "tsx scripts/shopify-smoke.ts",
     "demo:service": "tsx scripts/demo-service.ts",
     "live:smoke": "tsx scripts/live-smoke.ts",
