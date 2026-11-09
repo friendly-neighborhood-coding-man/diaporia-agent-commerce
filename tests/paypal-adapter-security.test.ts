@@ -95,6 +95,13 @@ describe("HTTP hardening", () => {
     expect(prep.state).toBe("HOLD");
     expect(prep.policy?.code).toBe("PUBLIC_PAYMENT_DISABLED");
     expect(h.mock.calls.createOrder).toBe(0);
+    // Owner, authorization, return and mock-payment routes do not exist publicly.
+    const local = h.url;
+    const routes: Array<[string, string]> = [["POST", "/owner/mandates"], ["GET", `/authorize/${prep.checkoutSessionId}`], ["GET", "/paypal/return?checkout=x&token=y"], ["GET", "/mock-paypal/checkout/MOCK0000000000000000"]];
+    for (const [method, path] of routes) {
+      const r = await new Promise<number>((resolve) => { const q = request({ host: "127.0.0.1", port: new URL(local).port, path, method, headers: { Host: "demo.example.org" } }, (res) => { res.resume(); resolve(res.statusCode!); }); q.end(); });
+      expect([method, path, r]).toEqual([method, path, 403]);
+    }
   });
 
   it("public-readonly-demo mode exposes no payment tools and needs no token", async () => {

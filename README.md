@@ -28,8 +28,9 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 | PurchaseMandate: amount/currency/quantity/product/merchant binding, expiry, revocation, atomic cumulative reservation (SQLite `BEGIN IMMEDIATE` + CHECK constraints) | Implemented and tested |
 | Checkout state machine with server-side transition guards, duplicate-capture prevention, UNKNOWN + reconciliation | Implemented and tested with the mock provider |
 | Mock PayPal provider (offline, every id prefixed `MOCK`) | Implemented and tested |
-| PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`. **A live Sandbox checkout has not been run yet** (see docs/TEST_REPORT.md) |
-| Real host connection (Claude / ChatGPT / Grok) | **Not tested yet.** Connection steps in docs/DEMO_SCRIPT.md |
+| PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`; `npm run preflight:sandbox` verified Sandbox OAuth only. **No Sandbox order, approval or capture has been run yet** |
+| Real MCP host: Claude Code CLI → localhost | **Tested** (discovery, research → compare → prepare → status, $6,000 refusal, cross-user and scope boundaries; mock payments). See docs/HOST_TEST_EVIDENCE.md |
+| Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** Need a public HTTPS endpoint; only research-only public mode is available without OAuth |
 | Production user authentication (OAuth 2.1 for MCP) | **Not implemented.** Dev-only per-user tokens on loopback; public deployments run research-only and payment is disabled |
 | Live product research (catalog search, independent evidence) | Not in this public repo. The port `CommerceResearchAdapter` is public; the private DIAPORIA Buy app has an adapter over its Channel3 catalog and manufacturer registry |
 | Merchant fulfillment / shipping | Not provided and never claimed. Sandbox payments go to a fictional demo merchant |
@@ -41,7 +42,7 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 48 tests
+npm test            # 51 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 ```
@@ -61,6 +62,8 @@ npm run mandate:create -- --brand Sony --model WH-CH720N --variant Black --sku W
 Then point an MCP client at `http://127.0.0.1:8790/mcp` with header `Authorization: Bearer <clientToken from .data/dev-credentials.json>`. Without a mandate, `prepare_checkout` returns a `userAuthorizationUrl` where the owner can review the checkout and set a limit.
 
 To use PayPal Sandbox instead of the mock, set `PAYMENT_PROVIDER=paypal_sandbox` and Sandbox REST credentials (see `.env.example`). Live credentials are refused by construction.
+
+Every research, compare, prepare, status and receipt result carries `paymentEnvironment` (`MOCK` = no PayPal API at all, `PAYPAL_SANDBOX` = PayPal test environment) and `liveMerchantCheckout: false`. Live PayPal and live merchant checkout are not supported.
 
 ## Architecture
 
@@ -108,4 +111,4 @@ References: [Agent Ready](https://developer.paypal.com/agent-ready/overview/) ·
 
 ## License
 
-Not yet chosen by the owner. Until a license is added, all rights are reserved.
+Not yet in effect. MIT is proposed in `LICENSE.MIT.proposed` pending the owner's approval and code-ownership confirmation; all 95 production dependencies are MIT/ISC/BSD. Until a `LICENSE` file exists, all rights are reserved.

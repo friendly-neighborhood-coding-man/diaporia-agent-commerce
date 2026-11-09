@@ -32,8 +32,9 @@ describe("MCP protocol discovery and schemas", () => {
     await expect(mcpClient(h.url, "dct_not_a_real_token_000000000000")).rejects.toThrow();
     const ro = await mcpClient(h.url, TOKENS.aliceReadOnly);
     const names = (await ro.listTools()).tools.map((t) => t.name);
-    expect(names).not.toContain("prepare_checkout");
-    expect((await callError(ro, "research_purchase", { request: "Find headphones" })).code).toBe("FORBIDDEN");
+    expect(names.sort()).toEqual(["get_checkout_status", "get_purchase_receipt"]);
+    const denied = await ro.callTool({ name: "research_purchase", arguments: { request: "Find headphones" } }).catch((e) => ({ isError: true, thrown: String(e) }));
+    expect(denied.isError).toBe(true);
     await ro.close();
   });
 
@@ -235,6 +236,7 @@ describe("mock end-to-end purchase", () => {
     const receipt = await call(client, "get_purchase_receipt", { checkoutSessionId: prep.checkoutSessionId });
     expect(receipt.paymentResult).toMatchObject({ status: "COMPLETED", provider: "MOCK_PAYPAL", amount: { totalMinor: 5939 } });
     expect(receipt.merchantOrder.status).toBe("NOT_VERIFIED");
+    expect(receipt).toMatchObject({ paymentEnvironment: "MOCK", liveMerchantCheckout: false });
     expect(receipt.auditTimeline.map((e: any) => e.type)).toEqual(expect.arrayContaining(["RESEARCHED", "OFFERS_COMPARED", "CHECKOUT_PREPARED", "MANDATE_RESERVED", "BUYER_APPROVAL_VERIFIED", "PAYMENT_COMPLETED_VERIFIED"]));
     const mandate = h.app.gateway.mandates.listActive("alice");
     expect(mandate).toHaveLength(0); // single-use mandate is now EXHAUSTED

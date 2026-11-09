@@ -5,7 +5,9 @@
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "tsx src/main.ts",
     "start": "node dist/src/main.js",
@@ -14,7 +16,8 @@
     "test": "vitest run",
     "demo:e2e": "tsx scripts/demo-e2e.ts",
     "mandate:create": "tsx scripts/create-mandate.ts",
-    "scan:secrets": "node scripts/secret-scan.mjs"
+    "scan:secrets": "node scripts/secret-scan.mjs",
+    "preflight:sandbox": "tsx scripts/sandbox-preflight.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

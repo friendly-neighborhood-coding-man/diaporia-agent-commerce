@@ -59,7 +59,7 @@ export function createApp(cfg: AppConfig): App {
       const ip = req.socket.remoteAddress ?? "unknown";
       if (!allowedHosts.includes(req.headers.host ?? "")) return send(res, 421, { error: "Host not allowed" });
 
-      if (url.pathname === "/healthz") return send(res, 200, { ok: true, paymentExecutionEnabled, authMode: cfg.authMode, paymentProvider: payments.name, researchAdapter: gateway.research.name });
+      if (url.pathname === "/healthz") return send(res, 200, { ok: true, paymentExecutionEnabled, paymentEnvironment: payments.name === "PAYPAL_SANDBOX" ? "PAYPAL_SANDBOX" : "MOCK", liveMerchantCheckout: false, authMode: cfg.authMode, paymentProvider: payments.name, researchAdapter: gateway.research.name });
 
       if (url.pathname === "/mcp") {
         if (req.method !== "POST") { res.setHeader("Allow", "POST"); return send(res, 405, { jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed (stateless server)" }, id: null }); }
@@ -80,6 +80,8 @@ export function createApp(cfg: AppConfig): App {
       }
 
       if (!webLimiter.take(ip)) return send(res, 429, { error: "Rate limit exceeded" });
+      // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
+      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
       // ---- Owner API (human-held owner key; AI client tokens cannot reach this) ----
       if (url.pathname === "/owner/mandates" && req.method === "POST") {

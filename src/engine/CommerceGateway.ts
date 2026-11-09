@@ -43,7 +43,10 @@ export class CommerceGateway {
     this.audit = new PurchaseAuditJournal(store, now);
   }
 
-  private dataSource() { return { researchAdapter: this.research.name, mockData: this.research.isMock, paymentProvider: this.payments.name }; }
+  private dataSource() {
+    return { researchAdapter: this.research.name, mockData: this.research.isMock, paymentProvider: this.payments.name,
+      paymentEnvironment: paymentEnvironment(this.payments.name), liveMerchantCheckout: false as const };
+  }
 
   // ---------------------------------------------------------------- research_purchase
   async researchPurchase(userId: string, input: PurchaseRequestInput) {
@@ -163,7 +166,7 @@ export class CommerceGateway {
       this.audit.append(ps.purchaseSessionId, userId, "EXTERNAL_CHECKOUT_HANDOFF", { offerId: offer.offerId });
       return { checkoutSessionId: null, state: "HOLD" as const, checkoutPath: "EXTERNAL_MERCHANT_CHECKOUT" as const, externalCheckoutUrl: v.listingUrl,
         purchaseSummary: null, authorizationRequirements: ["COMPLETE_PURCHASE_ON_MERCHANT_SITE"], approvalUrl: null, userAuthorizationUrl: null, expiresAt: null,
-        policy: null, paymentEffect: "NONE" as const, note: "This merchant has no DIAPORIA-supported checkout. DIAPORIA does not pay third-party merchants; use the merchant's own checkout." };
+        policy: null, paymentEffect: "NONE" as const, paymentEnvironment: paymentEnvironment(this.payments.name), liveMerchantCheckout: false as const, note: "This merchant has no DIAPORIA-supported checkout. DIAPORIA does not pay third-party merchants; use the merchant's own checkout." };
     }
     let cs = this.sessions.createCheckout({
       userId, purchaseSessionId: ps.purchaseSessionId, offerId: offer.offerId, merchantId: offer.merchantId, quoteId: quote.quoteId, identity: ps.lockedIdentity,
@@ -353,7 +356,7 @@ export class CommerceGateway {
       capture: { captureId: cs.captureId, status: cs.captureStatus },
       failure: cs.failureCode ? { code: cs.failureCode, reason: cs.failureReason } : null,
       uncertainty: cs.state === "UNKNOWN" ? "Payment outcome is not known; the server will reconcile with the provider before any retry." : cs.state === "CAPTURE_PENDING" ? "Provider has not confirmed final settlement." : null,
-      paymentProvider: cs.provider, sandboxOrMock: true, fulfillment: "NOT_VERIFIED" as const, expiresAt: new Date(cs.expiresAt).toISOString(),
+      paymentProvider: cs.provider, paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const, sandboxOrMock: true, fulfillment: "NOT_VERIFIED" as const, expiresAt: new Date(cs.expiresAt).toISOString(),
     };
   }
 
@@ -365,6 +368,7 @@ export class CommerceGateway {
       checkoutSessionId: cs.checkoutSessionId, state: cs.state,
       paymentResult: completed ? { status: "COMPLETED" as const, provider: cs.provider, providerOrderId: cs.providerOrderId, captureId: cs.captureId,
         amount: { totalMinor: cs.totalMinor, currency: cs.currency }, verifiedBy: "Provider capture re-read after capture" } : null,
+      paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const,
       paymentStatusNote: completed ? (cs.provider === "MOCK_PAYPAL" ? "MOCK payment: no PayPal API was called." : "PayPal Sandbox payment: no real money moved.") : `No completed payment. Current state: ${cs.state}.`,
       merchantOrder: { status: "NOT_VERIFIED" as const, note: "Fictional demo merchant; no merchant order, shipment or fulfillment exists or is claimed." },
       purchaseSummary: cs.summary, summaryHash: cs.summaryHash, auditTimeline: timeline,
@@ -412,11 +416,14 @@ export class CommerceGateway {
       userAuthorizationUrl: cs.state === "APPROVAL_REQUIRED" && !cs.providerOrderId ? `${this.config.baseUrl}/authorize/${cs.checkoutSessionId}` : null,
       expiresAt: new Date(cs.expiresAt).toISOString(),
       policy: decision ? { code: decision.code, allowed: decision.allowed, detail: decision.detail } : cs.failureCode ? { code: cs.failureCode, allowed: false, detail: cs.failureReason ?? "" } : null,
-      deduplicated, paymentEffect: "NO_FUNDS_CAPTURED" as const,
+      deduplicated, paymentEffect: "NO_FUNDS_CAPTURED" as const, paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const,
       note: "Funds are captured only after the buyer approves on PayPal and the server verifies that approval.",
     };
   }
 }
+
+/** MOCK = no PayPal API at all; PAYPAL_SANDBOX = PayPal test environment, no real money. Live is not supported. */
+export function paymentEnvironment(provider: string): "MOCK" | "PAYPAL_SANDBOX" { return provider === "PAYPAL_SANDBOX" ? "PAYPAL_SANDBOX" : "MOCK"; }
 
 function capabilityStatus(p: CatalogProduct, capability: string): { capability: string; status: CapabilityStatus; evidence: CatalogProduct["capabilities"][number]["source"] | null } {
   const claims = p.capabilities.filter((c) => c.capability === capability);

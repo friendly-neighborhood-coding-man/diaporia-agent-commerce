@@ -78,7 +78,9 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     try { requireScope(principal, scope); return ok(await fn()); } catch (e) { return fail(e); }
   };
 
-  server.registerTool("research_purchase", {
+  // Tools are listed only when the token carries their scope, so a client never sees a tool it cannot use.
+  const can = (scope: string) => principal.scopes.has(scope);
+  if (can(SCOPES.RESEARCH)) server.registerTool("research_purchase", {
     title: "Research a purchase",
     description: "Classify a shopping request (PRODUCT_DISCOVERY or EXACT_PRODUCT_PURCHASE), research candidate products with evidence, and report unknowns. Never charges a payment method.",
     inputSchema: {
@@ -94,7 +96,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT" },
   }, async (args) => run(SCOPES.RESEARCH, () => gateway.researchPurchase(principal.userId, args))());
 
-  server.registerTool("compare_purchase_offers", {
+  if (can(SCOPES.RESEARCH)) server.registerTool("compare_purchase_offers", {
     title: "Compare merchant offers",
     description: "Find merchant offers for the exact locked product, verify identity, stock and fresh merchant quotes, compute total cost (unknown stays unknown) and return the lowest verified eligible offer. Never moves money.",
     inputSchema: {
@@ -108,7 +110,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT" },
   }, async (args) => run(SCOPES.RESEARCH, () => gateway.compareOffers(principal.userId, { researchSessionId: args.researchSessionId, productIdentity: args.productIdentity, destination: args.destination ?? null }))());
 
-  if (opts.exposePaymentTools) {
+  if (opts.exposePaymentTools && can(SCOPES.PREPARE)) {
     server.registerTool("prepare_checkout", {
       title: "Prepare a checkout (no capture)",
       description: "Create an immutable checkout summary for a verified offer. If the user has a matching spending mandate it is checked and reserved, and a PayPal Sandbox order is created; the returned approvalUrl must be opened by the user. Never captures funds.",
@@ -125,7 +127,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     }, async (args) => run(SCOPES.PREPARE, () => gateway.prepareCheckout(principal.userId, args))());
   }
 
-  server.registerTool("get_checkout_status", {
+  if (can(SCOPES.READ)) server.registerTool("get_checkout_status", {
     title: "Get checkout status",
     description: "Read the server-verified checkout state, amount, approval and capture status. Read-only.",
     inputSchema: { checkoutSessionId: idString("cs") },
@@ -134,7 +136,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     _meta: { "diaporia/effect": "READ_ONLY" },
   }, async (args) => run(SCOPES.READ, () => notFoundSafe(() => gateway.getCheckoutStatus(principal.userId, args.checkoutSessionId)))());
 
-  server.registerTool("get_purchase_receipt", {
+  if (can(SCOPES.READ)) server.registerTool("get_purchase_receipt", {
     title: "Get purchase receipt",
     description: "Return the verified payment result, references, and audit timeline. Never claims shipping or fulfillment. Read-only.",
     inputSchema: { checkoutSessionId: idString("cs") },
