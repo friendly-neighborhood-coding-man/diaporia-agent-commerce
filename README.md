@@ -32,13 +32,13 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 | Capture reconciliation (Payments v2 GET, restart recovery, bounded read retries, monotonic states incl. REFUNDED) | Implemented; transitions **mock-tested**; live use limited to read-only GETs of the run-2 capture |
 | PayPal webhooks (`PAYMENT.CAPTURE.PENDING/COMPLETED/DENIED/REFUNDED/REVERSED`), signature verification, dedupe | Implemented; **simulated only** (locally signed fixtures). No webhook registered, no public listener, no real delivery tested |
 | MCP payment status contract (`paymentStatus`, pending details, next action, new-attempt prohibition, merchant order vs payment) | Implemented and tested (mock) |
-| PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`; `npm run preflight:sandbox` verified Sandbox OAuth only. **No Sandbox order, approval or capture has been run yet** |
+| PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`; **live Sandbox use: 2 owner-approved runs** (see the Sandbox checkout row above and docs/TEST_REPORT.md) |
 | Real MCP host: Claude Code CLI → localhost | **Tested** (discovery, research → compare → prepare → status, $6,000 refusal, cross-user and scope boundaries; mock payments). See docs/HOST_TEST_EVIDENCE.md |
 | Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** Need a public HTTPS endpoint; only research-only public mode is available without OAuth |
 | Production user authentication (OAuth 2.1 for MCP) | **Not implemented.** Dev-only per-user tokens on loopback; public deployments run research-only and payment is disabled |
-| Live product research (catalog search, independent evidence) | Not in this public repo. The port `CommerceResearchAdapter` is public; the private DIAPORIA Buy app has an adapter over its Channel3 catalog and manufacturer registry |
+| Live product research (catalog search, independent evidence) | **BYOK adapters for Channel3 (catalog) and Tavily (independent evidence)**, off by default. Bounded live smoke only (see Live evidence status below). Listing prices are never treated as checkout quotes. Without keys, all research is MOCK |
 | Merchant identity verification (registry + recipient attestation) | **MOCK providers only**: workflow implemented and mock-tested; no official registry or PayPal attestation integrated (see below) |
-| Merchant fulfillment / shipping | Not provided and never claimed. Sandbox payments go to a fictional demo merchant |
+| Merchant fulfillment / shipping | Not provided and never claimed. Sandbox payments go to DIAPORIA's own Sandbox test account; the demo merchants are fictional |
 | PayPal Agent Ready, Store Sync | Not integrated (see roadmap below) |
 
 ## Quick start (no keys, no network)
@@ -121,8 +121,8 @@ DIAPORIA stays host-neutral: users work through their own AI assistant, and ther
 
 | Capability | Implemented | Mock-tested | Live-tested | Planned / blocked |
 |---|---|---|---|---|
-| Evidence Router: explicit sufficiency rule; existing evidence → Tavily → KERNEL only when needed; caching; limits never skip verification | ✓ | ✓ | — | Live Tavily/KERNEL runs |
-| Usage Ledger: micro-USD supplier cost, cents billable, dedupe/retries billed once, per-request and monthly caps, estimate vs reconciled cost | ✓ | ✓ | — | Real price book |
+| Evidence Router: explicit sufficiency rule; existing evidence → Tavily → KERNEL only when needed; caching; limits never skip verification | ✓ | ✓ | Tavily: bounded smoke (2 calls); KERNEL: — | KERNEL adapter; retailer exclusion offline-tested only |
+| Usage Ledger: micro-USD supplier cost, cents billable, dedupe/retries billed once, per-request and monthly caps, estimate vs reconciled cost | ✓ | ✓ | Recorded live BYOK calls with cost **unknown** (not 0) | Real price book |
 | Community mode: BYOK or MOCK providers, no DIAPORIA billing | ✓ | ✓ | — | KERNEL BYOK adapter |
 | Managed mode: server-owned keys, deny paid ops without ACTIVE billing, fail closed | ✓ (loopback **simulation only**) | ✓ | — | **Production authentication** (blocker) |
 | Service billing context: plans, authorization, period summary, signed webhook | ✓ (**mock** PayPal Subscriptions) | ✓ | — | PayPal Subscriptions integration and plan design (no metered-usage API) |
@@ -161,7 +161,7 @@ The workflow keeps two layers apart: the **legal entity** (registration exists, 
 | Legal-entity check against a business registry | ✓ (port + mock KR/US registries) | ✓ | — | Official KR / US registries |
 | Payment-recipient attestation (payee ↔ legal entity ↔ merchant/domain) | ✓ (port + mock provider) | ✓ | — | PayPal partner capability, if offered |
 | Checkout binding of business, offer, intended payee and attestation | ✓ | ✓ | — | — |
-| Actual order recipient check before capture | ✓ | ✓ (mock order payee) | **Not yet run.** Uses the documented Orders v2 `payee.merchant_id`; needs `PAYPAL_SANDBOX_PAYEE_MERCHANT_ID` | — |
+| Actual order recipient check before capture | ✓ | ✓ (mock order payee) | **Live Sandbox (2 runs):** run 1 failed closed (PayPal returned no payee email); run 2 verified `payee.merchant_id` before capture. Needs `PAYPAL_SANDBOX_PAYEE_MERCHANT_ID` | — |
 | Negative cases: stolen registration, payee substitution, inconsistent entity, altered merchant id, stale/revoked attestation | ✓ | ✓ (tests/merchant-identity.test.ts) | — | — |
 
 In PayPal Sandbox mode the real recipient is DIAPORIA's own Sandbox account, not the fictional merchant. The summary labels this as `DIAPORIA_SANDBOX_PLATFORM_ACCOUNT`.

@@ -55,6 +55,8 @@ A fresh `git clone` into an empty temp folder was tested with no PayPal or catal
   - No `.env*` (except `.env.example`), `.data/`, database or key files were ever committed.
   - Exact-value search across every commit for the local PayPal client id and secret, Channel3, KERNEL and Tavily keys, the Sandbox payee merchant id and email, dev tokens, the owner's email and local profile paths: **none found**.
   - Pattern search (PayPal tokens, private keys, sk-/tvly- keys, generated dev credentials, Windows paths): **none**.
-  - The value that triggered the scanner in `0d06fbe` (`tests/service-plane.test.ts`) is a **fake test constant**, renamed in `e994fe2`.
+  - The value that triggered the scanner in `d308097` (`tests/service-plane.test.ts`) is a **fake test constant**, renamed in `0f4899d`.
 - **Personal data.** Commit metadata carries the owner's personal email as author. Publishing the existing history would expose it; see the push plan.
 - **Sandbox evidence.** Docs contain PayPal Sandbox order and capture ids, which are not secrets. They contain no client id or secret, payee merchant id, or buyer or business email.
+
+- **Published history.** Before publication, author and committer emails in every commit were rewritten to the owner's GitHub noreply address. File contents are unchanged. Commit hashes cited in these docs refer to the published history.

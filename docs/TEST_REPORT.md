@@ -5,7 +5,7 @@ Run date: 2026-11-09, Windows 11, Node.js 24.22.1, vitest 5.1.0, TypeScript 7.0.
 
 ## Automated suite (this repo)
 
-`npm test` → **5 files, 69 passed, 0 failed, 0 skipped** (merchant identity round, 2026-11-09). Before that round: 4 files, 51 passed (commit c12581f). `npm run typecheck` clean, `npm run build` clean, `npm run demo:e2e` completes, `npm run scan:secrets` no findings.
+`npm test` → **5 files, 69 passed, 0 failed, 0 skipped** (merchant identity round, 2026-11-09). Before that round: 4 files, 51 passed (commit 0ee639b). `npm run typecheck` clean, `npm run build` clean, `npm run demo:e2e` completes, `npm run scan:secrets` no findings.
 
 MCP tests use the SDK's real `Client` + `StreamableHTTPClientTransport` against the real HTTP server; the client lists tools first, so every `structuredContent` is validated against the published `outputSchema`.
 
@@ -32,7 +32,7 @@ Additional: PayPal adapter against a fake `fetch` (Sandbox-only host, idempotenc
 
 ## LIVE PayPal Sandbox E2E — run 1 (2026-11-09), owner-authorized, ONE order
 
-**Evidence class: LIVE PayPal Sandbox. No real money moved.** Build `bb60b58`; MCP host Claude Code CLI 2.1.310 talking to `http://127.0.0.1:8790/mcp`; payments `PAYPAL_SANDBOX`; merchant: the fictional demo merchant alpha-audio.example (this was not a retail purchase). The owner configured the expected recipient, their Sandbox business Merchant ID and email, locally; these values are not recorded here.
+**Evidence class: LIVE PayPal Sandbox. No real money moved.** Build `7bab2e4`; MCP host Claude Code CLI 2.1.310 talking to `http://127.0.0.1:8790/mcp`; payments `PAYPAL_SANDBOX`; merchant: the fictional demo merchant alpha-audio.example (this was not a retail purchase). The owner configured the expected recipient, their Sandbox business Merchant ID and email, locally; these values are not recorded here.
 
 | Step | Time (UTC) | Observed |
 |---|---|---|
@@ -64,7 +64,7 @@ Idempotency observations:
 ## LIVE PayPal Sandbox E2E — run 2 (2026-11-09), owner-authorized, ONE new order
 
 **Evidence class: LIVE PayPal Sandbox. No real money moved.**
-- Build `ca51567`. MCP host: Claude Code CLI talking to `http://127.0.0.1:8790/mcp`. Payments ran in `PAYPAL_SANDBOX` mode.
+- Build `421693f`. MCP host: Claude Code CLI talking to `http://127.0.0.1:8790/mcp`. Payments ran in `PAYPAL_SANDBOX` mode.
 - Merchant: the fictional demo merchant alpha-audio.example. This was not a retail purchase.
 - Run 1's order `9DL148415W2504835` was not captured or retried, and its unused run-1 mandate was revoked before run 2.
 
@@ -128,7 +128,7 @@ Notes:
 
 ## Fresh-clone run
 
-A `git clone` of c12581f into an empty temp directory, with the PayPal and catalog variables unset: `npm ci`, then 51/51 tests pass, typecheck and build succeed, and `demo:e2e` completes (the $6,000 attempt is HOLD / AMOUNT_EXCEEDED, the $59.39 checkout reaches COMPLETED on MOCK).
+A `git clone` of 0ee639b into an empty temp directory, with the PayPal and catalog variables unset: `npm ci`, then 51/51 tests pass, typecheck and build succeed, and `demo:e2e` completes (the $6,000 attempt is HOLD / AMOUNT_EXCEEDED, the $59.39 checkout reaches COMPLETED on MOCK).
 
 ## Private V7 research adapter through the V8 engine
 
@@ -213,7 +213,7 @@ A real PayPal webhook delivery, a real Sandbox capture transitioning out of `PEN
 
 **Evidence class: MOCK only.** No Channel3, Tavily, KERNEL, Shopify or PayPal call was made. No PayPal billing object was created.
 
-- **Merge.** `feature/merchant-quote-v0` (`5337ffc`) was reviewed against main: the only core changes are additive (quote evidence, availability from the merchant cart, and quoting of not-out-of-stock offers). It was fast-forwarded into local main, and 98/98 tests passed after the merge.
+- **Merge.** `feature/merchant-quote-v0` (`ca8543d`) was reviewed against main: the only core changes are additive (quote evidence, availability from the merchant cart, and quoting of not-out-of-stock offers). It was fast-forwarded into local main, and 98/98 tests passed after the merge.
 - **Suite.** `npm test` gives **8 files, 109 passed, 0 failed**. `tests/service-plane.test.ts` adds 11 tests:
   - router reuse and justified Tavily/KERNEL calls, with a second request making no new calls
   - the sufficiency rule
