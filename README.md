@@ -48,12 +48,13 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 115 tests
+npm test            # 138 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
 npm run demo:quote     # discovery → Shopify cart estimate → external checkout handoff (fixtures)
 npm run demo:service   # evidence routing + usage ledger, community vs simulated managed billing (all MOCK)
+npm run demo:subscription  # managed subscription billing against a fake PayPal: subscribe once, allowance, replay, cancel (all MOCK)
 ```
 
 Run the server:
@@ -127,7 +128,8 @@ DIAPORIA stays host-neutral: users work through their own AI assistant, and ther
 | Usage Ledger: micro-USD supplier cost, cents billable, dedupe/retries billed once, per-request and monthly caps, estimate vs reconciled cost | ✓ | ✓ | Recorded live BYOK calls with cost **unknown** (not 0) | Real price book |
 | Community mode: BYOK or MOCK providers, no DIAPORIA billing | ✓ | ✓ | — | KERNEL BYOK adapter |
 | Managed mode: server-owned keys, deny paid ops without ACTIVE billing, fail closed | ✓ (loopback **simulation only**) | ✓ | — | **Production authentication** (blocker) |
-| Service billing context: plans, authorization, period summary, signed webhook | ✓ (**mock** PayPal Subscriptions) | ✓ | — | PayPal Subscriptions integration and plan design (no metered-usage API) |
+| Service billing context: plans, authorization, period summary, signed webhook | ✓ (**mock** PayPal Subscriptions) | ✓ | — | Superseded for managed mode by the subscription billing row below (kept as `MANAGED_BILLING=legacy-mock`) |
+| Managed subscription billing V1: PayPal Subscriptions adapter (Sandbox-only, endpoint allowlist), lifecycle state machine, paid-period grants, allowance/cap enforcement inside the ledger transaction, PayPal-verified webhooks, replay/concurrency protection | ✓ | ✓ (fake PayPal HTTP) | **No** Sandbox or live call yet | Owner-approved Sandbox run ([procedure](docs/SUBSCRIPTION_SANDBOX_PROCEDURE.md)); real prices (UNKNOWN); merchant country eligibility. See [docs/MANAGED_BILLING.md](docs/MANAGED_BILLING.md) |
 | `get_usage_summary` MCP tool (read-only, per user) | ✓ | ✓ | — | — |
 
 Fixture offers are labelled `offerEvidenceClass: FIXTURE_OFFER`; merchant estimates are `MERCHANT_API_ESTIMATE`; no merchant order is ever claimed (`NO_MERCHANT_ORDER`).

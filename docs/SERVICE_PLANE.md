@@ -57,6 +57,8 @@ Service billing and purchase authority are separate:
 
 ## Service billing (`src/billing/Billing.ts`)
 
+> **Managed Billing V1** replaces this mock for managed mode with PayPal Subscriptions billing: fixed monthly plans, included allowances, hard limits, paid-period grants, and entitlement checked inside the ledger transaction. See [MANAGED_BILLING.md](MANAGED_BILLING.md). The mock below remains available as `MANAGED_BILLING=legacy-mock`.
+
 This is a separate bounded context covering plans, billing authorization, period summaries derived from the ledger, and billing webhooks. It is only a **mock** of a PayPal Subscriptions-backed account:
 - state changes come from fixtures or an HMAC-signed mock webhook (duplicates ignored, forged signatures rejected);
 - summaries are `DRAFT_NOT_INVOICED`;

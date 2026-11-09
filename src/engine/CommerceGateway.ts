@@ -251,7 +251,10 @@ export class CommerceGateway {
     if (svc.mode !== "managed") return { mode: svc.mode, usage, billing: { status: "NOT_APPLICABLE_COMMUNITY", note: "Community mode: no DIAPORIA billing; provider costs are the operator's own." } };
     let billingAuthorization: unknown = null;
     try { billingAuthorization = svc.billing ? await svc.billing.getAuthorization(userId) : null; } catch { billingAuthorization = { status: "UNKNOWN", note: "billing provider unavailable" }; }
-    return { mode: svc.mode, simulation: svc.managedSimulation === true, usage, billing: { billingAuthorization, periodSummary: periodSummaryFrom(usage),
+    // Subscription billing reports a period statement (billed amount, service price, supplier cost kept apart); the legacy mock reports a draft summary.
+    const statementOf = (svc.billing as { statement?: (u: string) => unknown } | null)?.statement;
+    const periodView = typeof statementOf === "function" ? { subscriptionStatement: statementOf.call(svc.billing, userId) } : { periodSummary: periodSummaryFrom(usage) };
+    return { mode: svc.mode, simulation: svc.managedSimulation === true, usage, billing: { billingAuthorization, ...periodView,
       separation: "Service billing is independent of purchase mandates: it never authorizes a merchandise purchase, and a purchase mandate never authorizes service charges." } };
   }
 
