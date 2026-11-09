@@ -1,0 +1,95 @@
+{
+  "fixture": {
+    "request": "Buy Sony WH-CH720N Black",
+    "currency": "USD",
+    "budgetMinor": 6000,
+    "mustHave": [
+      "active_noise_cancellation"
+    ]
+  },
+  "generatedAt": "2026-11-09T17:06:38.826Z",
+  "unauthenticatedProbe": [
+    {
+      "time": "2026-11-09T16:41:59.849Z",
+      "userAgent": "curl/8.21.0",
+      "method": "tools/list",
+      "status": 401
+    }
+  ],
+  "hosts": {
+    "claude-code": {
+      "status": "PASS",
+      "host": "Claude Code 2.1.310",
+      "userAgents": [
+        "claude-code/2.1.310 (claude-desktop, agent-sdk/0.3.317)"
+      ],
+      "checks": {
+        "discovery": true,
+        "exactlyOneResearchCall": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "hostOriginated": true,
+        "resultOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true
+      }
+    },
+    "codex-cli": {
+      "status": "PASS",
+      "host": "codex-cli 0.160.0 (codex exec --json)",
+      "userAgents": [
+        "codex-mcp-client/0.160.0"
+      ],
+      "checks": {
+        "discovery": true,
+        "exactlyOneResearchCall": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "hostOriginated": true,
+        "resultOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true
+      }
+    },
+    "grok-build": {
+      "status": "PASS",
+      "host": "grok 1.0.77 (50ca579fa996) [stable]",
+      "userAgents": [
+        "grok-cli/1.0.52",
+        "grok-cli/1.0.77"
+      ],
+      "checks": {
+        "discovery": true,
+        "exactlyOneResearchCall": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "hostOriginated": true,
+        "resultOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true
+      }
+    },
+    "hermes-agent": {
+      "status": "PASS",
+      "host": "Hermes Agent v0.22.7 (2026.9.24) · stable",
+      "userAgents": [
+        "python-httpx/0.28.1",
+        "python-httpx2/2.15.1"
+      ],
+      "checks": {
+        "discovery": true,
+        "exactlyOneResearchCall": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "hostOriginated": true,
+        "resultOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true
+      }
+    }
+  }
+}
