@@ -6,7 +6,7 @@
  */
 export type PurchaseState =
   | "CREATED" | "RESEARCHED" | "OFFER_VERIFIED" | "PREPARED" | "APPROVAL_REQUIRED" | "APPROVED"
-  | "CAPTURE_PENDING" | "COMPLETED" | "HOLD" | "CANCELLED" | "FAILED" | "EXPIRED" | "UNKNOWN";
+  | "CAPTURE_PENDING" | "COMPLETED" | "HOLD" | "CANCELLED" | "FAILED" | "EXPIRED" | "UNKNOWN" | "REFUNDED";
 
 export const PURCHASE_SESSION_TRANSITIONS: Readonly<Record<string, readonly PurchaseState[]>> = {
   CREATED: ["RESEARCHED", "HOLD", "EXPIRED", "CANCELLED"],
@@ -22,12 +22,14 @@ export const CHECKOUT_TRANSITIONS: Readonly<Record<string, readonly PurchaseStat
   HOLD: ["APPROVAL_REQUIRED", "EXPIRED", "CANCELLED"],
   APPROVAL_REQUIRED: ["APPROVAL_REQUIRED", "APPROVED", "CANCELLED", "EXPIRED", "FAILED", "UNKNOWN", "HOLD"],
   APPROVED: ["CAPTURE_PENDING", "FAILED", "UNKNOWN"],
-  CAPTURE_PENDING: ["COMPLETED", "FAILED", "UNKNOWN", "CAPTURE_PENDING"],
+  CAPTURE_PENDING: ["COMPLETED", "FAILED", "UNKNOWN", "CAPTURE_PENDING", "REFUNDED"],
+  // Post-capture: only an authoritative provider refund can follow completion. Nothing regresses.
+  COMPLETED: ["REFUNDED"],
   // UNKNOWN is only left by reconciling against the payment provider's authoritative state.
-  UNKNOWN: ["UNKNOWN", "APPROVED", "CAPTURE_PENDING", "COMPLETED", "FAILED", "CANCELLED"],
+  UNKNOWN: ["UNKNOWN", "APPROVED", "CAPTURE_PENDING", "COMPLETED", "FAILED", "CANCELLED", "REFUNDED"],
 };
 
-export const TERMINAL: ReadonlySet<PurchaseState> = new Set(["COMPLETED", "CANCELLED", "FAILED", "EXPIRED"]);
+export const TERMINAL: ReadonlySet<PurchaseState> = new Set(["COMPLETED", "CANCELLED", "FAILED", "EXPIRED", "REFUNDED"]);
 
 export class InvalidTransitionError extends Error {
   constructor(readonly from: string, readonly to: string, readonly kind: string) {

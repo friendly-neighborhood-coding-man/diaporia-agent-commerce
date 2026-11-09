@@ -95,6 +95,9 @@ export interface CheckoutSession {
   merchantIdentity: MerchantIdentityBinding | null;
   intendedPayeeId: string | null;
   actualRecipientId: string | null;
+  /** Last time the capture status was read from the payment provider (authoritative). */
+  providerVerifiedAt: number | null;
+  providerPendingReason: string | null;
 }
 
 const PURCHASE_TTL_MS = 30 * 60_000;
@@ -138,7 +141,7 @@ export class CheckoutSessionManager {
 
   createCheckout(input: Omit<CheckoutSession, "checkoutSessionId" | "summary" | "summaryHash" | "state" | "version" | "mandateId" | "reservedMinor" |
     "providerOrderId" | "approvalUrl" | "captureId" | "captureStatus" | "createKey" | "captureKey" | "failureCode" | "failureReason" | "createdAt" | "updatedAt" |
-    "merchantIdentity" | "intendedPayeeId" | "actualRecipientId"> & {
+    "merchantIdentity" | "intendedPayeeId" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason"> & {
     merchantName: string; merchantDomain: string; checkoutPath: string; disclosure: string; checkoutSessionId?: string; merchantIdentity?: MerchantIdentityBinding | null }): CheckoutSession {
     const id = input.checkoutSessionId ?? newCheckoutSessionId();
     const mi = input.merchantIdentity ?? null;
@@ -177,19 +180,47 @@ export class CheckoutSessionManager {
 
   findActiveDuplicate(userId: string, purchaseSessionId: string, offerId: string, quantity: number): CheckoutSession | null {
     const r = this.store.db.prepare(`SELECT * FROM checkout_sessions WHERE user_id=? AND purchase_session_id=? AND offer_id=? AND quantity=?
-      AND state NOT IN ('COMPLETED','CANCELLED','FAILED','EXPIRED') ORDER BY created_at DESC LIMIT 1`).get(userId, purchaseSessionId, offerId, quantity) as Row | undefined;
+      AND state NOT IN ('COMPLETED','CANCELLED','FAILED','EXPIRED','REFUNDED') ORDER BY created_at DESC LIMIT 1`).get(userId, purchaseSessionId, offerId, quantity) as Row | undefined;
     return r ? this.toCheckout(r) : null;
+  }
+
+  /** A checkout of this purchase session whose payment is in flight or done (a new attempt is prohibited). */
+  findPaymentInFlightOrDone(userId: string, purchaseSessionId: string): CheckoutSession | null {
+    const r = this.store.db.prepare(`SELECT * FROM checkout_sessions WHERE user_id=? AND purchase_session_id=?
+      AND state IN ('APPROVED','CAPTURE_PENDING','UNKNOWN','COMPLETED') ORDER BY created_at DESC LIMIT 1`).get(userId, purchaseSessionId) as Row | undefined;
+    return r ? this.toCheckout(r) : null;
+  }
+
+  /** Internal (no user scope): webhooks and reconciliation resolve a checkout by its provider capture id. */
+  findByCaptureId(captureId: string): CheckoutSession | null {
+    const r = this.store.db.prepare("SELECT * FROM checkout_sessions WHERE capture_id = ?").get(captureId) as Row | undefined;
+    return r ? this.toCheckout(r) : null;
+  }
+
+  /** Internal: every checkout whose payment outcome is not final and has a provider capture to read. */
+  listAwaitingProviderSettlement(): CheckoutSession[] {
+    return (this.store.db.prepare("SELECT * FROM checkout_sessions WHERE state IN ('CAPTURE_PENDING','UNKNOWN') AND capture_id IS NOT NULL ORDER BY created_at").all() as Row[])
+      .map((r) => this.toCheckout(r));
+  }
+
+  /** Records an authoritative provider read that did not change the state (compare-and-set on version). */
+  recordProviderVerification(cs: CheckoutSession, captureStatus: string, pendingReason: string | null): CheckoutSession {
+    const r = this.store.db.prepare(`UPDATE checkout_sessions SET provider_verified_at=?, capture_status=?, provider_pending_reason=?, version=version+1, updated_at=?
+      WHERE id=? AND state=? AND version=?`).run(this.now(), captureStatus, pendingReason, this.now(), cs.checkoutSessionId, cs.state, cs.version);
+    if (r.changes !== 1) throw new StaleStateError(`Checkout ${cs.checkoutSessionId} changed concurrently`);
+    return this.getCheckout(cs.checkoutSessionId, cs.userId);
   }
 
   /** Compare-and-set transition. Throws StaleStateError when another request moved the session first. */
   transition(cs: CheckoutSession, to: PurchaseState, patch: Partial<Pick<CheckoutSession, "mandateId" | "reservedMinor" | "providerOrderId" | "approvalUrl" |
-    "captureId" | "captureStatus" | "failureCode" | "failureReason" | "actualRecipientId">> = {}): CheckoutSession {
+    "captureId" | "captureStatus" | "failureCode" | "failureReason" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason">> = {}): CheckoutSession {
     assertTransition("checkout", cs.state, to);
     const n = { ...cs, ...patch };
     const r = this.store.db.prepare(`UPDATE checkout_sessions SET state=?, version=version+1, mandate_id=?, reserved_minor=?, provider_order_id=?,
-      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, actual_recipient_id=?, updated_at=?
+      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, actual_recipient_id=?, provider_verified_at=?, provider_pending_reason=?, updated_at=?
       WHERE id=? AND user_id=? AND state=? AND version=?`).run(
-      to, n.mandateId, n.reservedMinor, n.providerOrderId, n.approvalUrl, n.captureId, n.captureStatus, n.failureCode, n.failureReason, n.actualRecipientId, this.now(),
+      to, n.mandateId, n.reservedMinor, n.providerOrderId, n.approvalUrl, n.captureId, n.captureStatus, n.failureCode, n.failureReason, n.actualRecipientId,
+      n.providerVerifiedAt, n.providerPendingReason, this.now(),
       cs.checkoutSessionId, cs.userId, cs.state, cs.version);
     if (r.changes !== 1) throw new StaleStateError(`Checkout ${cs.checkoutSessionId} changed concurrently (expected ${cs.state} v${cs.version})`);
     return this.getCheckout(cs.checkoutSessionId, cs.userId);
@@ -209,6 +240,8 @@ export class CheckoutSessionManager {
       merchantIdentity: r.merchant_identity_json ? JSON.parse(String(r.merchant_identity_json)) : null,
       intendedPayeeId: r.intended_payee_id == null ? null : String(r.intended_payee_id),
       actualRecipientId: r.actual_recipient_id == null ? null : String(r.actual_recipient_id),
+      providerVerifiedAt: r.provider_verified_at == null ? null : Number(r.provider_verified_at),
+      providerPendingReason: r.provider_pending_reason == null ? null : String(r.provider_pending_reason),
     };
   }
 }

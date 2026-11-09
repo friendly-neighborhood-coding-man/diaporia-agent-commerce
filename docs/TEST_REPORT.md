@@ -142,3 +142,44 @@ The missing integration is a merchant checkout-quote source (final total with sh
 ## Not verified
 
 a live Sandbox capture reaching **COMPLETED** (run 2 captured once but PayPal holds it in PENDING_REVIEW; order creation, approval, return, recipient check and capture were observed live); remote AI hosts (claude.ai connector, ChatGPT, Grok); live catalog/evidence research through the private adapter; multi-process concurrency; webhooks.
+
+
+## Payment lifecycle hardening round (2026-11-09, afternoon)
+
+### Phase 0 — LIVE read-only Sandbox reconciliation (12:58 UTC)
+
+Two calls were made, both read-only: `GET /v2/payments/captures/92U85747JU359434A` and `GET /v2/checkout/orders/99X21669LS4807358`. No mutation of any kind.
+
+- **Capture `92U85747JU359434A`:** `PENDING`, `status_details.reason` `PENDING_REVIEW`, 59.39 USD, `final_capture` true, payee merchant id matches the configured account, related order matches. `create_time` and `update_time` are both 2026-11-09T10:10:28Z, so it is **unchanged since run 2**.
+- **Order `99X21669LS4807358`:** `COMPLETED` (intent CAPTURE), 59.39 USD, payee matches, exactly one capture (the one above, PENDING).
+- **DIAPORIA:** checkout `cs_7d85cbb3…` is `CAPTURE_PENDING` (PENDING / PENDING_REVIEW, 5939 USD). The mandate is ACTIVE with 5939 reserved and 0 consumed. This is consistent with PayPal.
+- The "On hold" label in the Sandbox business UI was not used as evidence. A funds hold is not a capture status.
+
+### Automated suite
+
+`npm test` gives **6 files, 84 passed, 0 failed**, run twice. `tests/payment-lifecycle.test.ts` adds 15 **simulated** cases (mock provider and locally signed webhook fixtures):
+- pending contract
+- PENDING→COMPLETED
+- PENDING→DENIED
+- PENDING→PENDING
+- simulated COMPLETED vs provider PENDING, and stale events after completion
+- duplicate delivery
+- forged, foreign-cert, stale and unauthenticated webhooks
+- wrong capture id or merchant id
+- provider/local conflicts
+- restart while pending
+- provider timeout with bounded retries
+- refund after completion
+- the "On hold" independence case
+- no new attempt, cross-user and secret leakage checks
+- public route closure
+
+Typecheck, build, `demo:e2e`, `demo:identity` and the secret scan are clean. Compiled-server localhost smoke on :8795 with mock payments:
+- `/healthz` reports `paymentEnvironment MOCK`.
+- MCP `tools/list` returns the 5 tools.
+- Unauthenticated `/mcp` returns 401.
+- `/paypal/webhook` without a configured webhook id returns 503.
+
+### Not verified live in this round
+
+A real PayPal webhook delivery, a real Sandbox capture transitioning out of `PENDING_REVIEW`, and refunds. No Sandbox order, capture, refund or other mutation was made.

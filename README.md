@@ -28,6 +28,10 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 | PurchaseMandate: amount/currency/quantity/product/merchant binding, expiry, revocation, atomic cumulative reservation (SQLite `BEGIN IMMEDIATE` + CHECK constraints) | Implemented and tested |
 | Checkout state machine with server-side transition guards, duplicate-capture prevention, UNKNOWN + reconciliation | Implemented and tested with the mock provider |
 | Mock PayPal provider (offline, every id prefixed `MOCK`) | Implemented and tested |
+| Live PayPal Sandbox checkout | **Run 2 (2026-11-09): one order, one capture, recipient verified from PayPal data; capture still `PENDING / PENDING_REVIEW`** (re-read 12:58 UTC). A Sandbox capture reaching `COMPLETED` has not been observed |
+| Capture reconciliation (Payments v2 GET, restart recovery, bounded read retries, monotonic states incl. REFUNDED) | Implemented; transitions **mock-tested**; live use limited to read-only GETs of the run-2 capture |
+| PayPal webhooks (`PAYMENT.CAPTURE.PENDING/COMPLETED/DENIED/REFUNDED/REVERSED`), signature verification, dedupe | Implemented; **simulated only** (locally signed fixtures). No webhook registered, no public listener, no real delivery tested |
+| MCP payment status contract (`paymentStatus`, pending details, next action, new-attempt prohibition, merchant order vs payment) | Implemented and tested (mock) |
 | PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`; `npm run preflight:sandbox` verified Sandbox OAuth only. **No Sandbox order, approval or capture has been run yet** |
 | Real MCP host: Claude Code CLI → localhost | **Tested** (discovery, research → compare → prepare → status, $6,000 refusal, cross-user and scope boundaries; mock payments). See docs/HOST_TEST_EVIDENCE.md |
 | Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** Need a public HTTPS endpoint; only research-only public mode is available without OAuth |
@@ -43,7 +47,7 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 67 tests
+npm test            # 84 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK

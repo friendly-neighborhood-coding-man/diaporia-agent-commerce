@@ -49,3 +49,8 @@ Output: `state`, `stateIsServerVerified: true`, `amount`, `approval {required, a
 ## get_purchase_receipt
 
 Output: `paymentResult` (only when `COMPLETED`), `paymentStatusNote` (MOCK vs Sandbox), `merchantOrder.status: "NOT_VERIFIED"`, `purchaseSummary`, `auditTimeline[]`.
+
+
+## Payment status fields (lifecycle round)
+
+`get_checkout_status` and `get_purchase_receipt` also return `paymentStatus`, `payment { paymentEnvironment, providerOrderId, captureId, providerCaptureStatus, pendingReason, lastAuthoritativeVerificationAt, recommendedNextAction, newPaymentAttemptProhibited }` and `merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED"`. The receipt adds `isFinalPaymentReceipt` and `refund`. A `CAPTURE_PENDING` payment is never a completed receipt. See PAYMENT_LIFECYCLE.md.

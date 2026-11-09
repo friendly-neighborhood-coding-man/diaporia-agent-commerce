@@ -63,8 +63,14 @@ export class Store {
     const add: Array<[string, string]> = [
       ["merchant_identity_json", "TEXT"], ["intended_payee_id", "TEXT"], ["payee_relationship", "TEXT"],
       ["attestation_id", "TEXT"], ["attestation_expires_at", "INTEGER"], ["actual_recipient_id", "TEXT"],
+      ["provider_verified_at", "INTEGER"], ["provider_pending_reason", "TEXT"],
     ];
     for (const [name, type] of add) if (!cols.has(name)) this.db.exec(`ALTER TABLE checkout_sessions ADD COLUMN ${name} ${type}`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS checkout_by_capture ON checkout_sessions(capture_id);
+      CREATE TABLE IF NOT EXISTS webhook_events (
+        event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, capture_id TEXT, checkout_session_id TEXT,
+        received_at INTEGER NOT NULL, outcome TEXT NOT NULL
+      );`);
   }
 
   private depth = 0;

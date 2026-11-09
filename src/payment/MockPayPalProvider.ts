@@ -80,8 +80,12 @@ export class MockPayPalProvider implements PaymentProvider {
     return { ...capture };
   }
 
+  /** Test hook: the next N getCapture calls fail like a network timeout. */
+  getCaptureFailures = 0;
+
   async getCapture(captureId: string): Promise<ProviderCapture> {
     this.calls.getCapture++;
+    if (this.getCaptureFailures > 0) { this.getCaptureFailures--; throw new ProviderTimeoutError("Mock timeout reading capture"); }
     const c = this.captures.get(captureId);
     if (!c) throw new Error("Unknown mock capture");
     return { ...c };
@@ -91,6 +95,12 @@ export class MockPayPalProvider implements PaymentProvider {
   substitutePayee(orderId: string, merchantId: string | null, emailAddress?: string | null) { this.mustGet(orderId).payee = { merchantId, ...(emailAddress !== undefined ? { emailAddress } : {}) }; }
 
   /** Test hook: move a pending capture to a final state, as PayPal would later. */
+  /** Test hook: provider-side refund of a capture (as PayPal would report it later). */
+  refundCapture(captureId: string) { const c = this.captures.get(captureId); if (c) c.status = "REFUNDED"; }
+
+  /** Test hook: report a different amount for a capture (provider/local conflict). */
+  tamperCaptureAmount(captureId: string, amountMinor: number) { const c = this.captures.get(captureId); if (c && c.amount) c.amount = { ...c.amount, amountMinor }; }
+
   settleCapture(captureId: string, status: "COMPLETED" | "DECLINED") {
     const c = this.captures.get(captureId);
     if (c) { c.status = status; c.reason = null; }

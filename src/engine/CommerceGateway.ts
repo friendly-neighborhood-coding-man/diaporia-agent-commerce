@@ -20,6 +20,7 @@ import { normalizeIdentifier } from "../merchant-identity/identifiers.js";
 import type { MerchantIdentityAssessment } from "../merchant-identity/types.js";
 import { newCheckoutSessionId, type MerchantIdentityBinding } from "../checkout/CheckoutSessionManager.js";
 import type { MerchantOffer } from "../domain/types.js";
+import { parseWebhookEvent, type WebhookHeaders, type WebhookSignatureVerifier } from "../payment/PayPalWebhook.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -36,7 +37,18 @@ export interface GatewayConfig {
   sandboxPlatformPayeeId?: string | null;
   /** PayPal Sandbox only, optional: the same account's email. When set, the order payee email must match too. */
   sandboxPlatformPayeeEmail?: string | null;
+  /** PayPal webhook signature verifier. Unset = the webhook endpoint is disabled. */
+  webhookVerifier?: WebhookSignatureVerifier | null;
+  /** Read-only provider retries during reconciliation (attempts, base backoff). */
+  readRetry?: { attempts: number; baseDelayMs: number };
 }
+
+export type ReconcileSource = "MANUAL" | "STARTUP" | "WEBHOOK" | "RETURN";
+export type ReconcileOutcome =
+  | "SETTLED_COMPLETED" | "SETTLED_FAILED" | "REFUNDED" | "STILL_PENDING" | "NO_CHANGE" | "PROVIDER_UNAVAILABLE"
+  | "CAPTURE_ID_MISMATCH" | "AMOUNT_MISMATCH" | "CONFLICT_IGNORED" | "NOT_APPLICABLE";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function defaultMockMerchantIdentityVerifier(now: () => number = Date.now): MerchantIdentityVerifier {
   return new MerchantIdentityVerifier(
@@ -58,7 +70,7 @@ export class CommerceGateway {
   readonly audit: PurchaseAuditJournal;
   readonly identity: MerchantIdentityVerifier;
 
-  constructor(store: Store, readonly research: CommerceResearchAdapter, readonly payments: PaymentProvider, readonly config: GatewayConfig,
+  constructor(private readonly store: Store, readonly research: CommerceResearchAdapter, readonly payments: PaymentProvider, readonly config: GatewayConfig,
     private readonly now: () => number = Date.now) {
     this.sessions = new CheckoutSessionManager(store, now);
     this.policy = new PurchasePolicyEngine(store, now);
@@ -199,6 +211,9 @@ export class CommerceGateway {
     if (!known) throw new CommerceError("NOT_FOUND", "Offer is not part of this session's verified comparison.");
     if (!known.eligible) throw new CommerceError("OFFER_NOT_ELIGIBLE", "Offer was not eligible at comparison time.", { issues: known.issues });
 
+    const inFlight = this.sessions.findPaymentInFlightOrDone(userId, ps.purchaseSessionId);
+    if (inFlight && !(inFlight.offerId === input.offerId && inFlight.quantity === input.quantity))
+      throw new CommerceError("INVALID_STATE", `A payment for this purchase session is ${inFlight.state}; a new payment attempt is prohibited until it is final.`, { checkoutSessionId: inFlight.checkoutSessionId });
     const dup = this.sessions.findActiveDuplicate(userId, ps.purchaseSessionId, input.offerId, input.quantity);
     if (dup) { this.audit.append(dup.checkoutSessionId, userId, "PREPARE_DEDUPLICATED", {}); return this.prepareResult(this.expireIfNeeded(dup), null, true); }
 
@@ -436,12 +451,16 @@ export class CommerceGateway {
   /** Re-reads authoritative provider state for UNKNOWN / CAPTURE_PENDING checkouts. */
   async reconcile(userId: string, checkoutSessionId: string): Promise<CheckoutSession> {
     let cs = this.sessions.getCheckout(checkoutSessionId, userId);
+    if (cs.captureId) return (await this.reconcileCapture(cs, "MANUAL")).checkout;
     if (!["UNKNOWN", "CAPTURE_PENDING"].includes(cs.state) || !cs.providerOrderId) return cs;
     const order = await this.payments.getOrder(cs.providerOrderId);
     this.audit.append(cs.checkoutSessionId, userId, "RECONCILED", { providerStatus: order.status, captures: order.captures.length });
     const cap = order.captures[0];
     if (cap) {
-      const fresh = await this.payments.getCapture(cap.captureId).catch(() => cap);
+      // Never trust the order's embedded capture: read the capture itself (Payments v2).
+      let fresh: ProviderCapture;
+      try { fresh = await this.readWithRetry(() => this.payments.getCapture(cap.captureId)); }
+      catch (e) { this.audit.append(cs.checkoutSessionId, userId, "RECONCILE_PROVIDER_UNAVAILABLE", { reason: errorText(e) }); return cs; }
       return this.applyCapture(cs, fresh);
     }
     if (cs.state === "UNKNOWN" && order.status === "APPROVED") {
@@ -449,6 +468,141 @@ export class CommerceGateway {
       return this.capture(cs); // same PayPal-Request-Id: a replay cannot double-capture
     }
     return cs;
+  }
+
+  // ---------------------------------------------------------------- authoritative capture reconciliation
+  /** Bounded retries for READ-ONLY provider calls; only network/5xx-class failures are retried. */
+  private async readWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const { attempts, baseDelayMs } = this.config.readRetry ?? { attempts: 3, baseDelayMs: 250 };
+    let last: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try { return await fn(); }
+      catch (e) {
+        last = e;
+        if (!(e instanceof ProviderTimeoutError) || i === attempts - 1) break;
+        await sleep(baseDelayMs * 2 ** i);
+      }
+    }
+    throw last;
+  }
+
+  /**
+   * Re-reads the capture from the provider (GET /v2/payments/captures/{id}) and applies only
+   * evidence-backed, monotonic transitions. It never creates, captures, refunds or voids anything,
+   * and never releases a reservation because a read failed.
+   */
+  async reconcileCapture(cs: CheckoutSession, source: ReconcileSource): Promise<{ checkout: CheckoutSession; outcome: ReconcileOutcome; providerStatus: string | null }> {
+    if (!cs.captureId) return { checkout: cs, outcome: "NOT_APPLICABLE", providerStatus: null };
+    let cap: ProviderCapture;
+    try { cap = await this.readWithRetry(() => this.payments.getCapture(cs.captureId!)); }
+    catch (e) {
+      this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_PROVIDER_UNAVAILABLE", { source, reason: errorText(e) });
+      return { checkout: cs, outcome: "PROVIDER_UNAVAILABLE", providerStatus: null };
+    }
+    cs = this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); // freshest local state
+    const ev = { source, providerStatus: cap.status, reason: cap.reason, captureId: cap.captureId };
+    if (cap.captureId !== cs.captureId) {
+      this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_CAPTURE_ID_MISMATCH", ev);
+      return { checkout: cs, outcome: "CAPTURE_ID_MISMATCH", providerStatus: cap.status };
+    }
+    const amountOk = !!cap.amount && cap.amount.amountMinor === cs.totalMinor && cap.amount.currency === cs.currency;
+    if (!amountOk) {
+      this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_AMOUNT_MISMATCH", ev);
+      if (cs.state === "CAPTURE_PENDING" || cs.state === "UNKNOWN")
+        cs = this.sessions.transition(cs, "UNKNOWN", { failureCode: "CAPTURE_AMOUNT_MISMATCH", failureReason: "Provider capture amount differs from the approved summary; manual review required", providerVerifiedAt: this.now() });
+      return { checkout: cs, outcome: "AMOUNT_MISMATCH", providerStatus: cap.status };
+    }
+    const awaiting = cs.state === "CAPTURE_PENDING" || cs.state === "UNKNOWN";
+    const verifiedAt = this.now();
+    if (cap.status === "PENDING") {
+      if (awaiting) {
+        cs = cs.state === "UNKNOWN"
+          ? this.sessions.transition(cs, "CAPTURE_PENDING", { captureStatus: "PENDING", failureCode: "CAPTURE_PENDING", failureReason: cap.reason ?? "PENDING", providerVerifiedAt: verifiedAt, providerPendingReason: cap.reason })
+          : this.sessions.recordProviderVerification(cs, "PENDING", cap.reason);
+        this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILED_STILL_PENDING", ev);
+        return { checkout: cs, outcome: "STILL_PENDING", providerStatus: cap.status };
+      }
+      this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_CONFLICT_IGNORED", { ...ev, localState: cs.state, rule: "no regression from a final local state" });
+      return { checkout: cs, outcome: "CONFLICT_IGNORED", providerStatus: cap.status };
+    }
+    if (cap.status === "COMPLETED") {
+      if (!awaiting) {
+        this.audit.append(cs.checkoutSessionId, cs.userId, cs.state === "COMPLETED" ? "RECONCILED_NO_CHANGE" : "RECONCILE_CONFLICT_IGNORED", { ...ev, localState: cs.state });
+        return { checkout: cs, outcome: cs.state === "COMPLETED" ? "NO_CHANGE" : "CONFLICT_IGNORED", providerStatus: cap.status };
+      }
+      if (cs.state === "UNKNOWN") cs = this.sessions.transition(cs, "CAPTURE_PENDING", { captureStatus: "COMPLETED" });
+      cs = this.sessions.transition(cs, "COMPLETED", { captureStatus: "COMPLETED", failureCode: null, failureReason: null, providerVerifiedAt: verifiedAt, providerPendingReason: null });
+      if (cs.mandateId) this.policy.consume(cs.mandateId, cs.userId, cs.reservedMinor);
+      this.audit.append(cs.checkoutSessionId, cs.userId, "PAYMENT_COMPLETED_VERIFIED", ev);
+      return { checkout: cs, outcome: "SETTLED_COMPLETED", providerStatus: cap.status };
+    }
+    if (cap.status === "DECLINED" || cap.status === "FAILED") {
+      if (!awaiting) {
+        this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_CONFLICT_IGNORED", { ...ev, localState: cs.state });
+        return { checkout: cs, outcome: "CONFLICT_IGNORED", providerStatus: cap.status };
+      }
+      // Definitive provider outcome: nothing was paid, so the reservation is returned.
+      const out = this.sessions.transition(cs, "FAILED", { reservedMinor: 0, captureStatus: cap.status, failureCode: "CAPTURE_DECLINED", failureReason: cap.reason ?? `Capture ${cap.status}`, providerVerifiedAt: verifiedAt, providerPendingReason: null });
+      if (cs.mandateId && cs.reservedMinor > 0) this.policy.release(cs.mandateId, cs.userId, cs.reservedMinor, cs.checkoutSessionId);
+      this.audit.append(cs.checkoutSessionId, cs.userId, "PAYMENT_FAILED_VERIFIED", ev);
+      return { checkout: out, outcome: "SETTLED_FAILED", providerStatus: cap.status };
+    }
+    if (cap.status === "REFUNDED" || cap.status === "PARTIALLY_REFUNDED") {
+      if (cs.state === "REFUNDED") { this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILED_NO_CHANGE", ev); return { checkout: cs, outcome: "NO_CHANGE", providerStatus: cap.status }; }
+      if (cs.state !== "COMPLETED" && !awaiting) {
+        this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_CONFLICT_IGNORED", { ...ev, localState: cs.state });
+        return { checkout: cs, outcome: "CONFLICT_IGNORED", providerStatus: cap.status };
+      }
+      // A refund implies the funds were captured: the reservation becomes spend and the mandate is NOT restored.
+      if (awaiting && cs.mandateId && cs.reservedMinor > 0) this.policy.consume(cs.mandateId, cs.userId, cs.reservedMinor);
+      cs = this.sessions.transition(cs, "REFUNDED", { captureStatus: cap.status, failureCode: null, failureReason: null, providerVerifiedAt: verifiedAt, providerPendingReason: null });
+      this.audit.append(cs.checkoutSessionId, cs.userId, "PAYMENT_REFUNDED_VERIFIED", ev);
+      return { checkout: cs, outcome: "REFUNDED", providerStatus: cap.status };
+    }
+    this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_UNRECOGNIZED_STATUS", ev);
+    return { checkout: cs, outcome: "NO_CHANGE", providerStatus: cap.status };
+  }
+
+  /** Startup recovery: re-read every capture whose outcome is not final. Read-only toward the provider. */
+  async reconcileAwaitingSettlement(source: ReconcileSource = "STARTUP") {
+    const results: Array<{ checkoutSessionId: string; outcome: ReconcileOutcome; state: string }> = [];
+    for (const cs of this.sessions.listAwaitingProviderSettlement()) {
+      const r = await this.reconcileCapture(cs, source);
+      results.push({ checkoutSessionId: cs.checkoutSessionId, outcome: r.outcome, state: r.checkout.state });
+    }
+    return results;
+  }
+
+  // ---------------------------------------------------------------- webhooks
+  /**
+   * Authenticated, replay-safe webhook handling. The event only identifies WHICH capture to re-read;
+   * the state change (if any) comes from the authoritative provider GET in reconcileCapture.
+   */
+  async handlePayPalWebhook(headers: WebhookHeaders, rawBody: string): Promise<{ http: number; outcome: string }> {
+    const verifier = this.config.webhookVerifier;
+    if (!verifier) return { http: 503, outcome: "WEBHOOKS_NOT_CONFIGURED" };
+    const v = await verifier.verify(headers, rawBody);
+    if (!v.ok) return { http: 401, outcome: `REJECTED_SIGNATURE: ${v.reason}` };
+    let body: unknown;
+    try { body = JSON.parse(rawBody); } catch { return { http: 400, outcome: "REJECTED_MALFORMED_JSON" }; }
+    const ev = parseWebhookEvent(body);
+    if ("error" in ev) return { http: 200, outcome: `IGNORED: ${ev.error}` }; // 2xx so PayPal stops retrying an event we will never handle
+    const claim = this.store.db.prepare("INSERT OR IGNORE INTO webhook_events(event_id,event_type,capture_id,received_at,outcome) VALUES (?,?,?,?,?)")
+      .run(ev.eventId, ev.eventType, ev.captureId, this.now(), "RECEIVED");
+    if (claim.changes === 0) return { http: 200, outcome: "DUPLICATE" };
+    const finish = (outcome: string, csId: string | null = null) => {
+      this.store.db.prepare("UPDATE webhook_events SET outcome=?, checkout_session_id=? WHERE event_id=?").run(outcome, csId, ev.eventId);
+      return { http: 200, outcome };
+    };
+    const cs = this.sessions.findByCaptureId(ev.captureId);
+    if (!cs) return finish("IGNORED_UNRELATED_CAPTURE");
+    if (ev.payeeMerchantId && cs.intendedPayeeId && ev.payeeMerchantId !== cs.intendedPayeeId) {
+      this.audit.append(cs.checkoutSessionId, cs.userId, "WEBHOOK_PAYEE_MISMATCH_IGNORED", { eventId: ev.eventId, eventType: ev.eventType });
+      return finish("IGNORED_PAYEE_MISMATCH", cs.checkoutSessionId);
+    }
+    this.audit.append(cs.checkoutSessionId, cs.userId, "WEBHOOK_RECEIVED", { eventId: ev.eventId, eventType: ev.eventType, claimedStatus: ev.claimedStatus });
+    const r = await this.reconcileCapture(cs, "WEBHOOK");
+    return finish(`RECONCILED_${r.outcome}`, cs.checkoutSessionId);
   }
 
   // ---------------------------------------------------------------- read-only
@@ -465,6 +619,10 @@ export class CommerceGateway {
       capture: { captureId: cs.captureId, status: cs.captureStatus },
       failure: cs.failureCode ? { code: cs.failureCode, reason: cs.failureReason } : null,
       uncertainty: cs.state === "UNKNOWN" ? "Payment outcome is not known; the server will reconcile with the provider before any retry." : cs.state === "CAPTURE_PENDING" ? "Provider has not confirmed final settlement." : null,
+      paymentStatus: paymentStatusOf(cs.state, expired),
+      payment: this.paymentDetails(cs, expired),
+      merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED" as const,
+      merchantFundsAvailability: "NOT_DETERMINED_BY_CAPTURE_API" as const,
       merchantIdentity: publicBinding(cs),
       recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId, verified: cs.actualRecipientId !== null && cs.actualRecipientId === cs.intendedPayeeId,
         provenance: cs.actualRecipientId ? (cs.provider === "PAYPAL_SANDBOX" ? "PAYMENT_PROVIDER" : "MOCK") : null },
@@ -481,6 +639,10 @@ export class CommerceGateway {
       paymentResult: completed ? { status: "COMPLETED" as const, provider: cs.provider, providerOrderId: cs.providerOrderId, captureId: cs.captureId,
         amount: { totalMinor: cs.totalMinor, currency: cs.currency }, verifiedBy: "Provider capture re-read after capture" } : null,
       paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const,
+      paymentStatus: paymentStatusOf(cs.state, false), isFinalPaymentReceipt: completed,
+      payment: this.paymentDetails(cs, false),
+      refund: cs.state === "REFUNDED" ? { status: cs.captureStatus, verifiedAt: cs.providerVerifiedAt ? new Date(cs.providerVerifiedAt).toISOString() : null } : null,
+      merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED" as const,
       merchantIdentity: publicBinding(cs), recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId },
       paymentStatusNote: completed ? (cs.provider === "MOCK_PAYPAL" ? "MOCK payment: no PayPal API was called." : "PayPal Sandbox payment: no real money moved.") : `No completed payment. Current state: ${cs.state}.`,
       merchantOrder: { status: "NOT_VERIFIED" as const, note: "Fictional demo merchant; no merchant order, shipment or fulfillment exists or is claimed." },
@@ -489,6 +651,24 @@ export class CommerceGateway {
   }
 
   // ---------------------------------------------------------------- helpers
+  private paymentDetails(cs: CheckoutSession, expired: boolean) {
+    const state = expired ? "EXPIRED" : cs.state;
+    const prohibited = ["APPROVED", "CAPTURE_PENDING", "UNKNOWN", "COMPLETED"].includes(state);
+    const next: Record<string, string> = {
+      PREPARED: "WAIT", HOLD: "OWNER_AUTHORIZATION_OR_NEW_LIMIT_REQUIRED", APPROVAL_REQUIRED: cs.approvalUrl ? "BUYER_MUST_APPROVE_AT_APPROVAL_URL" : "OWNER_MUST_AUTHORIZE_AT_USER_AUTHORIZATION_URL",
+      APPROVED: "WAIT_FOR_SERVER_CAPTURE", CAPTURE_PENDING: "WAIT_FOR_PROVIDER_SETTLEMENT_DO_NOT_RETRY", UNKNOWN: "WAIT_FOR_RECONCILIATION_DO_NOT_RETRY",
+      COMPLETED: "NONE_PAYMENT_COMPLETED_MERCHANT_ORDER_NOT_VERIFIED", FAILED: "NEW_OWNER_AUTHORIZATION_REQUIRED_FOR_ANY_NEW_ATTEMPT",
+      REFUNDED: "NONE_PAYMENT_REFUNDED", CANCELLED: "NEW_CHECKOUT_REQUIRED", EXPIRED: "NEW_CHECKOUT_REQUIRED",
+    };
+    return {
+      paymentEnvironment: paymentEnvironment(cs.provider), providerOrderId: cs.providerOrderId, captureId: cs.captureId,
+      providerCaptureStatus: cs.captureStatus, pendingReason: state === "CAPTURE_PENDING" ? (cs.providerPendingReason ?? cs.failureReason) : null,
+      lastAuthoritativeVerificationAt: cs.providerVerifiedAt ? new Date(cs.providerVerifiedAt).toISOString() : null,
+      recommendedNextAction: next[state] ?? "CHECK_STATUS_LATER", newPaymentAttemptProhibited: prohibited,
+      note: state === "CAPTURE_PENDING" ? "A pending capture is not a completed payment. Do not report this purchase as paid." : null,
+    };
+  }
+
   private livePurchaseSession(id: string, userId: string): PurchaseSession {
     let ps: PurchaseSession;
     try { ps = this.sessions.getPurchaseSession(id, userId); }
@@ -532,6 +712,25 @@ export class CommerceGateway {
       deduplicated, paymentEffect: "NO_FUNDS_CAPTURED" as const, paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const,
       note: "Funds are captured only after the buyer approves on PayPal and the server verifies that approval.",
     };
+  }
+}
+
+export type PaymentStatus = "NOT_STARTED" | "NOT_AUTHORIZED" | "APPROVAL_REQUIRED" | "APPROVED_NOT_CAPTURED" | "CAPTURE_PENDING"
+  | "PAYMENT_COMPLETED" | "PAYMENT_FAILED" | "PAYMENT_REFUNDED" | "PAYMENT_UNKNOWN" | "CANCELLED" | "EXPIRED";
+export function paymentStatusOf(state: string, expired: boolean): PaymentStatus {
+  if (expired) return "EXPIRED";
+  switch (state) {
+    case "PREPARED": return "NOT_STARTED";
+    case "HOLD": return "NOT_AUTHORIZED";
+    case "APPROVAL_REQUIRED": return "APPROVAL_REQUIRED";
+    case "APPROVED": return "APPROVED_NOT_CAPTURED";
+    case "CAPTURE_PENDING": return "CAPTURE_PENDING";
+    case "COMPLETED": return "PAYMENT_COMPLETED";
+    case "FAILED": return "PAYMENT_FAILED";
+    case "REFUNDED": return "PAYMENT_REFUNDED";
+    case "CANCELLED": return "CANCELLED";
+    case "EXPIRED": return "EXPIRED";
+    default: return "PAYMENT_UNKNOWN";
   }
 }
 

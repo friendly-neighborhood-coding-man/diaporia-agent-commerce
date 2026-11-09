@@ -31,6 +31,8 @@ export interface AppConfig {
   /** PayPal Sandbox only: DIAPORIA's own Sandbox merchant id, the real recipient of Sandbox demo payments. */
   sandboxPlatformPayeeId?: string | null;
   sandboxPlatformPayeeEmail?: string | null;
+  webhookVerifier?: import("../payment/PayPalWebhook.js").WebhookSignatureVerifier | null;
+  readRetry?: { attempts: number; baseDelayMs: number };
 }
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -51,7 +53,8 @@ export function createApp(cfg: AppConfig): App {
   const paymentExecutionEnabled = cfg.authMode === "dev" && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
   const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled,
     ...(cfg.merchantIdentity ? { merchantIdentity: cfg.merchantIdentity } : {}), sandboxPlatformPayeeId: cfg.sandboxPlatformPayeeId ?? null,
-    sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null }, now);
+    sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
+    ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}) }, now);
   const base = new URL(cfg.baseUrl);
   const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
@@ -167,6 +170,17 @@ export function createApp(cfg: AppConfig): App {
           return html(res, 403, page("Checkout not authorized", `<p class="state">${esc(out.decision.code)}</p><p>${esc(out.decision.detail)}</p><p>No payment was started.</p>`));
         }
         return send(res, 400, { error: "Unknown action" });
+      }
+
+      // ---- PayPal webhook (signature-verified; only triggers an authoritative capture read) ----
+      if (url.pathname === "/paypal/webhook") {
+        if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
+        const raw = await readText(req);
+        const out = await gateway.handlePayPalWebhook({
+          transmissionId: header(req, "paypal-transmission-id"), transmissionTime: header(req, "paypal-transmission-time"),
+          transmissionSig: header(req, "paypal-transmission-sig"), certUrl: header(req, "paypal-cert-url"), authAlgo: header(req, "paypal-auth-algo"),
+        }, raw);
+        return send(res, out.http, { outcome: out.outcome });
       }
 
       // ---- PayPal (or mock) buyer return / cancel ----
