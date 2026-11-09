@@ -9,7 +9,8 @@ export type OfferIssue =
   | "OUT_OF_STOCK" | "AVAILABILITY_UNKNOWN"
   | "NO_MERCHANT_QUOTE" | "QUOTE_STALE" | "QUOTE_OFFER_MISMATCH"
   | "TOTAL_UNKNOWN" | "CURRENCY_MISMATCH" | "OVER_BUDGET"
-  | "SUSPICIOUS_LISTING_CONTENT" | "NO_CHECKOUT_PATH" | "MERCHANT_IDENTITY_MISMATCH" | "MERCHANT_IDENTITY_UNKNOWN";
+  | "SUSPICIOUS_LISTING_CONTENT" | "NO_CHECKOUT_PATH" | "MERCHANT_IDENTITY_MISMATCH" | "MERCHANT_IDENTITY_UNKNOWN"
+  | "QUOTE_IS_ESTIMATE" | "LISTING_PRICE_ONLY" | "MERCHANT_REPORTS_UNAVAILABLE" | "QUOTE_UNVERIFIABLE";
 
 export interface CostBreakdown {
   currency: Currency;
@@ -41,6 +42,8 @@ export interface VerifiedOffer {
   listingContent: InspectedText | null;
   /** Present when merchant identity verification ran. Public subset only (masked identifier). */
   merchantIdentity?: PublicMerchantIdentity;
+  /** Merchant quote evidence when the quote came from a merchant system (e.g. a Shopify cart). */
+  quoteEvidence?: import("../quote/types.js").QuoteEvidence;
 }
 
 export type PublicMerchantIdentity = Pick<MerchantIdentityAssessment, "overall" | "legalEntity" | "paymentRelationship" | "identifierMasked" | "verifiedLegalName" | "checks" | "disclosure">;
@@ -83,8 +86,15 @@ export class MerchantOfferVerifier {
     if (identity?.overall === "UNKNOWN") issues.push("MERCHANT_IDENTITY_UNKNOWN");
     const mismatches = compareIdentity(locked, offer.listedIdentity);
     for (const m of mismatches) issues.push(`IDENTITY_MISMATCH_${m}`);
-    if (offer.availability === "OUT_OF_STOCK") issues.push("OUT_OF_STOCK");
-    if (offer.availability === "UNKNOWN") issues.push("AVAILABILITY_UNKNOWN");
+    const ev = quote?.evidence ?? null;
+    // Merchant-priced carts are the better availability source than a listing; nothing else changes.
+    const availability = ev?.variant.availableForSale === true ? "IN_STOCK" : ev?.variant.availableForSale === false ? "OUT_OF_STOCK" : offer.availability;
+    if (availability === "OUT_OF_STOCK") issues.push(ev ? "MERCHANT_REPORTS_UNAVAILABLE" : "OUT_OF_STOCK");
+    if (availability === "UNKNOWN") issues.push("AVAILABILITY_UNKNOWN");
+    if (ev?.status === "CART_ESTIMATE") issues.push("QUOTE_IS_ESTIMATE");
+    if (ev?.status === "LISTING_PRICE") issues.push("LISTING_PRICE_ONLY");
+    if (ev?.status === "UNKNOWN") issues.push("QUOTE_UNVERIFIABLE");
+    if (ev?.status === "UNAVAILABLE" && !issues.includes("MERCHANT_REPORTS_UNAVAILABLE")) issues.push("MERCHANT_REPORTS_UNAVAILABLE");
     if (offer.currency !== opts.currency) issues.push("CURRENCY_MISMATCH");
     const listingContent = offer.listingText ? inspectUntrusted(offer.listingText) : null;
     if (listingContent && isManipulative(listingContent)) issues.push("SUSPICIOUS_LISTING_CONTENT");
@@ -120,6 +130,7 @@ export class MerchantOfferVerifier {
       freshness: { observedAt: offer.observedAt, quotedAt: quote?.quotedAt ?? null, quoteExpiresAt: quote?.expiresAt ?? null, quoteAgeSeconds },
       checkoutPath, eligible: issues.length === 0, issues, listingContent,
       ...(identity ? { merchantIdentity: publicIdentity(identity) } : {}),
+      ...(ev ? { quoteEvidence: ev } : {}),
     };
   }
 

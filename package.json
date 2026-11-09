@@ -18,7 +18,9 @@
     "mandate:create": "tsx scripts/create-mandate.ts",
     "scan:secrets": "node scripts/secret-scan.mjs",
     "preflight:sandbox": "tsx scripts/sandbox-preflight.ts",
-    "demo:identity": "tsx scripts/demo-merchant-identity.ts"
+    "demo:identity": "tsx scripts/demo-merchant-identity.ts",
+    "demo:quote": "tsx scripts/demo-merchant-quote.ts",
+    "smoke:shopify": "tsx scripts/shopify-smoke.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

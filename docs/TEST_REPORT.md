@@ -183,3 +183,27 @@ Typecheck, build, `demo:e2e`, `demo:identity` and the secret scan are clean. Com
 ### Not verified live in this round
 
 A real PayPal webhook delivery, a real Sandbox capture transitioning out of `PENDING_REVIEW`, and refunds. No Sandbox order, capture, refund or other mutation was made.
+
+
+## Merchant Quote V0 round (2026-11-09, branch `feature/merchant-quote-v0`)
+
+**Evidence class: SYNTHETIC FIXTURES only.** No Shopify store was contacted, because none is configured on this machine. No PayPal call and no order were made. Payment engine and historical Sandbox records are untouched.
+
+- **Schema:** Storefront API version and schema were read from shopify.dev on 2026-11-09: api_version 2026-10, `cartCreate`, `cartDeliveryAddressesAdd`, `cartSelectedDeliveryOptionsUpdate`, `CartCost` (`subtotalAmount`, `subtotalAmountEstimated`, `totalAmount`, `totalAmountEstimated`; tax and duty fields deprecated), `CartDeliveryGroup` / `CartDeliveryOption`, `checkoutUrl`, `THROTTLED` as HTTP 200.
+- **Suite:** `npm test` gives **7 files, 98 passed, 0 failed**. `tests/merchant-quote.test.ts` adds 14 tests:
+  - request shape
+  - variant match and mismatch
+  - unavailable variant
+  - destination missing
+  - multiple rates
+  - estimated or undetermined total
+  - estimate vs verified, ineligible
+  - currency mismatch
+  - stale quote
+  - total change between observations
+  - GraphQL, user, HTTP and timeout errors
+  - invalid checkout URL
+  - fresh cart per quote with no cart secrets
+  - an MCP flow with per-user carts and no PayPal order
+- **Demos and smoke script:** `npm run demo:quote` (fixtures) shows discovery → `CART_ESTIMATE` $60.98 (estimated=false, tax not itemized) → external checkout handoff, while the lowest *verified* offer stays alpha-audio.example at $59.39. `npm run smoke:shopify` exits with setup instructions (not configured), so there is no live evidence.
+- **Not verified:** any real Shopify response, including real field values, carrier-rate behavior, the checkout URL host for stores with custom domains, and throttling in practice.

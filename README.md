@@ -47,10 +47,11 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 84 tests
+npm test            # 98 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
+npm run demo:quote     # discovery → Shopify cart estimate → external checkout handoff (fixtures)
 ```
 
 Run the server:
@@ -98,6 +99,18 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/MCP_TOOLS.md](doc
 - Known gaps: no OAuth, in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
 
 Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) for the Sandbox path, and a public HTTPS tunnel or host for remote AI clients.
+
+## Merchant Quotes — Shopify Storefront Cart (V0)
+
+DIAPORIA can ask a Shopify merchant's Storefront Cart API (2026-10) to price the exact variant for a destination: availability, delivery options, the selected rate, the cart total and whether that total is estimated. It also obtains the merchant's own checkout URL for an **external** handoff. See [docs/MERCHANT_QUOTE.md](docs/MERCHANT_QUOTE.md).
+
+| Quote capability | Implemented | Fixture-tested | Live-tested | Notes |
+|---|---|---|---|---|
+| Listing price (catalog) | ✓ | ✓ | — | Never treated as a checkout total |
+| Shopify cart estimate: variant check, availability, delivery address and options, cost, checkout URL | ✓ | ✓ (synthetic fixtures, 14 tests) | **No.** No dev store configured; run `npm run smoke:shopify` | Always `CART_ESTIMATE`. Tax is not itemized, so DIAPORIA's verified total stays unknown |
+| Final merchant-attested quote (`FINAL_QUOTE_VERIFIED`) | state defined | — | — | No provider produces it. The Storefront API gives no price guarantee |
+| External checkout handoff (merchant-hosted) | ✓ | ✓ | — | DIAPORIA does not pay Shopify merchants and creates no order |
+| Merchant order confirmation | — | — | — | Future: needs merchant-side integration |
 
 ## Merchant Identity Verification — Mocked Future Integration
 

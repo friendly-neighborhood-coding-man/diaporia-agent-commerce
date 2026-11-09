@@ -81,6 +81,8 @@ export interface MerchantQuote {
   quotedAt: string;
   expiresAt: string;
   source: string;
+  /** Provider evidence (status, provenance, delivery options, checkout handoff). Absent for fixture quotes. */
+  evidence?: import("../quote/types.js").QuoteEvidence | null;
 }
 
 export type IntentMode = "PRODUCT_DISCOVERY" | "EXACT_PRODUCT_PURCHASE";
