@@ -70,7 +70,7 @@ Both drivers execute the **same** snippets (`buildPrepareScript`, `buildObserveS
 | Expiry before takeover, and takeover timeout leading to observation instead of EXPIRED | **Verified offline** | same file |
 | Per-user isolation (separate contexts, cart refs, links and cookies) | **Verified offline** | same file |
 | KERNEL request shapes (headful, telemetry off, no replay, DELETE on finish), live URL kept out of MCP, audit and DB | **Verified offline** with a fake KERNEL backend that runs the same snippets locally | `tests/handoff-kernel-wire.test.ts` |
-| **A popup window is visible and operable through KERNEL Live View** | **NOT VERIFIED.** Needs Phase B (live, billed) | `scripts/handoff-phase-b.ts --confirm-live` |
+| **A popup window is visible and operable through KERNEL Live View, in the same browser session** | **VERIFIED live (Phase B, 2026-11-09)** with a synthetic `window.open(…, "popup,…")` popup. The human saw it and clicked and typed in it. A read-only DOM read afterwards confirmed it: popup button `CLICKED`, 5 characters typed, and the popup is a page of the same browser context. Live View events: CONNECTED, then PLAYING. | `docs/evidence/handoff-phase-b-2026-11-09T18-38-35-558Z.json` |
 | PayPal accepts login and approval from a KERNEL datacenter browser (risk checks, 2FA, bot detection) | **NOT VERIFIED.** Needs Phase C (separate owner authorization) | none |
 | `network.allowed_hosts` egress allowlist still lets PayPal checkout assets load | **NOT VERIFIED.** Off by default (`networkAllowedHosts` unset) | none |
 | Live View `readOnly=true` as a protection | **Unsupported as a security control.** It is a URL query parameter the viewer can remove. Automation pause is enforced on DIAPORIA's side instead. | KERNEL docs |
@@ -81,7 +81,7 @@ Both drivers execute the **same** snippets (`buildPrepareScript`, `buildObserveS
 | Phase | Status |
 |---|---|
 | A, offline fixture | **Done.** 20 browser tests, 31 unit and KERNEL-wire tests, and an offline demo (`npm run demo:handoff`, with `--headed` or `--interactive`). |
-| B, KERNEL Live View | **Not run.** There is no KERNEL key on the build machine, and it needs the owner's budget approval first. The script is ready: one headful browser, 10-minute hard timeout, about $0.08 at KERNEL's published $0.000133/s headful rate. It uses a `data:` test page with a `window.open` popup button and opens no payment page. |
+| B, KERNEL Live View | **PASS (synthetic popup, no payment).** One headful non-GPU browser ran for 64 s, about $0.009. The DELETE was sent and KERNEL confirmed the browser is gone, and a follow-up account check showed 0 running browsers. This proves same-session popup interaction through Live View. It does **not** prove PayPal compatibility: PayPal's own popup, login, risk checks and 2FA in a KERNEL datacenter browser remain Phase C. |
 | C, PayPal Sandbox through a controlled sandbox merchant | **Not started.** It needs separate owner authorization. Existing Sandbox orders must never be reused. |
 | D, cross-host | **Done (MOCK).** All four real hosts made a host-originated `prepare_browser_checkout` call and got the same contract: 4/4 PASS. See `docs/HANDOFF_HOST_MATRIX.md`. |
 

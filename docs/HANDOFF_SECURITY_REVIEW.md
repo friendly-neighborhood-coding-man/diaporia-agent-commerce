@@ -38,7 +38,11 @@ and has not been independently audited.
 | Screenshots, recordings, HAR, page HTML | **Not collected** | none |
 | KERNEL account-side records (usage, billing, any platform audit log) | KERNEL | Outside DIAPORIA's control. Telemetry is disabled per browser. |
 
-## Before Phase B or C
+## Phase B result (2026-11-09)
+
+The Live View URL never left the process. It appeared only in the loopback page served at a random path. The evidence file contains no `jwt` value or KERNEL host. The browser was deleted and confirmed gone after 64 s. KERNEL's `timeout_seconds` turned out to be an **idle** timeout, and KERNEL spending caps do not stop browsers that are already running. Because of that, the Phase B script enforces its own hard wall-clock DELETE, runs a detached watchdog, and verifies the deletion afterwards. The production handoff path needs the same hard limit, which is a follow-up: it currently relies on finish, cancel and expiry plus the idle timeout.
+
+## Before Phase C
 
 - Phase B: check that the Live View leaks no referrer or URL to third parties (the iframe uses `referrerpolicy="origin"`, so only the loopback origin is sent), and that the popup is visible and operable.
 - Phase C: a separately authorized, controlled Sandbox merchant with its own Sandbox app. Never reuse order 9DL148415W2504835 or capture 92U85747JU359434A, and never call capture from DIAPORIA.
