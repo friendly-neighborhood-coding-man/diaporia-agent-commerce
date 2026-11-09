@@ -55,4 +55,4 @@ The missing integration is a merchant checkout-quote source (final total with sh
 
 ## Not verified
 
-Live PayPal Sandbox order/approval/capture; any real AI host (Claude, ChatGPT, Grok); live catalog/evidence research through the private adapter; multi-process concurrency; webhooks.
+Live PayPal Sandbox order/approval/capture; remote AI hosts (claude.ai connector, ChatGPT, Grok); live catalog/evidence research through the private adapter; multi-process concurrency; webhooks.
