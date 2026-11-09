@@ -61,6 +61,33 @@ Idempotency observations:
 - No capture request was sent.
 - The buyer return was processed once.
 
+## LIVE PayPal Sandbox E2E — run 2 (2026-11-09), owner-authorized, ONE new order
+
+**Evidence class: LIVE PayPal Sandbox. No real money moved.**
+- Build `ca51567`. MCP host: Claude Code CLI talking to `http://127.0.0.1:8790/mcp`. Payments ran in `PAYPAL_SANDBOX` mode.
+- Merchant: the fictional demo merchant alpha-audio.example. This was not a retail purchase.
+- Run 1's order `9DL148415W2504835` was not captured or retried, and its unused run-1 mandate was revoked before run 2.
+
+| Step | Time (UTC) | Observed |
+|---|---|---|
+| research → compare → prepare via Claude Code, no mandate | 10:08:50 | `cs_7d85cbb3…` APPROVAL_REQUIRED, 5939 USD. Intended payee = configured Merchant ID. No order yet |
+| Owner page with a fresh $60.00 single-use limit | 10:09:21 | Mandate reserved 5939. **One** order created: `99X21669LS4807358` |
+| Buyer approval (owner, Sandbox Personal account), then return to localhost | 10:10:27 | GET order returned APPROVED with matching amount, currency and `custom_id`, so the checkout moved to APPROVED |
+| Pre-capture recipient check | 10:10:28 | Merchant identity re-check MATCH, using a fresh MOCK attestation bound to this checkout. PayPal reported `payee.merchant_id` = configured ID (**PAYMENT_PROVIDER** provenance). No email reported, so `RECIPIENT_EMAIL_NOT_REPORTED` was recorded |
+| Capture (one request, one `PayPal-Request-Id`) | 10:10:28–29 | Capture `92U85747JU359434A`, status **PENDING**, reason **PENDING_REVIEW**. Checkout moved to CAPTURE_PENDING |
+| Read-only PayPal GET of the order and the capture | ~10:12 | Order **COMPLETED** (PayPal's order status after capture), amount 59.39 USD, payee merchant id matches, **exactly 1 capture**. Capture: PENDING / PENDING_REVIEW, 59.39 USD, final_capture true |
+| Server reconcile (provider reads only, no new capture) | ~10:13 | Still CAPTURE_PENDING. Recipient verified (PAYMENT_PROVIDER). Uncertainty: "Provider has not confirmed final settlement" |
+| Status + receipt via Claude Code | ~10:14 | CAPTURE_PENDING, 5939 USD, capture `92U85747JU359434A` PENDING. `paymentResult` null. merchantOrder NOT_VERIFIED. The audit chain ends with CAPTURE_REQUESTED → CAPTURE_PENDING → RECONCILED → CAPTURE_PENDING |
+
+**Result:**
+- **Payment captured but not settled.** PayPal holds the Sandbox capture in `PENDING_REVIEW`. DIAPORIA correctly reports `CAPTURE_PENDING`, not COMPLETED, and the mandate reservation is held, not consumed, until PayPal settles.
+- **Verified live:** amount and currency, order ownership (`custom_id`), buyer approval, the recipient merchant id (authoritative PayPal data), exactly one capture, no replacement order, and a pending capture distinguished from a completed one.
+- **Not verified live:** a COMPLETED capture. Merchant fulfillment does not apply, because the merchant is a fictional demo merchant.
+
+Notes:
+- PayPal reports the order as `COMPLETED` once a capture exists, even while that capture is `PENDING`. DIAPORIA keys on the capture status.
+- The pre-capture attestation id differs from the one bound at prepare by design: each re-check requests a fresh attestation bound to the same checkout, payee and legal entity.
+
 ## Merchant identity (MOCK providers only)
 
 `tests/merchant-identity.test.ts` (14 tests) covers the following. All of it is MOCK evidence.
@@ -114,4 +141,4 @@ The missing integration is a merchant checkout-quote source (final total with sh
 
 ## Not verified
 
-Live PayPal Sandbox **capture** (order creation, buyer approval, return and order read were observed live in run 1); remote AI hosts (claude.ai connector, ChatGPT, Grok); live catalog/evidence research through the private adapter; multi-process concurrency; webhooks.
+a live Sandbox capture reaching **COMPLETED** (run 2 captured once but PayPal holds it in PENDING_REVIEW; order creation, approval, return, recipient check and capture were observed live); remote AI hosts (claude.ai connector, ChatGPT, Grok); live catalog/evidence research through the private adapter; multi-process concurrency; webhooks.
