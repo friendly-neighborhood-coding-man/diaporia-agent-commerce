@@ -47,11 +47,12 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 98 tests
+npm test            # 109 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
 npm run demo:quote     # discovery → Shopify cart estimate → external checkout handoff (fixtures)
+npm run demo:service   # evidence routing + usage ledger, community vs simulated managed billing (all MOCK)
 ```
 
 Run the server:
@@ -99,6 +100,21 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/MCP_TOOLS.md](doc
 - Known gaps: no OAuth, in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
 
 Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) for the Sandbox path, and a public HTTPS tunnel or host for remote AI clients.
+
+## Community and managed service foundation
+
+DIAPORIA stays host-neutral: users work through their own AI assistant, and there is no new shopping UI. See [docs/SERVICE_PLANE.md](docs/SERVICE_PLANE.md).
+
+| Capability | Implemented | Mock-tested | Live-tested | Planned / blocked |
+|---|---|---|---|---|
+| Evidence Router: explicit sufficiency rule; existing evidence → Tavily → KERNEL only when needed; caching; limits never skip verification | ✓ | ✓ | — | Live Tavily/KERNEL runs |
+| Usage Ledger: micro-USD supplier cost, cents billable, dedupe/retries billed once, per-request and monthly caps, estimate vs reconciled cost | ✓ | ✓ | — | Real price book |
+| Community mode: BYOK or MOCK providers, no DIAPORIA billing | ✓ | ✓ | — | KERNEL BYOK adapter |
+| Managed mode: server-owned keys, deny paid ops without ACTIVE billing, fail closed | ✓ (loopback **simulation only**) | ✓ | — | **Production authentication** (blocker) |
+| Service billing context: plans, authorization, period summary, signed webhook | ✓ (**mock** PayPal Subscriptions) | ✓ | — | PayPal Subscriptions integration and plan design (no metered-usage API) |
+| `get_usage_summary` MCP tool (read-only, per user) | ✓ | ✓ | — | — |
+
+Fixture offers are labelled `offerEvidenceClass: FIXTURE_OFFER`; merchant estimates are `MERCHANT_API_ESTIMATE`; no merchant order is ever claimed (`NO_MERCHANT_ORDER`).
 
 ## Merchant Quotes — Shopify Storefront Cart (V0)
 

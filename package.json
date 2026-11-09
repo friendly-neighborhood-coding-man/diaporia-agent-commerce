@@ -20,7 +20,8 @@
     "preflight:sandbox": "tsx scripts/sandbox-preflight.ts",
     "demo:identity": "tsx scripts/demo-merchant-identity.ts",
     "demo:quote": "tsx scripts/demo-merchant-quote.ts",
-    "smoke:shopify": "tsx scripts/shopify-smoke.ts"
+    "smoke:shopify": "tsx scripts/shopify-smoke.ts",
+    "demo:service": "tsx scripts/demo-service.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

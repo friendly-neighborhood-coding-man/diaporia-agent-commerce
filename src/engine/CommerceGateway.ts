@@ -20,6 +20,11 @@ import { normalizeIdentifier } from "../merchant-identity/identifiers.js";
 import type { MerchantIdentityAssessment } from "../merchant-identity/types.js";
 import { newCheckoutSessionId, type MerchantIdentityBinding } from "../checkout/CheckoutSessionManager.js";
 import type { MerchantOffer } from "../domain/types.js";
+import type { ServicePlane } from "./ServicePlane.js";
+import { EvidenceRouter, type RouterResult } from "../evidence/EvidenceRouter.js";
+import { UsageLimitError } from "../metering/UsageLedger.js";
+import { BillingUnavailableError, periodSummaryFrom } from "../billing/Billing.js";
+import { createHash as hashForKeys } from "node:crypto";
 import { parseWebhookEvent, type WebhookHeaders, type WebhookSignatureVerifier } from "../payment/PayPalWebhook.js";
 
 export interface GatewayConfig {
@@ -39,6 +44,8 @@ export interface GatewayConfig {
   sandboxPlatformPayeeEmail?: string | null;
   /** PayPal webhook signature verifier. Unset = the webhook endpoint is disabled. */
   webhookVerifier?: WebhookSignatureVerifier | null;
+  /** Usage metering, evidence routing, deployment mode and service billing. Optional: absent = legacy behaviour. */
+  service?: ServicePlane | null;
   /** Read-only provider retries during reconciliation (attempts, base backoff). */
   readRetry?: { attempts: number; baseDelayMs: number };
 }
@@ -112,6 +119,7 @@ export class CommerceGateway {
     if (typeof input.request !== "string" || !input.request.trim()) throw new CommerceError("INVALID_INPUT", "request is required");
     if (input.budgetMinor !== undefined && !isMinor(input.budgetMinor)) throw new CommerceError("INVALID_INPUT", "budgetMinor must be integer minor units");
     if (input.currency !== undefined && !isCurrency(input.currency)) throw new CommerceError("INVALID_INPUT", "unsupported currency");
+    await this.assertServiceAuthorized(userId);
     const intent = this.router.route(input);
     let ps = this.sessions.createPurchaseSession(userId, input.request, intent);
     this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_STARTED", { mode: intent.mode, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource });
@@ -121,16 +129,30 @@ export class CommerceGateway {
     let locked: { identity: ProductIdentity; productId: string } | null = null;
 
     if (intent.mode === "EXACT_PRODUCT_PURCHASE") {
-      const found = await this.research.searchProducts({ text: input.request, category: intent.category, brand: intent.identityHints.brand, model: intent.identityHints.model });
+      const found = await this.meteredDiscovery(userId, ps.purchaseSessionId, { text: input.request, category: intent.category, brand: intent.identityHints.brand, model: intent.identityHints.model });
       const res = this.resolver.resolve(intent.identityHints, found);
       if (res.status === "LOCKED") { locked = { identity: res.identity, productId: res.productId }; identityResult = { status: "LOCKED", lockedIdentity: res.identity, assumptions: res.assumptions }; }
       else if (res.status === "AMBIGUOUS") { identityResult = { status: "AMBIGUOUS", question: res.question, options: res.options }; unknowns.push(res.question); }
       else { identityResult = { status: "NOT_FOUND", reason: res.reason }; unknowns.push(res.reason); }
       products = locked ? found.filter((p) => p.productId === locked!.productId) : res.status === "AMBIGUOUS" ? found.filter((p) => res.options.some((o) => o.productId === p.productId)) : [];
     } else {
-      products = await this.research.searchProducts({ text: input.request, category: intent.category, brand: intent.identityHints.brand, model: null });
+      products = await this.meteredDiscovery(userId, ps.purchaseSessionId, { text: input.request, category: intent.category, brand: intent.identityHints.brand, model: null });
     }
 
+    // Evidence routing for must-have capabilities that are not yet verified (explicit sufficiency rule).
+    const routing: Record<string, RouterResult[]> = {};
+    if (this.config.service?.router && intent.mustHave.length) {
+      for (const p of products) {
+        for (const cap of intent.mustHave) {
+          if (["VERIFIED_TRUE", "VERIFIED_FALSE"].includes(capabilityStatus(p, cap).status)) continue;
+          const r = await this.config.service.router.verify(p, cap, { userId, requestId: ps.purchaseSessionId });
+          (routing[p.productId] ??= []).push(r);
+          // Only evidence that meets the sufficiency rule is merged; partial evidence never upgrades a claim.
+          if (r.sufficiency === "SUFFICIENT_TRUE" || r.sufficiency === "SUFFICIENT_FALSE")
+            p.capabilities = [...p.capabilities.filter((c) => c.capability !== cap || c.source.kind === "MANUFACTURER"), ...r.claims.filter((c) => c.source.kind !== "CATALOG_LISTING")];
+        }
+      }
+    }
     const candidates = await Promise.all(products.map(async (p) => {
       const offers = await this.research.findOffers(p.identity);
       const sameProduct = offers.filter((o) => o.productId === p.productId && o.availability === "IN_STOCK" && o.currency === intent.currency);
@@ -143,11 +165,14 @@ export class CommerceGateway {
         listingPrice: { lowestListingMinor: lowest, currency: intent.currency, note: "Search-time listing price, not a checkout total." },
         budgetFit: lowest === null || intent.budgetMinor === null ? "UNKNOWN" : lowest <= intent.budgetMinor ? "LISTING_WITHIN_BUDGET" : "LISTING_OVER_BUDGET",
         untrustedContent: [p.description, ...p.reviews].filter((x): x is NonNullable<typeof x> => !!x).map(inspectUntrusted),
+        evidenceRouting: (routing[p.productId] ?? []).map((r) => ({ capability: r.capability, sufficiency: r.sufficiency, reason: r.reason, steps: r.steps })),
       };
     }));
     const order = { SUITABLE: 0, NEEDS_VERIFICATION: 1, NOT_SUITABLE: 2 } as const;
     candidates.sort((a, b) => order[a.suitability as keyof typeof order] - order[b.suitability as keyof typeof order] || (a.listingPrice.lowestListingMinor ?? Infinity) - (b.listingPrice.lowestListingMinor ?? Infinity));
     for (const c of candidates) for (const m of c.mustHave) if (m.status === "UNKNOWN" || m.status === "LISTING_CLAIM_ONLY") unknowns.push(`${c.title}: "${m.capability}" is ${m.status === "UNKNOWN" ? "not evidenced" : "only a listing claim"}`);
+    for (const [pid, rs] of Object.entries(routing)) for (const r of rs) if (r.sufficiency === "CONTRADICTED" || r.reason === "VERIFICATION_REQUIRED_BUT_LIMIT_REACHED")
+      unknowns.push(`${pid}: "${r.capability}" ${r.sufficiency === "CONTRADICTED" ? "has contradicting independent evidence" : "still needs independent verification (usage limit reached; verification was not skipped)"}`);
     if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
 
     const research = { identity: identityResult, candidates, unknowns };
@@ -159,12 +184,64 @@ export class CommerceGateway {
       intent: { currency: intent.currency, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource, mustHave: intent.mustHave, niceToHave: intent.niceToHave, objective: intent.objective, identityHints: intent.identityHints, assumptions: intent.assumptions },
       identity: identityResult, candidates, unknowns, dataSource: this.dataSource(),
       paymentEffect: "NONE" as const,
+      usage: this.config.service ? this.requestUsage(ps.purchaseSessionId, userId) : null,
       note: "Budgets here only filter research. Spending authority comes only from a user-created purchase mandate plus PayPal buyer approval.",
     };
   }
 
+  // ---------------------------------------------------------------- service plane (metering / billing)
+  /** Managed mode: paid operations require ACTIVE service billing. Fails closed when billing is unavailable. */
+  private async assertServiceAuthorized(userId: string) {
+    const svc = this.config.service;
+    if (!svc || svc.mode !== "managed") return;
+    if (!svc.billing) throw new CommerceError("FORBIDDEN", "Managed mode without a billing provider is not allowed");
+    let auth;
+    try { auth = await svc.billing.getAuthorization(userId); }
+    catch (e) { if (e instanceof BillingUnavailableError) throw new CommerceError("BILLING_UNAVAILABLE", "Service billing is unavailable; paid research is denied until it recovers."); throw e; }
+    if (auth.status !== "ACTIVE") throw new CommerceError("BILLING_AUTHORIZATION_REQUIRED", `Managed service billing is ${auth.status}; paid operations are denied.`, { billingStatus: auth.status, source: auth.source });
+  }
+
+  private readonly discoveryCache = new Map<string, { at: number; products: CatalogProduct[] }>();
+  /** Catalog discovery (Channel3 or fixtures) with metering and reuse of identical recent searches. */
+  private async meteredDiscovery(userId: string, requestId: string, q: Parameters<CommerceResearchAdapter["searchProducts"]>[0]): Promise<CatalogProduct[]> {
+    const svc = this.config.service;
+    if (!svc) return this.research.searchProducts(q);
+    const key = "channel3:" + hashForKeys("sha256").update(JSON.stringify([q.text.toLowerCase().trim(), q.category, q.brand, q.model])).digest("hex").slice(0, 32);
+    const hit = this.discoveryCache.get(`${userId}|${key}`);
+    if (hit && this.now() - hit.at < 10 * 60_000) return structuredClone(hit.products);
+    let rec;
+    try { rec = svc.ledger.begin({ userId, requestId, provider: "CHANNEL3", operation: "search", logicalKey: `${key}:${Math.floor(this.now() / 600_000)}`, quantity: 1, unit: "search",
+      provenance: this.research.isMock ? "MOCK" : svc.mode === "managed" ? "MANAGED_LIVE" : "BYOK_LIVE", billable: svc.mode === "managed" }); }
+    catch (e) { if (e instanceof UsageLimitError) throw new CommerceError("USAGE_LIMIT", e.message, { limit: e.code }); throw e; }
+    try {
+      const products = await this.research.searchProducts(q);
+      svc.ledger.complete(rec.record.id, { success: true });
+      this.discoveryCache.set(`${userId}|${key}`, { at: this.now(), products: structuredClone(products) });
+      return products;
+    } catch (e) { svc.ledger.complete(rec.record.id, { success: false, failureReason: errorText(e) }); throw e; }
+  }
+
+  private requestUsage(requestId: string, userId: string) {
+    const recs = this.config.service!.ledger.forRequest(requestId, userId);
+    return { records: recs.map((r) => ({ provider: r.provider, operation: r.operation, status: r.status, provenance: r.provenance, attempts: r.attempts,
+      estimatedSupplierMicroUsd: r.estSupplierMicro, billableMinor: r.billableMinor })), mode: this.config.service!.mode };
+  }
+
+  /** Read-only usage and (managed) simulated service-billing summary for the calling user only. */
+  async getUsageSummary(userId: string) {
+    const svc = this.config.service;
+    if (!svc) return { mode: "NONE", usage: null, billing: { status: "NOT_CONFIGURED" } };
+    const usage = svc.ledger.summary(userId);
+    if (svc.mode !== "managed") return { mode: svc.mode, usage, billing: { status: "NOT_APPLICABLE_COMMUNITY", note: "Community mode: no DIAPORIA billing; provider costs are the operator's own." } };
+    let billingAuthorization: unknown = null;
+    try { billingAuthorization = svc.billing ? await svc.billing.getAuthorization(userId) : null; } catch { billingAuthorization = { status: "UNKNOWN", note: "billing provider unavailable" }; }
+    return { mode: svc.mode, simulation: svc.managedSimulation === true, usage, billing: { billingAuthorization, periodSummary: periodSummaryFrom(usage),
+      separation: "Service billing is independent of purchase mandates: it never authorizes a merchandise purchase, and a purchase mandate never authorizes service charges." } };
+  }
+
   // ---------------------------------------------------------------- compare_purchase_offers
   async compareOffers(userId: string, input: { researchSessionId: string; productIdentity: ProductIdentity; destination?: ShippingDestination | null }) {
+    await this.assertServiceAuthorized(userId);
     let ps = this.livePurchaseSession(input.researchSessionId, userId);
     const destination = input.destination ? validateDestination(input.destination) : ps.destination;
     let locked = ps.lockedIdentity;

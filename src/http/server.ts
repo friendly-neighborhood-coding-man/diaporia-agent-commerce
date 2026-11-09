@@ -33,6 +33,8 @@ export interface AppConfig {
   sandboxPlatformPayeeEmail?: string | null;
   webhookVerifier?: import("../payment/PayPalWebhook.js").WebhookSignatureVerifier | null;
   readRetry?: { attempts: number; baseDelayMs: number };
+  /** Metering, evidence routing, community/managed mode and service billing. */
+  service?: import("../engine/ServicePlane.js").ServicePlane | null;
 }
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -51,10 +53,13 @@ export function createApp(cfg: AppConfig): App {
   const mockPayPal = payments instanceof MockPayPalProvider ? payments : null;
   // Payment flows run only with per-user dev tokens on a loopback-only deployment.
   const paymentExecutionEnabled = cfg.authMode === "dev" && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
+  // Managed mode needs production authentication, which does not exist yet. Only an explicit loopback simulation may run it.
+  if (cfg.service?.mode === "managed" && !(cfg.service.managedSimulation === true && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl)))
+    throw new Error("Managed mode requires production authentication (not implemented). Only managedSimulation on loopback is allowed.");
   const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled,
     ...(cfg.merchantIdentity ? { merchantIdentity: cfg.merchantIdentity } : {}), sandboxPlatformPayeeId: cfg.sandboxPlatformPayeeId ?? null,
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
-    ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}) }, now);
+    ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service: cfg.service ?? null }, now);
   const base = new URL(cfg.baseUrl);
   const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
@@ -91,7 +96,7 @@ export function createApp(cfg: AppConfig): App {
 
       if (!webLimiter.take(ip)) return send(res, 429, { error: "Rate limit exceeded" });
       // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
-      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
+      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
       // ---- Owner API (human-held owner key; AI client tokens cannot reach this) ----
       if (url.pathname === "/owner/mandates" && req.method === "POST") {
@@ -170,6 +175,14 @@ export function createApp(cfg: AppConfig): App {
           return html(res, 403, page("Checkout not authorized", `<p class="state">${esc(out.decision.code)}</p><p>${esc(out.decision.detail)}</p><p>No payment was started.</p>`));
         }
         return send(res, 400, { error: "Unknown action" });
+      }
+
+      // ---- Mock service-billing webhook (simulation only; HMAC-signed) ----
+      if (url.pathname === "/billing/webhook/mock" && req.method === "POST") {
+        const billing = cfg.service?.billing as { handleWebhook?: (raw: string, sig: string | undefined) => { accepted: boolean; outcome: string } } | null | undefined;
+        if (!billing?.handleWebhook) return send(res, 503, { outcome: "BILLING_WEBHOOKS_NOT_CONFIGURED" });
+        const out = billing.handleWebhook(await readText(req), header(req, "x-mock-billing-signature"));
+        return send(res, out.accepted ? 200 : 401, { outcome: out.outcome });
       }
 
       // ---- PayPal webhook (signature-verified; only triggers an authoritative capture read) ----

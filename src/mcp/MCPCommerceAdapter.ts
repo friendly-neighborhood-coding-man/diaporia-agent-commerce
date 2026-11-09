@@ -145,6 +145,15 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     _meta: { "diaporia/effect": "READ_ONLY" },
   }, async (args) => run(SCOPES.READ, () => notFoundSafe(() => gateway.getPurchaseReceipt(principal.userId, args.checkoutSessionId)))());
 
+  if (can(SCOPES.READ)) server.registerTool("get_usage_summary", {
+    title: "Get usage and service-billing summary",
+    description: "Read the caller's metered provider usage for the current month and, in managed mode, the simulated service-billing summary. Read-only; never charges.",
+    inputSchema: {},
+    outputSchema: z.looseObject({ mode: z.string(), usage: z.looseObject({}).nullable(), billing: z.looseObject({}) }),
+    annotations: { title: "Get usage and service-billing summary", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { "diaporia/effect": "READ_ONLY" },
+  }, async () => run(SCOPES.READ, () => gateway.getUsageSummary(principal.userId))());
+
   return server;
 }
 

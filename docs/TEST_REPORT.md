@@ -207,3 +207,30 @@ A real PayPal webhook delivery, a real Sandbox capture transitioning out of `PEN
   - an MCP flow with per-user carts and no PayPal order
 - **Demos and smoke script:** `npm run demo:quote` (fixtures) shows discovery → `CART_ESTIMATE` $60.98 (estimated=false, tax not itemized) → external checkout handoff, while the lowest *verified* offer stays alpha-audio.example at $59.39. `npm run smoke:shopify` exits with setup instructions (not configured), so there is no live evidence.
 - **Not verified:** any real Shopify response, including real field values, carrier-rate behavior, the checkout URL host for stores with custom domains, and throttling in practice.
+
+
+## Integration & managed service foundation round (2026-11-10)
+
+**Evidence class: MOCK only.** No Channel3, Tavily, KERNEL, Shopify or PayPal call was made. No PayPal billing object was created.
+
+- **Merge.** `feature/merchant-quote-v0` (`5337ffc`) was reviewed against main: the only core changes are additive (quote evidence, availability from the merchant cart, and quoting of not-out-of-stock offers). It was fast-forwarded into local main, and 98/98 tests passed after the merge.
+- **Suite.** `npm test` gives **8 files, 109 passed, 0 failed**. `tests/service-plane.test.ts` adds 11 tests:
+  - router reuse and justified Tavily/KERNEL calls, with a second request making no new calls
+  - the sufficiency rule
+  - cost limit without skipping verification
+  - provider timeout recorded as failed and not billed
+  - dedupe and retries billed once
+  - an estimate is not an invoice
+  - per-request and monthly caps
+  - restart retry under the same logical key
+  - community without billing
+  - managed denied without ACTIVE billing, before provider calls
+  - forged billing webhook rejected; duplicate applied once
+  - billing outage fails closed
+  - cross-user usage isolation
+  - billing vs purchase-mandate separation in both directions
+  - managed mode refused without production auth or on a non-loopback URL
+  - provider keys never in outputs, records or serialization
+- **Demo.** `npm run demo:service` shows the same flow in both community and simulated managed mode.
+  - Tavily is called twice (Lumen ANC listing claim, Contoso missing ANC evidence) and KERNEL once (Lumen page). Products with manufacturer evidence get no extra calls.
+  - The managed simulation produces a `DRAFT_NOT_INVOICED` mock billing summary.

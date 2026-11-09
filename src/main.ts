@@ -4,6 +4,12 @@ import { ALL_CLIENT_SCOPES, DevAuth, randomSecret } from "./auth/devAuth.js";
 import { PayPalSandboxProvider } from "./payment/PayPalCheckoutAdapter.js";
 import { MockPayPalProvider } from "./payment/MockPayPalProvider.js";
 import { PayPalWebhookSignatureVerifier } from "./payment/PayPalWebhook.js";
+import { Store } from "./store/Database.js";
+import { UsageLedger } from "./metering/UsageLedger.js";
+import { EvidenceRouter } from "./evidence/EvidenceRouter.js";
+import { MockKernelInspector, MockTavilySearch, TavilySearch } from "./evidence/providers.js";
+import { MockPayPalBillingProvider } from "./billing/Billing.js";
+import { randomBytes } from "node:crypto";
 
 const env = process.env;
 const host = env.HOST ?? "127.0.0.1";
@@ -31,7 +37,23 @@ if (authMode === "dev" && !isLoopbackUrl(baseUrl)) {
   console.warn("[diaporia] PUBLIC_BASE_URL is not loopback: dev-token auth is not production auth, so payment execution is DISABLED.");
 }
 
+// ---- Service plane: metering, evidence routing, deployment mode, billing ----
+const deploymentMode = env.DIAPORIA_DEPLOYMENT_MODE === "managed" ? "managed" : "community";
+const servicePath = env.DIAPORIA_DB_PATH === ":memory:" ? ":memory:" : (env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite").replace(/\.sqlite$/, "") + "-service.sqlite";
+const serviceStore = new Store(servicePath);
+const ledger = new UsageLedger(serviceStore);
+const byok = env.EVIDENCE_PROVIDERS === "byok" && env.TAVILY_API_KEY;
+const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
+  byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode) : new MockTavilySearch(),
+  byok ? null /* KERNEL BYOK adapter is not part of the public repo yet */ : new MockKernelInspector(),
+  { billable: deploymentMode === "managed" });
+const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
+  billing: deploymentMode === "managed" ? new MockPayPalBillingProvider(serviceStore, env.MOCK_BILLING_WEBHOOK_SECRET ?? randomBytes(24).toString("hex")) : null,
+  managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
+console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, evidence providers=${byok ? "BYOK Tavily (KERNEL disabled)" : "MOCK"}`);
+
 const app = createApp({
+  service,
   host, port, baseUrl, authMode, auth,
   webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath: env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite",
   payments: (url) => provider === "paypal_sandbox"

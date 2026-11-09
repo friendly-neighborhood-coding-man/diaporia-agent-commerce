@@ -118,7 +118,7 @@ describe("HTTP hardening", () => {
     h = await startHarness({ authMode: "public-readonly-demo" });
     const client = await mcpClient(h.url);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(["compare_purchase_offers", "get_checkout_status", "get_purchase_receipt", "research_purchase"]);
+    expect(names).toEqual(["compare_purchase_offers", "get_checkout_status", "get_purchase_receipt", "get_usage_summary", "research_purchase"]);
     const { compare } = await researchAndCompare(client);
     expect(compare.lowestVerifiedEligibleOffer.offerId).toBe("off_alpha");
     expect(h.app.paymentExecutionEnabled).toBe(false);
