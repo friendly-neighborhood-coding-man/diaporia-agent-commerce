@@ -3,7 +3,7 @@
  * KernelDriver sends to /playwright/execute against a local Chromium + the fixture merchant. No KERNEL account,
  * no network, no cost. It proves the request shapes and that the live-view capability never leaks.
  */
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { KernelDriver, LocalFixtureDriver, type LocalFixtureSession } from "../src/handoff/drivers.js";
 import { OWNER } from "./helpers.js";
 import { OwnerBrowser, call, closeSharedBrowser, prepareBravo, sharedBrowser, startHandoffHarness, type HandoffHarness } from "./handoff-helpers.js";
@@ -40,6 +40,9 @@ function fakeKernel() {
 let h: HandoffHarness | null = null;
 afterEach(async () => { await h?.close(); h = null; });
 afterAll(async () => { await closeSharedBrowser(); });
+// Real Chromium: cold launch on shared CI runners can take tens of seconds, so warm it once and allow slower steps.
+vi.setConfig({ testTimeout: 60_000 });
+beforeAll(async () => { await sharedBrowser(); }, 120_000);
 
 describe("KERNEL driver (offline wire test)", () => {
   it("refuses to construct without explicit live enablement", () => {

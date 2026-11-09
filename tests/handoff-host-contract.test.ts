@@ -3,16 +3,19 @@
  * the real hosts used in the four-host interop run receive the SAME contract shape, both as structuredContent and
  * as the JSON text block that text-only CLI hosts read. This is protocol-level evidence, NOT a run of the real hosts.
  */
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { TOKENS, SONY_BLACK, CA } from "./helpers.js";
-import { closeSharedBrowser, startHandoffHarness, type HandoffHarness } from "./handoff-helpers.js";
+import { closeSharedBrowser, sharedBrowser, startHandoffHarness, type HandoffHarness } from "./handoff-helpers.js";
 
 const HOSTS = ["claude-code", "codex-mcp-client", "grok-shell-diaporia", "hermes-agent"];
 let h: HandoffHarness | null = null;
 afterEach(async () => { await h?.close(); h = null; });
 afterAll(async () => { await closeSharedBrowser(); });
+// Real Chromium: cold launch on shared CI runners can take tens of seconds, so warm it once and allow slower steps.
+vi.setConfig({ testTimeout: 60_000 });
+beforeAll(async () => { await sharedBrowser(); }, 120_000);
 
 const shape = (v: unknown): unknown => Array.isArray(v) ? v.map(shape) : v && typeof v === "object"
   ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, shape(x)])) : typeof v;

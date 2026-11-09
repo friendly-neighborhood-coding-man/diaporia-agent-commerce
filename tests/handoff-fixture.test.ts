@@ -2,16 +2,19 @@
  * Phase A — offline fixture. A real local Chromium drives a synthetic merchant whose "PayPal" button opens a MOCK
  * payment popup. No PayPal, no KERNEL, no network beyond 127.0.0.1.
  */
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { callError } from "./helpers.js";
 import { OWNER } from "./helpers.js";
 import { AutomationPausedError } from "../src/handoff/drivers.js";
 import { fixtureRecipe } from "../src/handoff/fixtureMerchant.js";
-import { OwnerBrowser, TOKENS, call, closeSharedBrowser, humanPage, humanPaysInPopup, mcpClient, prepareBravo, startHandoffHarness, type HandoffHarness } from "./handoff-helpers.js";
+import { OwnerBrowser, TOKENS, call, closeSharedBrowser, sharedBrowser, humanPage, humanPaysInPopup, mcpClient, prepareBravo, startHandoffHarness, type HandoffHarness } from "./handoff-helpers.js";
 
 let h: HandoffHarness | null = null;
 afterEach(async () => { await h?.close(); h = null; });
 afterAll(async () => { await closeSharedBrowser(); });
+// Real Chromium: cold launch on shared CI runners can take tens of seconds, so warm it once and allow slower steps.
+vi.setConfig({ testTimeout: 60_000 });
+beforeAll(async () => { await sharedBrowser(); }, 120_000);
 
 const EXPECTED_TOTAL = 4999 + 599 + 400; // item + shipping + 8% tax (rounded) as displayed by the fixture
 
