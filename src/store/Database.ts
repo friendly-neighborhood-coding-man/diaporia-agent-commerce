@@ -54,6 +54,17 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA busy_timeout = 5000;");
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /** Additive, idempotent column migrations (older local databases keep working). */
+  private migrate(): void {
+    const cols = new Set((this.db.prepare("PRAGMA table_info(checkout_sessions)").all() as Array<{ name: string }>).map((c) => c.name));
+    const add: Array<[string, string]> = [
+      ["merchant_identity_json", "TEXT"], ["intended_payee_id", "TEXT"], ["payee_relationship", "TEXT"],
+      ["attestation_id", "TEXT"], ["attestation_expires_at", "INTEGER"], ["actual_recipient_id", "TEXT"],
+    ];
+    for (const [name, type] of add) if (!cols.has(name)) this.db.exec(`ALTER TABLE checkout_sessions ADD COLUMN ${name} ${type}`);
   }
 
   private depth = 0;

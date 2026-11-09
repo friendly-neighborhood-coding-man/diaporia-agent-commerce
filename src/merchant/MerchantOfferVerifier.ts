@@ -2,13 +2,14 @@ import type { CheckoutCapability, MerchantOffer, MerchantQuote, ProductIdentity 
 import { sumKnown, type Currency } from "../domain/money.js";
 import { compareIdentity, type IdentityMismatch } from "../identity/ProductIdentityResolver.js";
 import { inspectUntrusted, isManipulative, type InspectedText } from "../security/untrusted.js";
+import type { MerchantIdentityAssessment } from "../merchant-identity/types.js";
 
 export type OfferIssue =
   | `IDENTITY_MISMATCH_${IdentityMismatch}`
   | "OUT_OF_STOCK" | "AVAILABILITY_UNKNOWN"
   | "NO_MERCHANT_QUOTE" | "QUOTE_STALE" | "QUOTE_OFFER_MISMATCH"
   | "TOTAL_UNKNOWN" | "CURRENCY_MISMATCH" | "OVER_BUDGET"
-  | "SUSPICIOUS_LISTING_CONTENT" | "NO_CHECKOUT_PATH";
+  | "SUSPICIOUS_LISTING_CONTENT" | "NO_CHECKOUT_PATH" | "MERCHANT_IDENTITY_MISMATCH" | "MERCHANT_IDENTITY_UNKNOWN";
 
 export interface CostBreakdown {
   currency: Currency;
@@ -38,6 +39,14 @@ export interface VerifiedOffer {
   eligible: boolean;
   issues: OfferIssue[];
   listingContent: InspectedText | null;
+  /** Present when merchant identity verification ran. Public subset only (masked identifier). */
+  merchantIdentity?: PublicMerchantIdentity;
+}
+
+export type PublicMerchantIdentity = Pick<MerchantIdentityAssessment, "overall" | "legalEntity" | "paymentRelationship" | "identifierMasked" | "verifiedLegalName" | "checks" | "disclosure">;
+export function publicIdentity(a: MerchantIdentityAssessment): PublicMerchantIdentity {
+  return { overall: a.overall, legalEntity: a.legalEntity, paymentRelationship: a.paymentRelationship, identifierMasked: a.identifierMasked,
+    verifiedLegalName: a.verifiedLegalName, checks: a.checks, disclosure: a.disclosure };
 }
 
 export interface OfferComparison {
@@ -68,8 +77,10 @@ export interface VerifyOptions {
  * budget, no manipulative merchant content, and some checkout path.
  */
 export class MerchantOfferVerifier {
-  verifyOne(locked: ProductIdentity, offer: MerchantOffer, quote: MerchantQuote | null, opts: VerifyOptions): VerifiedOffer {
+  verifyOne(locked: ProductIdentity, offer: MerchantOffer, quote: MerchantQuote | null, opts: VerifyOptions, identity?: MerchantIdentityAssessment): VerifiedOffer {
     const issues: OfferIssue[] = [];
+    if (identity?.overall === "MISMATCH") issues.push("MERCHANT_IDENTITY_MISMATCH");
+    if (identity?.overall === "UNKNOWN") issues.push("MERCHANT_IDENTITY_UNKNOWN");
     const mismatches = compareIdentity(locked, offer.listedIdentity);
     for (const m of mismatches) issues.push(`IDENTITY_MISMATCH_${m}`);
     if (offer.availability === "OUT_OF_STOCK") issues.push("OUT_OF_STOCK");
@@ -108,11 +119,12 @@ export class MerchantOfferVerifier {
       quoteId: quote?.quoteId ?? null, cost, listingPriceMinor: offer.itemPriceMinor,
       freshness: { observedAt: offer.observedAt, quotedAt: quote?.quotedAt ?? null, quoteExpiresAt: quote?.expiresAt ?? null, quoteAgeSeconds },
       checkoutPath, eligible: issues.length === 0, issues, listingContent,
+      ...(identity ? { merchantIdentity: publicIdentity(identity) } : {}),
     };
   }
 
-  compare(locked: ProductIdentity, items: Array<{ offer: MerchantOffer; quote: MerchantQuote | null }>, opts: VerifyOptions): OfferComparison {
-    const verified = items.map(({ offer, quote }) => this.verifyOne(locked, offer, quote, opts));
+  compare(locked: ProductIdentity, items: Array<{ offer: MerchantOffer; quote: MerchantQuote | null; identity?: MerchantIdentityAssessment }>, opts: VerifyOptions): OfferComparison {
+    const verified = items.map(({ offer, quote, identity }) => this.verifyOne(locked, offer, quote, opts, identity));
     const byTotal = (a: VerifiedOffer, b: VerifiedOffer) => a.cost!.totalMinor! - b.cost!.totalMinor! || a.offerId.localeCompare(b.offerId);
     const eligible = verified.filter((v) => v.eligible).sort(byTotal);
     const ineligible = verified.filter((v) => !v.eligible);

@@ -58,6 +58,16 @@ describe("PayPalSandboxProvider (offline, fake fetch)", () => {
     await expect(p3.getOrder("5O190127TN364715T")).rejects.toBeInstanceOf(ProviderTimeoutError);
   });
 
+  it("sends the intended payee and reads the actual recipient from the documented payee field", async () => {
+    const { f, calls } = fakeFetch((url, init) => url.endsWith("/token") ? oauth : init.method === "POST"
+      ? { status: 201, body: { id: "5O190127TN364715T", links: [{ rel: "payer-action", href: "https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T" }] } }
+      : { status: 200, body: { id: "5O190127TN364715T", status: "APPROVED", purchase_units: [{ custom_id: "cs_1", payee: { merchant_id: "SANDBOXPLATFORM01" }, amount: { currency_code: "USD", value: "59.39" } }] } });
+    const p = new PayPalSandboxProvider({ clientId: "id", clientSecret: fakeSecret, env: "SANDBOX", fetchImpl: f });
+    await p.createOrder({ checkoutSessionId: "cs_1", amount: { currency: "USD", amountMinor: 5939 }, description: "d", returnUrl: "http://127.0.0.1/r", cancelUrl: "http://127.0.0.1/c", idempotencyKey: "k", payeeMerchantId: "SANDBOXPLATFORM01" });
+    expect(JSON.parse(String(calls[1]!.init.body)).purchase_units[0].payee).toEqual({ merchant_id: "SANDBOXPLATFORM01" });
+    expect((await p.getOrder("5O190127TN364715T")).payee).toEqual({ merchantId: "SANDBOXPLATFORM01" });
+  });
+
   it("parses PENDING captures and reads money as integer minor units", async () => {
     const { f } = fakeFetch((url) => url.endsWith("/token") ? oauth : { status: 201, body: { id: "5O190127TN364715T", status: "COMPLETED",
       purchase_units: [{ payments: { captures: [{ id: "3C679366HH908993F", status: "PENDING", status_details: { reason: "PENDING_REVIEW" }, amount: { currency_code: "USD", value: "59.39" } }] } }] } });

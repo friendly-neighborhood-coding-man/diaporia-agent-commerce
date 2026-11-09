@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CatalogProduct, MerchantOffer, MerchantQuote, ProductIdentity, ShippingDestination } from "../domain/types.js";
 import { FIXTURE_OFFERS, FIXTURE_PRODUCTS } from "./fixtures.js";
 import { normalizeModel } from "../identity/ProductIdentityResolver.js";
+import { MERCHANT_CLAIMS } from "../merchant-identity/fixtures.js";
 
 export interface ProductSearchQuery {
   text: string;
@@ -54,7 +55,7 @@ export class MockCommerceResearchAdapter implements CommerceResearchAdapter {
       .filter((p) => p.identity.brand.toLowerCase() === identity.brand.toLowerCase() && normalizeModel(p.identity.model) === normalizeModel(identity.model))
       .map((p) => p.productId));
     return FIXTURE_OFFERS.filter((f) => productIds.has(f.offer.productId))
-      .map((f) => ({ ...structuredClone(f.offer), observedAt }));
+      .map((f) => ({ ...structuredClone(f.offer), observedAt, identityClaim: structuredClone(MERCHANT_CLAIMS[f.offer.merchantDomain] ?? null) }));
   }
 
   async getQuote(offerId: string, quantity: number, destination: ShippingDestination | null): Promise<MerchantQuote | null> {

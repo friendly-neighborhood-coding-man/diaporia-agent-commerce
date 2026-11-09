@@ -33,6 +33,7 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 | Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** Need a public HTTPS endpoint; only research-only public mode is available without OAuth |
 | Production user authentication (OAuth 2.1 for MCP) | **Not implemented.** Dev-only per-user tokens on loopback; public deployments run research-only and payment is disabled |
 | Live product research (catalog search, independent evidence) | Not in this public repo. The port `CommerceResearchAdapter` is public; the private DIAPORIA Buy app has an adapter over its Channel3 catalog and manufacturer registry |
+| Merchant identity verification (registry + recipient attestation) | **MOCK providers only**: workflow implemented and mock-tested; no official registry or PayPal attestation integrated (see below) |
 | Merchant fulfillment / shipping | Not provided and never claimed. Sandbox payments go to a fictional demo merchant |
 | PayPal Agent Ready, Store Sync | Not integrated (see roadmap below) |
 
@@ -42,9 +43,10 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 51 tests
+npm test            # 67 tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
+npm run demo:identity  # valid merchant vs impersonator, all MOCK
 ```
 
 Run the server:
@@ -92,6 +94,30 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/MCP_TOOLS.md](doc
 - Known gaps: no OAuth, in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
 
 Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) for the Sandbox path, and a public HTTPS tunnel or host for remote AI clients.
+
+## Merchant Identity Verification — Mocked Future Integration
+
+DIAPORIA currently demonstrates the merchant identity verification workflow with **simulated** business-registry and payment-recipient attestation providers. Run it with `npm run demo:identity`. Details are in [docs/MERCHANT_IDENTITY.md](docs/MERCHANT_IDENTITY.md).
+
+- **Official Korean and US registry integrations are not implemented.** The KR and US registries in this repo are mocks holding fictional entries.
+- **PayPal-side merchant identity attestation is not implemented.** PayPal recipient identity attestation is a *proposed partner capability*, not an existing verified public API feature. DIAPORIA does not call or imitate any PayPal identity endpoint.
+- DIAPORIA would welcome access to appropriate PayPal partner APIs if such capabilities become available.
+
+The workflow keeps two layers apart: the **legal entity** (registration exists, is active, name and jurisdiction match) and the **payment relationship** (the receiving account is attested to that entity and authorized for this merchant id and domain).
+- A registration number on its own never verifies anything. An impersonator quoting a real company's number still fails on the payment relationship.
+- Results are strictly `MATCH`, `MISMATCH` or `UNKNOWN`, and `UNKNOWN` never becomes `MATCH`.
+- The binding is written into the checkout summary. Before capture, the server compares the actual order recipient reported by the payment provider with the intended payee, and fails closed on any mismatch.
+
+| Capability | Implemented code | Mock-tested | Real PayPal Sandbox-tested | Future integration |
+|---|---|---|---|---|
+| KR registration number normalization + check digit, US EIN format | ✓ | ✓ | n/a | — |
+| Legal-entity check against a business registry | ✓ (port + mock KR/US registries) | ✓ | — | Official KR / US registries |
+| Payment-recipient attestation (payee ↔ legal entity ↔ merchant/domain) | ✓ (port + mock provider) | ✓ | — | PayPal partner capability, if offered |
+| Checkout binding of business, offer, intended payee and attestation | ✓ | ✓ | — | — |
+| Actual order recipient check before capture | ✓ | ✓ (mock order payee) | **Not yet run.** Uses the documented Orders v2 `payee.merchant_id`; needs `PAYPAL_SANDBOX_PAYEE_MERCHANT_ID` | — |
+| Negative cases: stolen registration, payee substitution, inconsistent entity, altered merchant id, stale/revoked attestation | ✓ | ✓ (tests/merchant-identity.test.ts) | — | — |
+
+In PayPal Sandbox mode the real recipient is DIAPORIA's own Sandbox account, not the fictional merchant. The summary labels this as `DIAPORIA_SANDBOX_PLATFORM_ACCOUNT`.
 
 ## PayPal Agentic Commerce — Integration Roadmap
 

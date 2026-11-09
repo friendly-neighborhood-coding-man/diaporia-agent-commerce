@@ -72,6 +72,7 @@ export class PayPalSandboxProvider implements PaymentProvider {
       purchase_units: [{
         reference_id: "diaporia-agent-commerce", custom_id: input.checkoutSessionId, description: input.description.slice(0, 127),
         amount: { currency_code: input.amount.currency, value: formatMinor(input.amount.amountMinor, input.amount.currency) },
+        ...(input.payeeMerchantId ? { payee: { merchant_id: input.payeeMerchantId } } : {}),
       }],
       payment_source: { paypal: { experience_context: {
         user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING", brand_name: "DIAPORIA Sandbox Demo",
@@ -93,7 +94,9 @@ export class PayPalSandboxProvider implements PaymentProvider {
     const r = await this.api("GET", `/v2/checkout/orders/${orderId}`, "get order");
     const pu = obj(Array.isArray(r.purchase_units) ? r.purchase_units[0] : null);
     const caps = Array.isArray(obj(pu.payments).captures) ? (obj(pu.payments).captures as unknown[]).map(parseCapture) : [];
-    return { orderId: String(r.id), status: orderStatus(r.status), amount: money(pu.amount), customId: typeof pu.custom_id === "string" ? pu.custom_id : null, captures: caps };
+    const payeeId = obj(pu.payee).merchant_id;
+    return { orderId: String(r.id), status: orderStatus(r.status), amount: money(pu.amount), customId: typeof pu.custom_id === "string" ? pu.custom_id : null, captures: caps,
+      payee: { merchantId: typeof payeeId === "string" ? payeeId : null } };
   }
 
   async captureOrder(orderId: string, idempotencyKey: string): Promise<ProviderCapture> {

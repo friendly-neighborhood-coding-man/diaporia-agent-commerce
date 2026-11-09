@@ -9,6 +9,7 @@ import { assertTransition, InvalidTransitionError } from "../src/checkout/stateM
 import { inspectUntrusted, isManipulative } from "../src/security/untrusted.js";
 import { redact } from "../src/security/redact.js";
 import { SONY_BLACK, CA } from "./helpers.js";
+import { defaultMockMerchantIdentityVerifier } from "../src/engine/CommerceGateway.js";
 
 describe("money (integer minor units)", () => {
   it("parses and formats without floating point", () => {
@@ -64,7 +65,9 @@ describe("MerchantOfferVerifier", () => {
   const verifier = new MerchantOfferVerifier();
   async function compare(destination: typeof CA | null, budgetMinor: number | null = 6000) {
     const offers = await adapter.findOffers(SONY_BLACK);
-    const items = await Promise.all(offers.map(async (offer) => ({ offer, quote: await adapter.getQuote(offer.offerId, 1, destination) })));
+    const identity = defaultMockMerchantIdentityVerifier();
+    const items = await Promise.all(offers.map(async (offer) => ({ offer, quote: await adapter.getQuote(offer.offerId, 1, destination),
+      identity: await identity.verify({ offer, claim: offer.identityClaim ?? null }) })));
     return verifier.compare(SONY_BLACK, items, { now: Date.now(), currency: "USD", budgetMinor });
   }
   const issuesOf = (c: Awaited<ReturnType<typeof compare>>, id: string) => [...c.eligible, ...c.ineligible].find((o) => o.offerId === id)!.issues;
@@ -94,6 +97,13 @@ describe("MerchantOfferVerifier", () => {
     const c = await compare(null);
     expect(c.lowestVerifiedEligible).toBeNull();
     expect(issuesOf(c, "off_alpha")).toContain("TOTAL_UNKNOWN");
+  });
+  it("listing checks alone would pick the impersonator; identity verification excludes it", async () => {
+    const offers = await adapter.findOffers(SONY_BLACK);
+    const items = await Promise.all(offers.map(async (offer) => ({ offer, quote: await adapter.getQuote(offer.offerId, 1, CA) })));
+    expect(verifier.compare(SONY_BLACK, items, { now: Date.now(), currency: "USD", budgetMinor: 6000 }).lowestVerifiedEligible?.offerId).toBe("off_imposter");
+    const c = await compare(CA);
+    expect(issuesOf(c, "off_imposter")).toContain("MERCHANT_IDENTITY_MISMATCH");
   });
   it("excludes merchant listings that try to instruct the agent", async () => {
     const c = await compare(CA);

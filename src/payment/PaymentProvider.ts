@@ -6,7 +6,11 @@ export type ProviderOrderStatus = "CREATED" | "SAVED" | "APPROVED" | "VOIDED" | 
 export type ProviderCaptureStatus = "COMPLETED" | "PENDING" | "DECLINED" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED" | "UNRECOGNIZED";
 
 export interface ProviderCapture { captureId: string; status: ProviderCaptureStatus; amount: ProviderMoney | null; reason: string | null }
-export interface ProviderOrder { orderId: string; status: ProviderOrderStatus; amount: ProviderMoney | null; customId: string | null; captures: ProviderCapture[] }
+export interface ProviderOrder {
+  orderId: string; status: ProviderOrderStatus; amount: ProviderMoney | null; customId: string | null; captures: ProviderCapture[];
+  /** Recipient as reported by the payment provider for this order (null if not reported). */
+  payee: { merchantId: string | null };
+}
 
 export interface CreateOrderInput {
   checkoutSessionId: string;
@@ -15,6 +19,8 @@ export interface CreateOrderInput {
   returnUrl: string;
   cancelUrl: string;
   idempotencyKey: string;
+  /** Intended recipient account. Omitted = provider default (the API caller's own account). */
+  payeeMerchantId?: string | null;
 }
 
 /** Network timeout or connection loss: the remote outcome is UNKNOWN and must be reconciled. */

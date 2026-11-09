@@ -25,7 +25,7 @@ Input: `researchSessionId`, `productIdentity`, optional `destination {country, r
 
 Output: `state` (`OFFER_VERIFIED`|`HOLD`), `eligibleOffers[]`, `ineligibleOffers[]` each with `cost {itemMinor, shippingMinor, taxMinor, feesMinor, discountMinor, totalMinor, unknownComponents}`, `freshness`, `checkoutPath` (`PAYPAL_SANDBOX_DEMO_MERCHANT`|`EXTERNAL_MERCHANT_CHECKOUT`|`NONE`), `issues[]`; `lowestVerifiedEligibleOffer`, `lowestPayPalCheckoutableOffer`, `holdReasons[]`.
 
-Issue codes: `IDENTITY_MISMATCH_{BRAND,MODEL,VARIANT,CONDITION,SKU}`, `OUT_OF_STOCK`, `AVAILABILITY_UNKNOWN`, `NO_MERCHANT_QUOTE`, `QUOTE_STALE`, `QUOTE_OFFER_MISMATCH`, `TOTAL_UNKNOWN`, `CURRENCY_MISMATCH`, `OVER_BUDGET`, `SUSPICIOUS_LISTING_CONTENT`, `NO_CHECKOUT_PATH`.
+Issue codes: `IDENTITY_MISMATCH_{BRAND,MODEL,VARIANT,CONDITION,SKU}`, `OUT_OF_STOCK`, `AVAILABILITY_UNKNOWN`, `NO_MERCHANT_QUOTE`, `QUOTE_STALE`, `QUOTE_OFFER_MISMATCH`, `TOTAL_UNKNOWN`, `CURRENCY_MISMATCH`, `OVER_BUDGET`, `SUSPICIOUS_LISTING_CONTENT`, `NO_CHECKOUT_PATH`, `MERCHANT_IDENTITY_MISMATCH`, `MERCHANT_IDENTITY_UNKNOWN`. Each offer also carries `merchantIdentity { overall, legalEntity, paymentRelationship, identifierMasked, verifiedLegalName, checks[] }` (see MERCHANT_IDENTITY.md).
 
 ## prepare_checkout
 
@@ -40,11 +40,11 @@ Server steps: session must be `OFFER_VERIFIED`; offer must have been eligible; a
 
 Output also includes the immutable `purchaseSummary`, its `summaryHash`, `expiresAt`, `paymentEffect: "NO_FUNDS_CAPTURED"`.
 
-Error codes: `NOT_FOUND`, `INVALID_INPUT`, `INVALID_STATE`, `IDENTITY_MISMATCH`, `OFFER_NOT_ELIGIBLE`, `CLIENT_LIMIT_EXCEEDED`, `SESSION_EXPIRED`, `FORBIDDEN`.
+Error codes: `NOT_FOUND`, `INVALID_INPUT`, `INVALID_STATE`, `IDENTITY_MISMATCH`, `OFFER_NOT_ELIGIBLE`, `CLIENT_LIMIT_EXCEEDED`, `SESSION_EXPIRED`, `FORBIDDEN`, `MERCHANT_IDENTITY_MISMATCH`, `MERCHANT_IDENTITY_UNKNOWN`, `MERCHANT_RECIPIENT_UNKNOWN`. The `purchaseSummary.merchantIdentity` binding (masked identifier, legal name, attested and intended payee, payee relationship, attestation id/expiry, provenance) is covered by `summaryHash`.
 
 ## get_checkout_status
 
-Output: `state`, `stateIsServerVerified: true`, `amount`, `approval {required, approvalUrl, buyerApprovalVerified}`, `capture {captureId, status}`, `failure`, `uncertainty`, `fulfillment: "NOT_VERIFIED"`.
+Output: `state`, `stateIsServerVerified: true`, `amount`, `approval {required, approvalUrl, buyerApprovalVerified}`, `capture {captureId, status}`, `failure`, `uncertainty`, `merchantIdentity`, `recipient { intendedPayeeId, actualRecipientId, verified, provenance }`, `paymentEnvironment`, `fulfillment: "NOT_VERIFIED"`. Identity failures before capture: `MERCHANT_IDENTITY_MISMATCH`, `MERCHANT_IDENTITY_UNKNOWN`, `MERCHANT_RECIPIENT_MISMATCH`, `MERCHANT_RECIPIENT_UNVERIFIED` (state `FAILED`, nothing captured).
 
 ## get_purchase_receipt
 

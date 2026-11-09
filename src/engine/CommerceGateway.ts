@@ -13,6 +13,13 @@ import { ProviderError, ProviderTimeoutError, type PaymentProvider, type Provide
 import { inspectUntrusted } from "../security/untrusted.js";
 import type { Store } from "../store/Database.js";
 import { CommerceError } from "./errors.js";
+import { MerchantIdentityVerifier } from "../merchant-identity/MerchantIdentityVerifier.js";
+import { CompositeBusinessRegistry, MockKoreanBusinessRegistry, MockPayPalRecipientAttestationProvider, MockUSBusinessRegistry } from "../merchant-identity/providers.js";
+import { ATTESTATIONS, KR_REGISTRY, US_REGISTRY } from "../merchant-identity/fixtures.js";
+import { normalizeIdentifier } from "../merchant-identity/identifiers.js";
+import type { MerchantIdentityAssessment } from "../merchant-identity/types.js";
+import { newCheckoutSessionId, type MerchantIdentityBinding } from "../checkout/CheckoutSessionManager.js";
+import type { MerchantOffer } from "../domain/types.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -20,6 +27,19 @@ export interface GatewayConfig {
   /** false on public deployments without production auth: payment flows return HOLD. */
   paymentExecutionEnabled: boolean;
   checkoutTtlMs?: number;
+  /** Merchant identity verifier. Defaults to the MOCK registries and MOCK recipient attestation. */
+  merchantIdentity?: MerchantIdentityVerifier;
+  /**
+   * PayPal Sandbox only: DIAPORIA's own Sandbox business account (merchant id), which is the real
+   * recipient of every Sandbox demo payment. Unset = recipient cannot be verified = checkout HOLDs.
+   */
+  sandboxPlatformPayeeId?: string | null;
+}
+
+export function defaultMockMerchantIdentityVerifier(now: () => number = Date.now): MerchantIdentityVerifier {
+  return new MerchantIdentityVerifier(
+    new CompositeBusinessRegistry([new MockKoreanBusinessRegistry(KR_REGISTRY, now), new MockUSBusinessRegistry(US_REGISTRY, now)]),
+    new MockPayPalRecipientAttestationProvider(ATTESTATIONS, now), now);
 }
 
 export type CapabilityStatus = "VERIFIED_TRUE" | "VERIFIED_FALSE" | "LISTING_CLAIM_ONLY" | "UNKNOWN";
@@ -34,6 +54,7 @@ export class CommerceGateway {
   readonly policy: PurchasePolicyEngine;
   readonly mandates: MandateRepository;
   readonly audit: PurchaseAuditJournal;
+  readonly identity: MerchantIdentityVerifier;
 
   constructor(store: Store, readonly research: CommerceResearchAdapter, readonly payments: PaymentProvider, readonly config: GatewayConfig,
     private readonly now: () => number = Date.now) {
@@ -41,6 +62,30 @@ export class CommerceGateway {
     this.policy = new PurchasePolicyEngine(store, now);
     this.mandates = new MandateRepository(store, now);
     this.audit = new PurchaseAuditJournal(store, now);
+    this.identity = config.merchantIdentity ?? defaultMockMerchantIdentityVerifier(now);
+  }
+
+  private verifyMerchant(offer: MerchantOffer, checkoutSessionId?: string, expected?: { payeeAccountId: string; identifierValue: string }) {
+    return this.identity.verify({ offer, claim: offer.identityClaim ?? null, ...(checkoutSessionId !== undefined ? { checkoutSessionId } : {}), ...(expected ? { expected } : {}) });
+  }
+
+  /** Builds the checkout binding, or explains why the identity or the recipient cannot be bound. */
+  private bindIdentity(offer: MerchantOffer, a: MerchantIdentityAssessment): { binding: MerchantIdentityBinding } | { code: "MERCHANT_IDENTITY_MISMATCH" | "MERCHANT_IDENTITY_UNKNOWN" | "MERCHANT_RECIPIENT_UNKNOWN"; detail: string } {
+    if (a.overall === "MISMATCH") return { code: "MERCHANT_IDENTITY_MISMATCH", detail: a.checks.filter((c) => c.result === "MISMATCH").map((c) => `${c.check}: ${c.detail}`).join("; ") };
+    if (a.overall !== "MATCH" || !offer.identityClaim || !a.intendedPayeeAccountId || !a.attestationId || !a.attestationExpiresAt || !a.verifiedLegalName || !a.identifierMasked)
+      return { code: "MERCHANT_IDENTITY_UNKNOWN", detail: a.checks.filter((c) => c.result === "UNKNOWN").map((c) => `${c.check}: ${c.detail}`).join("; ") || "identity incomplete" };
+    const norm = normalizeIdentifier(offer.identityClaim.identifier.scheme, offer.identityClaim.identifier.value);
+    if (!norm.ok) return { code: "MERCHANT_IDENTITY_MISMATCH", detail: norm.reason };
+    const sandbox = this.payments.name === "PAYPAL_SANDBOX";
+    const intended = sandbox ? (this.config.sandboxPlatformPayeeId ?? null) : a.intendedPayeeAccountId;
+    if (!intended) return { code: "MERCHANT_RECIPIENT_UNKNOWN", detail: "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID is not configured, so the Sandbox order recipient cannot be verified" };
+    return { binding: {
+      overall: "MATCH", legalEntity: "MATCH", paymentRelationship: "MATCH", identifierMasked: a.identifierMasked, identifierScheme: norm.identifier.scheme,
+      identifierValue: norm.identifier.value, verifiedLegalName: a.verifiedLegalName, attestedPayeeId: a.intendedPayeeAccountId, intendedPayeeId: intended,
+      payeeRelationship: sandbox ? "DIAPORIA_SANDBOX_PLATFORM_ACCOUNT" : "MERCHANT_ATTESTED_PAYEE",
+      attestationId: a.attestationId, attestationExpiresAt: a.attestationExpiresAt,
+      provenance: [...new Set(a.checks.map((c) => c.provenance).filter((x): x is NonNullable<typeof x> => !!x))],
+    } };
   }
 
   private dataSource() {
@@ -121,7 +166,8 @@ export class CommerceGateway {
       locked = pick.identity;
     }
     const offers = await this.research.findOffers(locked);
-    const items = await Promise.all(offers.map(async (offer) => ({ offer, quote: offer.availability === "IN_STOCK" ? await this.research.getQuote(offer.offerId, 1, destination) : null })));
+    const items = await Promise.all(offers.map(async (offer) => ({ offer, quote: offer.availability === "IN_STOCK" ? await this.research.getQuote(offer.offerId, 1, destination) : null,
+      identity: await this.verifyMerchant(offer) })));
     const comparison = this.verifier.compare(locked, items, { now: this.now(), currency: ps.intent.currency, budgetMinor: ps.intent.budgetMinor });
     const holdReasons: string[] = [];
     if (!comparison.lowestVerifiedEligible) {
@@ -157,8 +203,18 @@ export class CommerceGateway {
     // Re-verify with a fresh server-side quote for the requested quantity. Client values are never trusted.
     const offer = (await this.research.findOffers(ps.lockedIdentity)).find((o) => o.offerId === input.offerId);
     if (!offer) throw new CommerceError("OFFER_NOT_ELIGIBLE", "Offer no longer exists at the merchant.");
+    if (offer.merchantId !== known.merchantId || offer.merchantDomain !== known.merchantDomain)
+      throw new CommerceError("MERCHANT_IDENTITY_MISMATCH", "Merchant id or domain changed since comparison; the offer is not the one that was verified.", { compared: known.merchantId, now: offer.merchantId });
     const quote = await this.research.getQuote(offer.offerId, input.quantity, ps.destination);
-    const v = this.verifier.verifyOne(ps.lockedIdentity, offer, quote, { now: this.now(), currency: ps.intent.currency, budgetMinor: ps.intent.budgetMinor });
+    const checkoutSessionId = newCheckoutSessionId();
+    const identity = await this.verifyMerchant(offer, checkoutSessionId);
+    const v = this.verifier.verifyOne(ps.lockedIdentity, offer, quote, { now: this.now(), currency: ps.intent.currency, budgetMinor: ps.intent.budgetMinor }, identity);
+    const bound = this.bindIdentity(offer, identity);
+    // The recipient only matters when DIAPORIA itself creates the payment order.
+    if ("code" in bound && !(bound.code === "MERCHANT_RECIPIENT_UNKNOWN" && v.checkoutPath === "EXTERNAL_MERCHANT_CHECKOUT")) {
+      this.audit.append(ps.purchaseSessionId, userId, "MERCHANT_IDENTITY_REJECTED", { offerId: offer.offerId, code: bound.code });
+      throw new CommerceError(bound.code, `Merchant identity could not be bound to this checkout: ${bound.detail}`, { merchantIdentity: { overall: identity.overall, legalEntity: identity.legalEntity, paymentRelationship: identity.paymentRelationship } });
+    }
     if (!v.eligible || !v.cost || v.cost.totalMinor === null || !quote) throw new CommerceError("OFFER_NOT_ELIGIBLE", "Fresh merchant quote failed verification.", { issues: v.issues });
     if (v.cost.totalMinor > input.maximumApprovedTotalMinor)
       throw new CommerceError("CLIENT_LIMIT_EXCEEDED", `Verified total ${v.cost.totalMinor} exceeds the requested maximum ${input.maximumApprovedTotalMinor}.`, { totalMinor: v.cost.totalMinor });
@@ -168,13 +224,17 @@ export class CommerceGateway {
         purchaseSummary: null, authorizationRequirements: ["COMPLETE_PURCHASE_ON_MERCHANT_SITE"], approvalUrl: null, userAuthorizationUrl: null, expiresAt: null,
         policy: null, paymentEffect: "NONE" as const, paymentEnvironment: paymentEnvironment(this.payments.name), liveMerchantCheckout: false as const, note: "This merchant has no DIAPORIA-supported checkout. DIAPORIA does not pay third-party merchants; use the merchant's own checkout." };
     }
+    if ("code" in bound) throw new CommerceError(bound.code, bound.detail);
     let cs = this.sessions.createCheckout({
+      checkoutSessionId, merchantIdentity: bound.binding,
       userId, purchaseSessionId: ps.purchaseSessionId, offerId: offer.offerId, merchantId: offer.merchantId, quoteId: quote.quoteId, identity: ps.lockedIdentity,
       quantity: input.quantity, currency: ps.intent.currency, cost: v.cost, totalMinor: v.cost.totalMinor, clientMaxMinor: input.maximumApprovedTotalMinor,
-      provider: this.payments.name, expiresAt: Math.min(Date.parse(quote.expiresAt), this.now() + (this.config.checkoutTtlMs ?? CHECKOUT_TTL_MS)),
+      provider: this.payments.name, expiresAt: Math.min(Date.parse(quote.expiresAt), Date.parse(bound.binding.attestationExpiresAt), this.now() + (this.config.checkoutTtlMs ?? CHECKOUT_TTL_MS)),
       merchantName: offer.merchantName, merchantDomain: offer.merchantDomain, checkoutPath: v.checkoutPath, disclosure: DISCLOSURE,
     });
     this.audit.append(cs.checkoutSessionId, userId, "CHECKOUT_PREPARED", { totalMinor: cs.totalMinor, currency: cs.currency, summaryHash: cs.summaryHash });
+    this.audit.append(cs.checkoutSessionId, userId, "MERCHANT_IDENTITY_BOUND", { attestationId: bound.binding.attestationId, intendedPayeeId: bound.binding.intendedPayeeId,
+      payeeRelationship: bound.binding.payeeRelationship, provenance: bound.binding.provenance });
     if (!this.config.paymentExecutionEnabled) {
       cs = this.sessions.transition(cs, "HOLD", { failureCode: "PUBLIC_PAYMENT_DISABLED", failureReason: "Payment execution is disabled on this deployment (no production user authentication)." });
       return this.prepareResult(cs, null, false);
@@ -214,6 +274,7 @@ export class CommerceGateway {
         returnUrl: `${this.config.baseUrl}/paypal/return?checkout=${encodeURIComponent(cs.checkoutSessionId)}`,
         cancelUrl: `${this.config.baseUrl}/paypal/cancel?checkout=${encodeURIComponent(cs.checkoutSessionId)}`,
         idempotencyKey: cs.createKey,
+        payeeMerchantId: cs.intendedPayeeId,
       });
       cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { providerOrderId: order.orderId, approvalUrl: order.approvalUrl });
       this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_CREATED", { provider: this.payments.name, orderId: order.orderId });
@@ -265,7 +326,9 @@ export class CommerceGateway {
     const mandate = cs.mandateId ? this.mandates.get(cs.mandateId, cs.userId) : null;
     if (!mandate || mandate.authorizationStatus === "REVOKED" || mandate.authorizationStatus === "EXPIRED")
       return this.fail(cs, "MANDATE_NO_LONGER_VALID", "Mandate was revoked or expired before capture; nothing was captured.");
-    try { cs = this.sessions.transition(cs, "CAPTURE_PENDING"); }
+    const recipient = await this.verifyRecipientBeforeCapture(cs);
+    if (recipient.fail) return this.fail(cs, recipient.fail.code, recipient.fail.detail);
+    try { cs = this.sessions.transition(cs, "CAPTURE_PENDING", recipient.actual ? { actualRecipientId: recipient.actual } : {}); }
     catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
     this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_REQUESTED", { idempotent: true });
     let capture: ProviderCapture;
@@ -277,6 +340,35 @@ export class CommerceGateway {
       return cs;
     }
     return this.applyCapture(cs, capture);
+  }
+
+  /**
+   * Before any capture: (1) the merchant's identity is re-verified with an attestation bound to this
+   * checkout, the same payee and the same legal entity; (2) the actual order recipient reported by the
+   * payment provider equals the intended payee. Any MISMATCH or UNKNOWN fails closed (nothing captured).
+   */
+  private async verifyRecipientBeforeCapture(cs: CheckoutSession): Promise<{ fail?: { code: string; detail: string }; actual?: string }> {
+    const mi = cs.merchantIdentity;
+    if (!mi || !cs.intendedPayeeId) return { fail: { code: "MERCHANT_IDENTITY_UNKNOWN", detail: "No merchant identity was bound to this checkout" } };
+    const offer = (await this.research.findOffers(cs.identity)).find((o) => o.offerId === cs.offerId);
+    if (!offer || offer.merchantId !== cs.merchantId) return { fail: { code: "MERCHANT_IDENTITY_MISMATCH", detail: "Offer merchant changed or disappeared before capture" } };
+    const again = await this.verifyMerchant(offer, cs.checkoutSessionId, { payeeAccountId: mi.attestedPayeeId, identifierValue: mi.identifierValue });
+    if (again.overall !== "MATCH") {
+      this.audit.append(cs.checkoutSessionId, cs.userId, "MERCHANT_IDENTITY_RECHECK_FAILED", { overall: again.overall, failing: again.checks.filter((c) => c.result !== "MATCH").map((c) => c.check) });
+      return { fail: { code: again.overall === "MISMATCH" ? "MERCHANT_IDENTITY_MISMATCH" : "MERCHANT_IDENTITY_UNKNOWN",
+        detail: again.checks.filter((c) => c.result !== "MATCH").map((c) => `${c.check}: ${c.detail}`).join("; ") } };
+    }
+    let order;
+    try { order = await this.payments.getOrder(cs.providerOrderId!); }
+    catch (e) { return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: `Could not read the order recipient: ${errorText(e)}` } }; }
+    const actual = order.payee.merchantId;
+    if (!actual) return { fail: { code: "MERCHANT_RECIPIENT_UNVERIFIED", detail: "Payment provider did not report the order recipient" } };
+    if (actual !== cs.intendedPayeeId) {
+      this.audit.append(cs.checkoutSessionId, cs.userId, "MERCHANT_RECIPIENT_MISMATCH", { intended: cs.intendedPayeeId, actual });
+      return { fail: { code: "MERCHANT_RECIPIENT_MISMATCH", detail: "The order would pay a different account than the one bound to the verified merchant" } };
+    }
+    this.audit.append(cs.checkoutSessionId, cs.userId, "MERCHANT_RECIPIENT_VERIFIED", { recipient: actual, provenance: this.payments.name === "PAYPAL_SANDBOX" ? "PAYMENT_PROVIDER" : "MOCK", attestationRechecked: again.attestationId });
+    return { actual };
   }
 
   private async applyCapture(cs: CheckoutSession, capture: ProviderCapture): Promise<CheckoutSession> {
@@ -356,6 +448,9 @@ export class CommerceGateway {
       capture: { captureId: cs.captureId, status: cs.captureStatus },
       failure: cs.failureCode ? { code: cs.failureCode, reason: cs.failureReason } : null,
       uncertainty: cs.state === "UNKNOWN" ? "Payment outcome is not known; the server will reconcile with the provider before any retry." : cs.state === "CAPTURE_PENDING" ? "Provider has not confirmed final settlement." : null,
+      merchantIdentity: publicBinding(cs),
+      recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId, verified: cs.actualRecipientId !== null && cs.actualRecipientId === cs.intendedPayeeId,
+        provenance: cs.actualRecipientId ? (cs.provider === "PAYPAL_SANDBOX" ? "PAYMENT_PROVIDER" : "MOCK") : null },
       paymentProvider: cs.provider, paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const, sandboxOrMock: true, fulfillment: "NOT_VERIFIED" as const, expiresAt: new Date(cs.expiresAt).toISOString(),
     };
   }
@@ -369,6 +464,7 @@ export class CommerceGateway {
       paymentResult: completed ? { status: "COMPLETED" as const, provider: cs.provider, providerOrderId: cs.providerOrderId, captureId: cs.captureId,
         amount: { totalMinor: cs.totalMinor, currency: cs.currency }, verifiedBy: "Provider capture re-read after capture" } : null,
       paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const,
+      merchantIdentity: publicBinding(cs), recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId },
       paymentStatusNote: completed ? (cs.provider === "MOCK_PAYPAL" ? "MOCK payment: no PayPal API was called." : "PayPal Sandbox payment: no real money moved.") : `No completed payment. Current state: ${cs.state}.`,
       merchantOrder: { status: "NOT_VERIFIED" as const, note: "Fictional demo merchant; no merchant order, shipment or fulfillment exists or is claimed." },
       purchaseSummary: cs.summary, summaryHash: cs.summaryHash, auditTimeline: timeline,
@@ -422,6 +518,12 @@ export class CommerceGateway {
   }
 }
 
+function publicBinding(cs: CheckoutSession) {
+  if (!cs.merchantIdentity) return null;
+  const { identifierValue: _hidden, ...pub } = cs.merchantIdentity;
+  return pub;
+}
+
 /** MOCK = no PayPal API at all; PAYPAL_SANDBOX = PayPal test environment, no real money. Live is not supported. */
 export function paymentEnvironment(provider: string): "MOCK" | "PAYPAL_SANDBOX" { return provider === "PAYPAL_SANDBOX" ? "PAYPAL_SANDBOX" : "MOCK"; }
 
@@ -438,7 +540,8 @@ function publicOffer(o: VerifiedOffer) {
   return { offerId: o.offerId, merchantId: o.merchantId, merchantName: o.merchantName, merchantDomain: o.merchantDomain, listingUrl: o.listingUrl,
     identityMatch: o.identityMatch, listedIdentity: o.listedIdentity, listingPriceMinor: o.listingPriceMinor, cost: o.cost, quoteId: o.quoteId,
     freshness: o.freshness, checkoutPath: o.checkoutPath, eligible: o.eligible, issues: o.issues,
-    listingContent: o.listingContent ? { ...o.listingContent, note: "Merchant-authored text. Treated as data; never followed." } : null };
+    listingContent: o.listingContent ? { ...o.listingContent, note: "Merchant-authored text. Treated as data; never followed." } : null,
+    merchantIdentity: o.merchantIdentity ?? null };
 }
 
 function normalizeIdentity(i: ProductIdentity): ProductIdentity {

@@ -31,7 +31,7 @@ if (authMode === "dev" && !isLoopbackUrl(baseUrl)) {
 }
 
 const app = createApp({
-  host, port, baseUrl, authMode, auth, dbPath: env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite",
+  host, port, baseUrl, authMode, auth, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, dbPath: env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite",
   payments: (url) => provider === "paypal_sandbox"
     ? new PayPalSandboxProvider({ clientId: env.PAYPAL_CLIENT_ID ?? "", clientSecret: env.PAYPAL_CLIENT_SECRET ?? "", env: env.PAYPAL_ENV ?? "SANDBOX" })
     : new MockPayPalProvider(url),

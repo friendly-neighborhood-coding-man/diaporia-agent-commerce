@@ -29,6 +29,7 @@ export class MockPayPalProvider implements PaymentProvider {
     if (existing) return { orderId: existing, approvalUrl: this.approvalUrl(existing) };
     const orderId = `MOCK${randomBytes(8).toString("hex").toUpperCase()}`;
     this.orders.set(orderId, { orderId, status: "CREATED", amount: { ...input.amount }, customId: input.checkoutSessionId, captures: [],
+      payee: { merchantId: input.payeeMerchantId ?? "MOCKPAYEE-PLATFORM" },
       returnUrl: input.returnUrl, cancelUrl: input.cancelUrl, createKey: input.idempotencyKey });
     this.byCreateKey.set(input.idempotencyKey, orderId);
     return { orderId, approvalUrl: this.approvalUrl(orderId) };
@@ -57,7 +58,7 @@ export class MockPayPalProvider implements PaymentProvider {
   async getOrder(orderId: string): Promise<ProviderOrder> {
     this.calls.getOrder++;
     const o = this.mustGet(orderId);
-    return { orderId: o.orderId, status: o.status, amount: o.amount, customId: o.customId, captures: o.captures.map((c) => ({ ...c })) };
+    return { orderId: o.orderId, status: o.status, amount: o.amount, customId: o.customId, captures: o.captures.map((c) => ({ ...c })), payee: { ...o.payee } };
   }
 
   async captureOrder(orderId: string, idempotencyKey: string): Promise<ProviderCapture> {
@@ -85,6 +86,9 @@ export class MockPayPalProvider implements PaymentProvider {
     if (!c) throw new Error("Unknown mock capture");
     return { ...c };
   }
+
+  /** Test hook: simulate an order whose recipient was substituted after creation. */
+  substitutePayee(orderId: string, merchantId: string) { this.mustGet(orderId).payee = { merchantId }; }
 
   /** Test hook: move a pending capture to a final state, as PayPal would later. */
   settleCapture(captureId: string, status: "COMPLETED" | "DECLINED") {

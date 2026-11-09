@@ -16,7 +16,7 @@ const env: Record<string, string | undefined> = { ...process.env };
 if (values["env-file"]) {
   for (const line of readFileSync(values["env-file"], "utf8").split(/\r?\n/)) {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
-    if (m && ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_ENV"].includes(m[1]!)) env[m[1]!] = m[2]!.replace(/^["']|["']$/g, "");
+    if (m && ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_ENV", "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID"].includes(m[1]!)) env[m[1]!] = m[2]!.replace(/^["']|["']$/g, "");
   }
 }
 const results: Array<[string, "PASS" | "FAIL", string]> = [];
@@ -25,6 +25,8 @@ const check = (name: string, ok: boolean, detail: string) => results.push([name,
 const id = env.PAYPAL_CLIENT_ID ?? "", secret = env.PAYPAL_CLIENT_SECRET ?? "", ppEnv = env.PAYPAL_ENV ?? "SANDBOX";
 check("credentials present", id.length > 20 && secret.length > 20, `client id length ${id.length}, secret length ${secret.length} (values not shown)`);
 check("PAYPAL_ENV is SANDBOX", ppEnv.toUpperCase() === "SANDBOX", `PAYPAL_ENV=${ppEnv.toUpperCase() === "SANDBOX" ? "SANDBOX" : "(not SANDBOX)"}`);
+const payee = env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID ?? "";
+check("Sandbox platform payee configured", /^[A-Z0-9]{8,20}$/.test(payee), payee ? "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID set (value not shown); the order recipient will be verified against it" : "PAYPAL_SANDBOX_PAYEE_MERCHANT_ID missing: merchant identity binding cannot verify the Sandbox order recipient, so checkouts HOLD");
 check("API host is Sandbox", PAYPAL_SANDBOX_API === "https://api-m.sandbox.paypal.com", PAYPAL_SANDBOX_API);
 let liveRefused = false;
 try { new PayPalSandboxProvider({ clientId: "x".repeat(30), clientSecret: "y".repeat(30), env: "LIVE" }); } catch { liveRefused = true; }
@@ -48,6 +50,7 @@ const counting: typeof fetch = async (u, init) => { paypalCalls++; return fetch(
 const token = randomSecret("dct"), owner = randomSecret("dok");
 const auth = new DevAuth(); auth.addClientToken(token, "preflight-user", ALL_CLIENT_SCOPES); auth.addOwnerKey(owner, "preflight-user");
 const app = createApp({ host: "127.0.0.1", port: 0, baseUrl: "http://127.0.0.1:8790", authMode: "dev", dbPath: ":memory:", auth,
+  sandboxPlatformPayeeId: payee || "PREFLIGHTPLACEHOLDER",
   payments: () => new PayPalSandboxProvider({ clientId: id || "x".repeat(30), clientSecret: secret || "y".repeat(30), env: "SANDBOX", fetchImpl: counting }) });
 const gw = app.gateway;
 const sony = { brand: "Sony", model: "WH-CH720N", variant: "Black", condition: "new" as const, sku: "WHCH720N/B" };

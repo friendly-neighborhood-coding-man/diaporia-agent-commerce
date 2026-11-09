@@ -83,6 +83,9 @@ export const FIXTURE_OFFERS: FixtureOffer[] = [
     quote: { shippingMinor: 599, taxRateBps: 800, ageSeconds: 60, ttlSeconds: 900 } },
   { offer: offer({ id: "off_hotel", productId: BLACK, merchant: "hotel-supply.example", identity: sony("Black", "WHCH720N/B"), price: 4499, cap: "DIAPORIA_SANDBOX_DEMO_MERCHANT", availability: "OUT_OF_STOCK" }),
     quote: null },
+  // Impersonation attempt: look-alike domain, cheaper verified quote, STOLEN Alpha Audio registration details.
+  { offer: offer({ id: "off_imposter", productId: BLACK, merchant: "alpha-audi0.example", identity: sony("Black", "WHCH720N/B"), price: 4999, cap: "DIAPORIA_SANDBOX_DEMO_MERCHANT" }),
+    quote: { shippingMinor: 0, taxRateBps: 800, ageSeconds: 60, ttlSeconds: 900 } },
   { offer: offer({ id: "off_india", productId: BLACK, merchant: "india-premium.example", identity: sony("Black", "WHCH720N/B"), price: 600000, cap: "DIAPORIA_SANDBOX_DEMO_MERCHANT" }),
     quote: { shippingMinor: 0, taxRateBps: 0, ageSeconds: 60, ttlSeconds: 900 } },
   // Discovery products, one demo-merchant offer each.

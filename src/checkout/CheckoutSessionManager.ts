@@ -6,6 +6,26 @@ import type { RoutedIntent } from "../intent/PurchaseIntentRouter.js";
 import type { Row, Store } from "../store/Database.js";
 import { assertTransition, type PurchaseState } from "./stateMachine.js";
 
+/** Identity evidence bound into a checkout at preparation time (public subset, masked identifier). */
+export interface MerchantIdentityBinding {
+  overall: "MATCH";
+  legalEntity: "MATCH";
+  paymentRelationship: "MATCH";
+  identifierMasked: string;
+  identifierScheme: string;
+  /** Normalized identifier digits (server-side only; never returned to clients). */
+  identifierValue: string;
+  verifiedLegalName: string;
+  /** Payee the merchant's attestation covers. */
+  attestedPayeeId: string;
+  /** Payee the PayPal order must actually pay. Equals attestedPayeeId except in Sandbox platform mode. */
+  intendedPayeeId: string;
+  payeeRelationship: "MERCHANT_ATTESTED_PAYEE" | "DIAPORIA_SANDBOX_PLATFORM_ACCOUNT";
+  attestationId: string;
+  attestationExpiresAt: string;
+  provenance: string[];
+}
+
 export class StaleStateError extends Error {}
 export class NotFoundError extends Error {}
 
@@ -38,6 +58,7 @@ export interface PurchaseSummary {
   currency: Currency;
   paymentProvider: string;
   disclosure: string;
+  merchantIdentity: Omit<MerchantIdentityBinding, "identifierValue"> | null;
 }
 
 export interface CheckoutSession {
@@ -71,6 +92,9 @@ export interface CheckoutSession {
   expiresAt: number;
   createdAt: number;
   updatedAt: number;
+  merchantIdentity: MerchantIdentityBinding | null;
+  intendedPayeeId: string | null;
+  actualRecipientId: string | null;
 }
 
 const PURCHASE_TTL_MS = 30 * 60_000;
@@ -113,23 +137,28 @@ export class CheckoutSessionManager {
   }
 
   createCheckout(input: Omit<CheckoutSession, "checkoutSessionId" | "summary" | "summaryHash" | "state" | "version" | "mandateId" | "reservedMinor" |
-    "providerOrderId" | "approvalUrl" | "captureId" | "captureStatus" | "createKey" | "captureKey" | "failureCode" | "failureReason" | "createdAt" | "updatedAt"> & {
-    merchantName: string; merchantDomain: string; checkoutPath: string; disclosure: string }): CheckoutSession {
-    const id = `cs_${randomUUID()}`;
+    "providerOrderId" | "approvalUrl" | "captureId" | "captureStatus" | "createKey" | "captureKey" | "failureCode" | "failureReason" | "createdAt" | "updatedAt" |
+    "merchantIdentity" | "intendedPayeeId" | "actualRecipientId"> & {
+    merchantName: string; merchantDomain: string; checkoutPath: string; disclosure: string; checkoutSessionId?: string; merchantIdentity?: MerchantIdentityBinding | null }): CheckoutSession {
+    const id = input.checkoutSessionId ?? newCheckoutSessionId();
+    const mi = input.merchantIdentity ?? null;
     const now = this.now();
     const summary: PurchaseSummary = Object.freeze({
       checkoutSessionId: id, productIdentity: input.identity,
       merchant: { merchantId: input.merchantId, name: input.merchantName, domain: input.merchantDomain, checkoutPath: input.checkoutPath },
       offerId: input.offerId, quoteId: input.quoteId, quantity: input.quantity, cost: input.cost, totalMinor: input.totalMinor,
       currency: input.currency, paymentProvider: input.provider, disclosure: input.disclosure,
+      merchantIdentity: mi ? (({ identifierValue: _omit, ...pub }) => pub)(mi) : null,
     });
     const summaryHash = createHash("sha256").update(j(summary)).digest("hex");
     this.store.db.prepare(`INSERT INTO checkout_sessions(id,user_id,purchase_session_id,offer_id,merchant_id,quote_id,identity_json,quantity,currency,
-      cost_json,total_minor,client_max_minor,summary_json,summary_hash,state,provider,create_key,capture_key,expires_at,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      cost_json,total_minor,client_max_minor,summary_json,summary_hash,state,provider,create_key,capture_key,expires_at,created_at,updated_at,
+      merchant_identity_json,intended_payee_id,payee_relationship,attestation_id,attestation_expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       id, input.userId, input.purchaseSessionId, input.offerId, input.merchantId, input.quoteId, j(input.identity), input.quantity, input.currency,
       j(input.cost), input.totalMinor, input.clientMaxMinor, j(summary), summaryHash, "PREPARED", input.provider,
-      `dac-create-${randomUUID()}`, `dac-capture-${randomUUID()}`, input.expiresAt, now, now);
+      `dac-create-${randomUUID()}`, `dac-capture-${randomUUID()}`, input.expiresAt, now, now,
+      mi ? j(mi) : null, mi?.intendedPayeeId ?? null, mi?.payeeRelationship ?? null, mi?.attestationId ?? null, mi ? Date.parse(mi.attestationExpiresAt) : null);
     return this.getCheckout(id, input.userId);
   }
 
@@ -154,13 +183,13 @@ export class CheckoutSessionManager {
 
   /** Compare-and-set transition. Throws StaleStateError when another request moved the session first. */
   transition(cs: CheckoutSession, to: PurchaseState, patch: Partial<Pick<CheckoutSession, "mandateId" | "reservedMinor" | "providerOrderId" | "approvalUrl" |
-    "captureId" | "captureStatus" | "failureCode" | "failureReason">> = {}): CheckoutSession {
+    "captureId" | "captureStatus" | "failureCode" | "failureReason" | "actualRecipientId">> = {}): CheckoutSession {
     assertTransition("checkout", cs.state, to);
     const n = { ...cs, ...patch };
     const r = this.store.db.prepare(`UPDATE checkout_sessions SET state=?, version=version+1, mandate_id=?, reserved_minor=?, provider_order_id=?,
-      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, updated_at=?
+      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, actual_recipient_id=?, updated_at=?
       WHERE id=? AND user_id=? AND state=? AND version=?`).run(
-      to, n.mandateId, n.reservedMinor, n.providerOrderId, n.approvalUrl, n.captureId, n.captureStatus, n.failureCode, n.failureReason, this.now(),
+      to, n.mandateId, n.reservedMinor, n.providerOrderId, n.approvalUrl, n.captureId, n.captureStatus, n.failureCode, n.failureReason, n.actualRecipientId, this.now(),
       cs.checkoutSessionId, cs.userId, cs.state, cs.version);
     if (r.changes !== 1) throw new StaleStateError(`Checkout ${cs.checkoutSessionId} changed concurrently (expected ${cs.state} v${cs.version})`);
     return this.getCheckout(cs.checkoutSessionId, cs.userId);
@@ -177,6 +206,11 @@ export class CheckoutSessionManager {
       captureId: r.capture_id === null ? null : String(r.capture_id), captureStatus: r.capture_status === null ? null : String(r.capture_status),
       createKey: String(r.create_key), captureKey: String(r.capture_key), failureCode: r.failure_code === null ? null : String(r.failure_code),
       failureReason: r.failure_reason === null ? null : String(r.failure_reason), expiresAt: Number(r.expires_at), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+      merchantIdentity: r.merchant_identity_json ? JSON.parse(String(r.merchant_identity_json)) : null,
+      intendedPayeeId: r.intended_payee_id == null ? null : String(r.intended_payee_id),
+      actualRecipientId: r.actual_recipient_id == null ? null : String(r.actual_recipient_id),
     };
   }
 }
+
+export function newCheckoutSessionId(): string { return `cs_${randomUUID()}`; }

@@ -57,6 +57,8 @@ export interface MerchantOffer {
   checkoutCapability: CheckoutCapability;
   listingText: UntrustedText | null;
   observedAt: string;
+  /** Merchant-published business identity claim (untrusted until verified). */
+  identityClaim?: import("../merchant-identity/types.js").MerchantIdentityClaim | null;
 }
 
 export interface ShippingDestination {

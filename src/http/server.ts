@@ -26,6 +26,10 @@ export interface AppConfig {
   /** Factory so the mock provider can learn the base URL. */
   payments?: (baseUrl: string) => PaymentProvider;
   now?: () => number;
+  /** Override the default MOCK merchant identity verifier (tests, future real providers). */
+  merchantIdentity?: import("../merchant-identity/MerchantIdentityVerifier.js").MerchantIdentityVerifier;
+  /** PayPal Sandbox only: DIAPORIA's own Sandbox merchant id, the real recipient of Sandbox demo payments. */
+  sandboxPlatformPayeeId?: string | null;
 }
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -44,7 +48,8 @@ export function createApp(cfg: AppConfig): App {
   const mockPayPal = payments instanceof MockPayPalProvider ? payments : null;
   // Payment flows run only with per-user dev tokens on a loopback-only deployment.
   const paymentExecutionEnabled = cfg.authMode === "dev" && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
-  const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled }, now);
+  const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled,
+    ...(cfg.merchantIdentity ? { merchantIdentity: cfg.merchantIdentity } : {}), sandboxPlatformPayeeId: cfg.sandboxPlatformPayeeId ?? null }, now);
   const base = new URL(cfg.baseUrl);
   const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];

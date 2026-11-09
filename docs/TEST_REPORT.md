@@ -5,7 +5,7 @@ Run date: 2026-11-09, Windows 11, Node.js 24.22.1, vitest 5.1.0, TypeScript 7.0.
 
 ## Automated suite (this repo)
 
-`npm test` → **4 files, 51 passed, 0 failed, 0 skipped** (as of commit c12581f). `npm run typecheck` clean, `npm run build` clean, `npm run demo:e2e` completes, `npm run scan:secrets` no findings.
+`npm test` → **5 files, 67 passed, 0 failed, 0 skipped** (merchant identity round, 2026-11-09). Before that round: 4 files, 51 passed (commit c12581f). `npm run typecheck` clean, `npm run build` clean, `npm run demo:e2e` completes, `npm run scan:secrets` no findings.
 
 MCP tests use the SDK's real `Client` + `StreamableHTTPClientTransport` against the real HTTP server; the client lists tools first, so every `structuredContent` is validated against the published `outputSchema`.
 
@@ -29,6 +29,30 @@ MCP tests use the SDK's real `Client` + `StreamableHTTPClientTransport` against 
 | 16. Real host-to-MCP integration | Claude Code CLI 2.1.310 → localhost (LIVE host, mock payments), see HOST_TEST_EVIDENCE.md | pass (localhost only; remote connectors untested) |
 
 Additional: PayPal adapter against a fake `fetch` (Sandbox-only host, idempotency header, CAPTURE body, error mapping, no secret leakage), HTTP hardening (413 body limit, 421 foreign Host, 403 foreign Origin), public deployment disables payment, public read-only mode exposes no payment tool, malformed mandates → 400, AI token cannot create mandates.
+
+## Merchant identity (MOCK providers only)
+
+`tests/merchant-identity.test.ts` (14 tests) covers the following. All of it is MOCK evidence.
+- KR check digit and US EIN normalization; a well-formed, registered number with no attestation stays UNKNOWN.
+- Valid merchant: both layers MATCH, provenance MOCK, identifier masked.
+- Stolen registration details: legal entity MATCH, payment relationship MISMATCH.
+- Inconsistent legal entity: name, jurisdiction, bad check digit, closed registration, payee of another entity.
+- Altered merchant id, at verification and at prepare.
+- Stale attestation gives UNKNOWN; revoked gives MISMATCH; registry outage gives UNKNOWN.
+- Re-check rejects an attestation bound to another payee or entity.
+- Through MCP:
+  - The cheaper impersonator is rejected at compare.
+  - prepare binds the business, offer, payee and attestation into the summary.
+  - Capture pays exactly the bound recipient.
+  - A recipient substituted after approval fails closed with 0 captures and the reservation released.
+  - An attestation that goes stale before capture fails closed.
+  - Revocation between compare and prepare is rejected.
+- Sandbox platform-payee mode, using a test double with no network: an unconfigured payee is rejected; a configured payee is bound as `DIAPORIA_SANDBOX_PLATFORM_ACCOUNT`.
+- The mandate, budget and idempotency protections are unchanged.
+
+`npm run demo:identity` runs a valid merchant against the impersonator, then a recipient substitution, then a clean capture. No official registry and no PayPal identity attestation was contacted.
+
+**Sandbox preflight after this change:** `NOT_READY`, only because `PAYPAL_SANDBOX_PAYEE_MERCHANT_ID` (DIAPORIA's own Sandbox business account merchant id) is not configured. The other 7 checks pass. The Sandbox OAuth call returned HTTP 200 again; no order was created.
 
 ## Compiled server smoke test
 
