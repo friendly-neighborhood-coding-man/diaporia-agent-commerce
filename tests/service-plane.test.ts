@@ -12,12 +12,12 @@ import { MockPayPalBillingProvider } from "../src/billing/Billing.js";
 import type { ServicePlane } from "../src/engine/ServicePlane.js";
 import { call, callError, CA, createMandate, mcpClient, OWNER, SONY_BLACK, startHarness, TOKENS, type Harness } from "./helpers.js";
 
-const SECRET = "mock-billing-webhook-secret-0001";
+const webhookTestSecret = "mock-billing-webhook-secret-0001";
 function plane(mode: "community" | "managed", over: { limits?: ConstructorParameters<typeof UsageLedger>[2]; path?: string; tavily?: MockTavilySearch } = {}) {
   const store = new Store(over.path ?? ":memory:");
   const ledger = new UsageLedger(store, PLACEHOLDER_PRICING, over.limits ?? { perRequestSupplierMicro: 200_000, monthlyBillableMinor: 500 });
   const tavily = over.tavily ?? new MockTavilySearch(); const kernel = new MockKernelInspector();
-  const billing = new MockPayPalBillingProvider(store, SECRET);
+  const billing = new MockPayPalBillingProvider(store, webhookTestSecret);
   const svc: ServicePlane = { mode, ledger, router: new EvidenceRouter(store, ledger, tavily, kernel, { billable: mode === "managed" }), billing: mode === "managed" ? billing : null, managedSimulation: mode === "managed" };
   return { svc, store, ledger, tavily, kernel, billing };
 }
@@ -145,7 +145,7 @@ describe("community vs managed, service billing", () => {
     expect(bad.status).toBe(401);
     expect((await callError(c, "research_purchase", DISCOVERY)).code).toBe("BILLING_AUTHORIZATION_REQUIRED");
     // Correctly signed (mock) activation; duplicate delivery applied once.
-    const sig = createHmac("sha256", SECRET).update(forged).digest("hex");
+    const sig = createHmac("sha256", webhookTestSecret).update(forged).digest("hex");
     expect(await (await fetch(`${h.url}/billing/webhook/mock`, { method: "POST", headers: { "x-mock-billing-signature": sig }, body: forged })).json()).toEqual({ outcome: "APPLIED_ACTIVE" });
     expect(await (await fetch(`${h.url}/billing/webhook/mock`, { method: "POST", headers: { "x-mock-billing-signature": sig }, body: forged })).json()).toEqual({ outcome: "DUPLICATE" });
     const r = await call(c, "research_purchase", DISCOVERY);
