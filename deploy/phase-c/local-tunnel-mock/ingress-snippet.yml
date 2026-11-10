@@ -1,0 +1,16 @@
+# FRAGMENT ONLY — insert these two rules INTO the existing local cloudflared
+# %USERPROFILE%\.cloudflared\config.yml, ABOVE its final - service: http_status:404.
+# DO NOT replace the full existing config: it may serve diaporia.com / www
+# on 127.0.0.1:8787. DO NOT modify bot.diaporia.com (separate tunnel/service).
+# Using the tunnel route MUST be independently verified first.
+#
+# Defense-in-depth: block the operator UI through cloudflared. This is not
+# the only security check: MOCK must start with MERCHANT_OPERATOR_KEY unset,
+# so the merchant itself refuses protected operator endpoints.
+#
+# This staging is only for MOCK, never Sandbox C1/C2.
+- hostname: phase-c.diaporia.com
+  path: "^/operator(/|$)"
+  service: http_status:404
+- hostname: phase-c.diaporia.com
+  service: http://127.0.0.1:8791
