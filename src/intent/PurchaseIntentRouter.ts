@@ -26,7 +26,10 @@ export interface RoutedIntent {
 }
 
 const BRANDS = ["sony", "bose", "apple", "samsung", "jbl", "sennheiser", "northwind", "lumen", "contoso", "anker", "beats"];
-const COLORS = ["black", "white", "blue", "silver", "gray", "grey", "graphite", "red", "green", "pink", "beige", "midnight"];
+// A stated color must never be dropped: an unrecognized color word would leave the variant unset, and the
+// resolver would then offer the catalog's variants instead of reporting that the requested one does not exist.
+const COLORS = ["black", "white", "blue", "silver", "gray", "grey", "graphite", "red", "green", "pink", "beige", "midnight",
+  "purple", "violet", "lavender", "orange", "yellow", "gold", "rose", "navy", "teal", "brown", "cream", "ivory", "sand", "olive", "coral", "champagne", "titanium", "starlight"];
 const CAPABILITY_WORDS: Array<[RegExp, string]> = [
   [/noise[- ]?cancel(?:l)?ing|\banc\b/i, "active_noise_cancellation"],
   [/wireless|bluetooth/i, "wireless"],

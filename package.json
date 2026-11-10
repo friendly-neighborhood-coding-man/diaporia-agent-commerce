@@ -35,7 +35,8 @@
     "demo:phase-c": "tsx scripts/demo-phase-c.ts",
     "phase-c:c3-compare": "tsx scripts/phase-c-c3-compare.ts",
     "phase-c:kernel-check": "tsx scripts/phase-c-kernel-check.ts",
-    "dogfood": "tsx scripts/dogfood.ts"
+    "dogfood": "tsx scripts/dogfood.ts",
+    "eval:research": "tsx scripts/research-eval.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
