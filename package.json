@@ -36,7 +36,8 @@
     "phase-c:c3-compare": "tsx scripts/phase-c-c3-compare.ts",
     "phase-c:kernel-check": "tsx scripts/phase-c-kernel-check.ts",
     "dogfood": "tsx scripts/dogfood.ts",
-    "eval:research": "tsx scripts/research-eval.ts"
+    "eval:research": "tsx scripts/research-eval.ts",
+    "scenario-i:selftest": "node scripts/interop/scenario-i-selftest.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

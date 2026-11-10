@@ -41,3 +41,19 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
 - **Eval-world mistakes (corrected, not system defects):** (1) a fee offer used `hotel-supply.example`, whose registry fixture is not ACTIVE, so identity verification correctly excluded it; moved to a clean merchant. (2) R06/R16 expected the White alpha offer, but a cheaper offer filed under the Black product lists exactly White CX500-W, and the system correctly matches on the listed identity.
 - **Real gap:** "Buy Contoso CX-500 Purple" returned AMBIGUOUS (asked Black or White) because the router's closed color list dropped "Purple". **Change:** extended the list. A general unknown-variant detector is still missing.
 - **Result:** 18/18, 0 critical. **Uncertainty:** expectations were adjusted after seeing outputs in two cases (reasons above), and the same author wrote the world and the system, so this is a regression suite, not an independent accuracy measure.
+
+## 2026-11-10 · Push and draft PR #9 (owner-approved)
+
+- **Attempted:** the owner approved a push and a draft PR, conditional on a final security and evidence audit.
+- **Observed (audit):** no secrets, personal data, local environment files or tracked runtime credentials were found in the diff or the evidence. Nothing from #2–#8 was deleted. A clean install passed every check. Details are in MERGE_READINESS.md.
+- **Change:** pushed `integration/mvp-full-layer` at 6ed7f1d and opened draft PR #9 against `main`. Not merged.
+- **Verification:** GitHub Actions push run 42793944772 and pull_request run 42793998683 were both green: test (Node 22), test (Node 24) and gitleaks. The Node 22 job log shows 347/347 tests. This repository has a working runner, unlike the 2026-11-03 observation on the other repository.
+- **Uncertainty:** none about CI on 6ed7f1d. Later commits need their own green run.
+
+## 2026-11-10 · Scenario I work package (prepared, not run)
+
+- **Decision:** split each host's run into two one-shot phases with the human step in between. A headless host run cannot wait for a person, and the host must never hold spending authority. The human authorizes on the existing owner page ($60.00) and approves on the MOCK PayPal page. Each host's phase-2 prompt is generated from the checkout id that the server recorded for that host, not from the host's own text.
+- **Probes** go straight to the server, so they do not pollute the hosts' wire log. They are: 401, cross-host NOT_FOUND (and owner-cancel 404), repeat prepare after COMPLETED (DF-2), and $6,000 under a $60 mandate.
+- **Known host behaviour folded in:** Codex `exec` needs a per-tool approval for the non-read-only `prepare_checkout` (seen in the handoff run). Grok needs user-scope registration. Hermes needs a disposable home and a cleaned environment.
+- **Verification:** `npm run scenario-i:selftest` runs setup, serve, a simulated host (MCP SDK client through the proxy), a simulated human, the probes and the builder. Three simulated hosts PASS, and a negative control that skips phase 2 FAILS on ten checks. The compared fields were checked to be populated, not null.
+- **Uncertainty:** the self-test transcripts are synthetic copies in each host's format, so it proves only that the tooling works. Real host transcripts may differ in format. If a parser misses a real host's calls, `hostOriginated` fails, and the fix belongs in the parser, not in the server.

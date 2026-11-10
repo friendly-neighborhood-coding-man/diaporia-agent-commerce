@@ -1,5 +1,7 @@
 # Four-host MCP interoperability
 
+The next scenario, the full purchasing workflow including human authorization, status and receipt, is prepared but not run: [SCENARIO_I_RUNBOOK.md](SCENARIO_I_RUNBOOK.md).
+
 Two scenarios were run with the same four hosts: `research_purchase` alone (2026-11-09, first section) and the two-step `research_purchase` → `compare_purchase_offers` workflow (2026-11-10, section below).
 
 The same DIAPORIA MCP server was used by four independent AI hosts, each through its own MCP client. The server was this repository at `ac0a4c1`, with no changes for any host. **No payment state machine, purchase policy, authorization or validation was changed for any host.** No PayPal call and no paid research call was made.

@@ -1,6 +1,6 @@
 # Merge-readiness report: `integration/mvp-full-layer`
 
-Date 2026-11-10. **Verdict: NOT READY TO MERGE to main.** It is ready to be pushed as a draft PR for review once the owner allows a push.
+Date 2026-11-10. **Verdict: NOT READY TO MERGE to main.** Pushed with the owner's approval and open as **draft** PR [#9](https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce/pull/9) against `main`. Do not merge.
 
 ## What it contains
 
@@ -15,6 +15,19 @@ Date 2026-11-10. **Verdict: NOT READY TO MERGE to main.** It is ready to be push
 | PR #8 local tunnel MOCK runbook | 8520cdb | merge |
 | This branch | see `git log 221fda9..` | Phase C label fix, OAuth 2.1, approval UI + owner cancel, dogfood harness + DF-1/DF-2 fixes, research eval |
 
+## Pre-push audit (2026-11-10, before the push of 6ed7f1d)
+
+- `npm run scan:secrets`: 200 tracked files, no findings.
+- Diff `221fda9..6ed7f1d`, evidence files included, searched for keys, tokens, private keys, personal email addresses, IPs and local paths. Results:
+  - no secrets;
+  - the only email is `p@a.example` in a test fixture;
+  - the only IP is `127.0.0.1`;
+  - infrastructure files are placeholder templates already public in #7 and #8.
+- No tracked `.env`, key, pem, sqlite or `.data/` file. Generated runtime credentials (`.data/dev-credentials.json`, interop tokens) are gitignored and untracked.
+- All branch commits use the owner's GitHub noreply address.
+- No file deleted and no test removed relative to #6. #5, #6, #7 and #8 heads are ancestors of the branch.
+- Clean `npm ci`, then typecheck, 347/347 tests, build, `demo:e2e`, `demo:phase-c` and secret scan: all pass.
+
 ## Checks run locally
 
 | Check | Result |
@@ -25,8 +38,15 @@ Date 2026-11-10. **Verdict: NOT READY TO MERGE to main.** It is ready to be push
 | `npm run scan:secrets` | no findings |
 | `npm run dogfood` | A–H, J, K PASS; I NOT_RUN |
 | `npm run eval:research` | 18/18, 0 critical |
-| gitleaks (CI job) | **not run** (branch not pushed) |
-| CI matrix Node 22/24 | **not run** (branch not pushed); local run used Node 22.23.4 only |
+
+## CI on GitHub (commit 6ed7f1d)
+
+| Run | Event | Jobs | Result |
+|---|---|---|---|
+| [42793944772](https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce/actions/runs/42793944772) | push | test (22), test (24), gitleaks | all **success** |
+| [42793998683](https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce/actions/runs/42793998683) | pull_request (merge of 6ed7f1d into main 280e869) | test (22), test (24), gitleaks | all **success** |
+
+Each test job ran `npm ci`, typecheck, tests (347/347 on Node 22.23.4; Node 24 also passed), build, `demo:e2e`, `demo:phase-c` and secret scan. A runner was available for this repository. Later commits on this branch have their own checks on the PR.
 
 ## Contract compatibility
 
@@ -38,7 +58,7 @@ Date 2026-11-10. **Verdict: NOT READY TO MERGE to main.** It is ready to be push
 ## Blockers before merging to main
 
 1. Owner review of this branch, plus the open reviews of #5 and #6 that it inherits. **The Phase C C0 independent security review is still outstanding.**
-2. CI (typecheck, tests on Node 22 and 24, build, `demo:e2e`, `demo:phase-c`, secret scan, gitleaks) must run on GitHub. Earlier sessions saw no runner on the other repository from 2026-11-03; this repository's runner state is unverified.
+2. ~~CI must run on GitHub.~~ Done: green on Node 22 and 24, gitleaks clean (above). Keep it green for every later commit.
 3. PR #4 decisions remain open (price, country eligibility, Sandbox steps). Merging keeps billing in MOCK, which is safe, but the owner may want #4 resolved first.
 4. The squash relationship means #2, #3 and #4 cannot be merged on their own after this lands. Close them as superseded, or merge only this branch.
 

@@ -2,7 +2,7 @@
   "schema": "diaporia.mvp-status.v1",
   "updatedAt": "2026-11-10",
   "branch": "integration/mvp-full-layer",
-  "pushed": false,
+  "pushed": true,
   "base": {
     "main": "280e869",
     "pr5": "a64f5c4",
@@ -15,21 +15,21 @@
     "total": 347,
     "passed": 347,
     "files": 24,
-    "node": "22.23.4"
+    "node": "22.23.4",
+    "ci": "347/347 on Node 22 and 24 (GitHub Actions, commit 6ed7f1d)"
   },
   "layers": [
     {
       "id": 0,
       "name": "Integration and security foundation",
       "status": "MOCK_VERIFIED",
-      "tests": "347/347 local",
+      "tests": "347/347 local and in CI (Node 22, 24); gitleaks clean",
       "mockEvidence": [
         "docs/MERGE_READINESS.md"
       ],
       "liveEvidence": [],
       "remoteHostEvidence": [],
       "limitations": [
-        "branch not pushed; CI not run",
         "Phase C C0 independent security review outstanding",
         "KERNEL network isolation unverified in real KERNEL environment"
       ],
@@ -217,7 +217,8 @@
       "nextTask": "Run scenario I on owner PC",
       "approvalRequired": [
         "use of owner PC"
-      ]
+      ],
+      "scenarioI": "PREPARED_NOT_RUN: docs/SCENARIO_I_RUNBOOK.md; tooling self-test npm run scenario-i:selftest PASS (simulated host; proves tooling only)"
     }
   ],
   "dogfood": {
@@ -229,14 +230,14 @@
     "F": "PASS",
     "G": "PASS",
     "H": "PASS",
-    "I": "NOT_RUN",
+    "I": "PREPARED_NOT_RUN",
     "J": "PASS_OFFLINE_LOOPBACK",
     "K": "PASS"
   },
   "acceptance": [
     {
       "criterion": "build/typecheck/tests/secret scan",
-      "status": "MET_LOCAL"
+      "status": "MET_LOCAL_AND_CI"
     },
     {
       "criterion": "core policies intact",
@@ -309,5 +310,33 @@
     "LIVE_VERIFIED",
     "BLOCKED",
     "FAILED"
-  ]
+  ],
+  "pullRequest": {
+    "number": 9,
+    "url": "https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce/pull/9",
+    "draft": true,
+    "merged": false
+  },
+  "ci": {
+    "commit": "6ed7f1dd746f5eba891cff9416cc63c515263b96",
+    "runs": [
+      {
+        "id": 42793944772,
+        "event": "push",
+        "conclusion": "success"
+      },
+      {
+        "id": 42793998683,
+        "event": "pull_request",
+        "conclusion": "success"
+      }
+    ],
+    "jobs": {
+      "test (22)": "success",
+      "test (24)": "success",
+      "gitleaks": "success"
+    },
+    "testsInCi": "347/347 on Node 22.23.4 and Node 24",
+    "note": "Each test job ran npm ci, typecheck, test, build, demo:e2e, demo:phase-c, scan:secrets. The pull_request run tested the merge of 6ed7f1d into main 280e869. CI for later commits on this branch: see the PR checks."
+  }
 }

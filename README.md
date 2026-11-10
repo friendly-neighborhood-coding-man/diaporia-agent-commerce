@@ -109,10 +109,10 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/MCP_TOOLS.md](doc
 - AI-client tokens carry `purchase.research`, `purchase.read`, `purchase.prepare`. No scope can create a mandate or capture funds.
 - Owner keys (held by the human) create and revoke mandates via `/owner/mandates` or the `/authorize/<checkout>` page (cookie + CSRF, SameSite=Strict).
 - Every lookup is scoped by the authenticated user; another user's session returns `NOT_FOUND`.
-- Payment execution is enabled only when auth mode is `dev`, the server binds to loopback, and the public base URL is loopback. Anything else returns `HOLD / PUBLIC_PAYMENT_DISABLED`.
+- Payment execution is enabled only when auth mode is `dev` or `oauth`, the server binds to loopback, and the public base URL is loopback. Anything else returns `HOLD / PUBLIC_PAYMENT_DISABLED`.
 - Host-header and Origin allowlists (DNS-rebinding protection), 64 KiB body limit, per-token rate limits, 30 s request timeout.
 - PayPal credentials stay server-side; errors carry only HTTP status and PayPal debug id; audit records are redacted.
-- Known gaps: no OAuth, in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
+- Known gaps: OAuth is implemented but not deployed (owner-key login stands in for an identity provider), in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
 
 Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) for the Sandbox path, and a public HTTPS tunnel or host for remote AI clients.
 
