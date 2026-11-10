@@ -8,7 +8,7 @@ export const SCOPES = {
 export type Scope = (typeof SCOPES)[keyof typeof SCOPES];
 export const ALL_CLIENT_SCOPES: Scope[] = [SCOPES.RESEARCH, SCOPES.READ, SCOPES.PREPARE];
 
-export interface Principal { userId: string; scopes: ReadonlySet<string>; kind: "DEV_TOKEN" | "ANONYMOUS_PUBLIC_DEMO"; tokenFingerprint: string }
+export interface Principal { userId: string; scopes: ReadonlySet<string>; kind: "DEV_TOKEN" | "ANONYMOUS_PUBLIC_DEMO" | "OAUTH_ACCESS_TOKEN"; tokenFingerprint: string; clientId?: string }
 
 const sha = (s: string) => createHash("sha256").update(s).digest();
 

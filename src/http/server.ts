@@ -16,13 +16,23 @@ import { esc, money, page } from "./html.js";
 import { RateLimiter } from "./rateLimit.js";
 import { BrowserCheckoutHandoff } from "../handoff/BrowserCheckoutHandoff.js";
 import { createHandoffRoutes } from "../handoff/http.js";
+import { OAuthAuthority, type PendingAuthorization } from "../auth/oauth.js";
 
 export interface AppConfig {
   host: string;
   port: number;
   /** Externally visible origin, e.g. http://127.0.0.1:8790 */
   baseUrl: string;
-  authMode: "dev" | "public-readonly-demo";
+  /**
+   * dev: static per-user dev tokens (local only).
+   * oauth: OAuth 2.1 (PKCE, DCR, RFC 8707/9728) for remote MCP clients. Payment execution and the
+   *   payment-preparation tools exist only when the server is loopback-bound; on any public host an
+   *   OAuth deployment is research/read only until an independent security review says otherwise.
+   * public-readonly-demo: anonymous research/read.
+   */
+  authMode: "dev" | "public-readonly-demo" | "oauth";
+  /** OAuth token lifetimes (tests). */
+  oauth?: { accessTokenTtlSec?: number; refreshTokenTtlSec?: number; codeTtlSec?: number; maxClients?: number };
   dbPath: string;
   auth: DevAuth;
   research?: CommerceResearchAdapter;
@@ -49,7 +59,7 @@ export function isLoopbackUrl(u: string): boolean {
   try { return LOOPBACK.test(new URL(u).hostname); } catch { return false; }
 }
 
-export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean; handoff: BrowserCheckoutHandoff | null }
+export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean; handoff: BrowserCheckoutHandoff | null; oauth: OAuthAuthority | null }
 
 export function createApp(cfg: AppConfig): App {
   const now = cfg.now ?? Date.now;
@@ -57,7 +67,7 @@ export function createApp(cfg: AppConfig): App {
   const payments = cfg.payments ? cfg.payments(cfg.baseUrl) : new MockPayPalProvider(cfg.baseUrl);
   const mockPayPal = payments instanceof MockPayPalProvider ? payments : null;
   // Payment flows run only with per-user dev tokens on a loopback-only deployment.
-  const paymentExecutionEnabled = cfg.authMode === "dev" && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
+  const paymentExecutionEnabled = (cfg.authMode === "dev" || cfg.authMode === "oauth") && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
   // Managed mode needs production authentication, which does not exist yet. Only an explicit loopback simulation may run it.
   if (cfg.service?.mode === "managed" && !(cfg.service.managedSimulation === true && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl)))
     throw new Error("Managed mode requires production authentication (not implemented). Only managedSimulation on loopback is allowed.");
@@ -66,6 +76,8 @@ export function createApp(cfg: AppConfig): App {
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
     ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service: cfg.service ?? null }, now);
   const base = new URL(cfg.baseUrl);
+  const oauth = cfg.authMode === "oauth" ? new OAuthAuthority(store, cfg.auth, { issuer: base.origin, resource: `${base.origin}/mcp`, ...(cfg.oauth ?? {}) }, now) : null;
+  if (oauth && base.protocol !== "https:" && !isLoopbackUrl(cfg.baseUrl)) throw new Error("OAuth mode requires an https PUBLIC_BASE_URL unless it is loopback");
   const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
   const mcpLimiter = new RateLimiter(120, 60_000);
@@ -92,11 +104,17 @@ export function createApp(cfg: AppConfig): App {
         if (origin && !allowedOrigins.includes(origin)) return send(res, 403, { error: "Origin not allowed" });
         let principal: Principal | null;
         if (cfg.authMode === "public-readonly-demo") principal = { userId: "anonymous-demo", scopes: new Set([SCOPES.RESEARCH, SCOPES.READ]), kind: "ANONYMOUS_PUBLIC_DEMO", tokenFingerprint: "anon" };
+        else if (oauth) principal = oauth.verifyAccessToken(req.headers.authorization);
         else principal = cfg.auth.verifyBearer(req.headers.authorization);
-        if (!principal) { res.setHeader("WWW-Authenticate", 'Bearer realm="diaporia-dev", error="invalid_token"'); return send(res, 401, { error: "Missing or invalid bearer token" }); }
+        if (!principal) {
+          res.setHeader("WWW-Authenticate", oauth ? oauth.challenge(req.headers.authorization ? "invalid_token" : undefined) : 'Bearer realm="diaporia-dev", error="invalid_token"');
+          return send(res, 401, { error: "Missing or invalid bearer token" });
+        }
         if (!mcpLimiter.take(`${principal.tokenFingerprint}|${ip}`)) return send(res, 429, { error: "Rate limit exceeded" });
         const body = await readJson(req);
-        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools: cfg.authMode === "dev" && principal.scopes.has(SCOPES.PREPARE), handoff });
+        // OAuth on a public host never offers payment-preparation tools (they would only return HOLD anyway).
+        const exposePaymentTools = (cfg.authMode === "dev" || (cfg.authMode === "oauth" && paymentExecutionEnabled)) && principal.scopes.has(SCOPES.PREPARE);
+        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools, handoff });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts, allowedOrigins });
         res.on("close", () => { void transport.close(); void mcp.close(); });
         await mcp.connect(transport);
@@ -105,6 +123,34 @@ export function createApp(cfg: AppConfig): App {
       }
 
       if (!webLimiter.take(ip)) return send(res, 429, { error: "Rate limit exceeded" });
+
+      // ---- OAuth 2.1 authorization server + RFC 9728 resource metadata (oauth mode only) ----
+      if (oauth) {
+        const p = url.pathname;
+        if (req.method === "GET" && (p === "/.well-known/oauth-protected-resource" || p === "/.well-known/oauth-protected-resource/mcp"))
+          return sendPublic(res, 200, oauth.protectedResourceMetadata());
+        if (req.method === "GET" && p === "/.well-known/oauth-authorization-server") return sendPublic(res, 200, oauth.authorizationServerMetadata());
+        if (p === "/oauth/register" && req.method === "POST") { const out = oauth.register(await readJson(req)); return send(res, out.status, out.body); }
+        if (p === "/oauth/token" && req.method === "POST") { const out = oauth.token(new URLSearchParams(await readText(req)), header(req, "authorization")); return send(res, out.status, out.body); }
+        if (p === "/oauth/revoke" && req.method === "POST") { const out = oauth.revoke(new URLSearchParams(await readText(req)), header(req, "authorization")); return send(res, out.status, out.body); }
+        if (p === "/oauth/authorize" && req.method === "GET") {
+          const r = oauth.beginAuthorization(url.searchParams);
+          if (!r.ok) {
+            if (r.redirect) { res.statusCode = 302; res.setHeader("Location", r.redirect); return res.end(); }
+            return html(res, 400, page("Authorization request refused", `<p class="state">${esc(r.error.error)}</p><p>${esc(r.error.description)}</p>`, AUTH_BANNER));
+          }
+          return html(res, 200, consentPage(r.pending, paymentExecutionEnabled), formActionFor(r.pending.redirectUri));
+        }
+        if (p === "/oauth/authorize" && req.method === "POST") {
+          if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+          const form = new URLSearchParams(await readText(req));
+          const pend = oauth.getPending(form.get("request_id"));
+          const out = oauth.completeAuthorization(form);
+          if ("redirect" in out) { res.statusCode = 303; res.setHeader("Location", out.redirect); return res.end(); }
+          if (pend && out.error.status === 401) return html(res, 401, consentPage(pend, paymentExecutionEnabled, "Owner key not recognized."), formActionFor(pend.redirectUri));
+          return html(res, out.error.status, page("Authorization failed", `<p class="state">${esc(out.error.error)}</p><p>${esc(out.error.description)}</p>`, AUTH_BANNER));
+        }
+      }
       // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
       if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
@@ -258,7 +304,7 @@ export function createApp(cfg: AppConfig): App {
   server.requestTimeout = 30_000;
   server.headersTimeout = 10_000;
   server.on("close", () => { if (handoffTimer) clearInterval(handoffTimer); void handoff?.shutdown(); store.close(); });
-  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled, handoff };
+  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled, handoff, oauth };
 }
 
 class BodyTooLarge extends Error {}
@@ -290,9 +336,34 @@ function securityHeaders(res: ServerResponse) {
 function send(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(body));
 }
-function html(res: ServerResponse, status: number, body: string) {
+/** Metadata documents may be fetched cross-origin by browser-based MCP clients. */
+function sendPublic(res: ServerResponse, status: number, body: unknown) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  send(res, status, body);
+}
+const AUTH_BANNER = "Connecting an AI assistant to DIAPORIA. This grants tool access, never spending authority.";
+const SCOPE_TEXT: Record<string, string> = {
+  [SCOPES.RESEARCH]: "Research products and compare merchant offers (no payment effect)",
+  [SCOPES.READ]: "Read checkout status, receipts and usage for your account (read-only)",
+  [SCOPES.PREPARE]: "Prepare checkouts for you to approve. It cannot create a spending limit or capture money: you still set the limit and approve the payment yourself.",
+};
+function consentPage(p: PendingAuthorization, paymentToolsAvailable: boolean, error?: string): string {
+  const redirectHost = new URL(p.redirectUri).host;
+  const items = p.scopes.map((s) => `<p><label><input type="checkbox" name="scope" value="${esc(s)}" checked style="width:auto"> <code>${esc(s)}</code>: ${esc(SCOPE_TEXT[s] ?? s)}${
+    s === SCOPES.PREPARE && !paymentToolsAvailable ? ' <span class="muted">(not offered on this deployment: payment tools are disabled here)</span>' : ""}</label></p>`).join("");
+  return page("Allow an AI client to use DIAPORIA?", `${error ? `<p class="state">${esc(error)}</p>` : ""}
+    <p>The client <b>${esc(p.clientName)}</b> (self-registered; name not verified) wants to use DIAPORIA on your behalf. After you allow it, your browser returns to <code>${esc(redirectHost)}</code>.</p>
+    <form method="post" action="/oauth/authorize"><input type="hidden" name="request_id" value="${esc(p.id)}"><input type="hidden" name="csrf" value="${esc(p.csrf)}">
+    ${items}
+    <label>Owner key (proves you are the account owner)<input name="owner_key" type="password" autocomplete="off"></label>
+    <p class="muted">The client gets a token valid for this server only. Revoke it any time; it never lets the client set a spending limit.</p>
+    <p><button name="decision" value="approve">Allow</button> <button class="secondary" name="decision" value="deny">Deny</button></p></form>`, AUTH_BANNER);
+}
+/** The consent POST redirects to the client's redirect URI, which CSP form-action must allow. */
+function formActionFor(redirectUri: string): string { return new URL(redirectUri).origin; }
+function html(res: ServerResponse, status: number, body: string, extraFormAction?: string) {
   res.statusCode = status;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://www.sandbox.paypal.com; frame-ancestors 'none'; base-uri 'none'");
+  res.setHeader("Content-Security-Policy", `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://www.sandbox.paypal.com${extraFormAction ? ` ${extraFormAction}` : ""}; frame-ancestors 'none'; base-uri 'none'`);
   res.end(body);
 }

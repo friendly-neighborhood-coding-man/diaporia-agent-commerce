@@ -19,11 +19,11 @@ const env = process.env;
 const host = env.HOST ?? "127.0.0.1";
 const port = Number(env.PORT ?? 8790);
 const baseUrl = (env.PUBLIC_BASE_URL ?? `http://${host}:${port}`).replace(/\/$/, "");
-const authMode = env.DIAPORIA_AUTH_MODE === "public-readonly-demo" ? "public-readonly-demo" : "dev";
+const authMode = env.DIAPORIA_AUTH_MODE === "public-readonly-demo" ? "public-readonly-demo" : env.DIAPORIA_AUTH_MODE === "oauth" ? "oauth" : "dev";
 const provider = (env.PAYMENT_PROVIDER ?? "mock").toLowerCase();
 
 const auth = DevAuth.fromEnv(env);
-if (authMode === "dev" && auth.empty) {
+if ((authMode === "dev" && auth.empty) || (authMode === "oauth" && !env.DIAPORIA_OWNER_KEYS)) {
   // Local convenience: generate per-run dev credentials into .data/ (gitignored).
   const file = ".data/dev-credentials.json";
   let creds: { clientToken: string; ownerKey: string; userId: string };
@@ -33,7 +33,7 @@ if (authMode === "dev" && auth.empty) {
     mkdirSync(".data", { recursive: true });
     writeFileSync(file, JSON.stringify(creds, null, 2), { mode: 0o600 });
   }
-  auth.addClientToken(creds.clientToken, creds.userId, ALL_CLIENT_SCOPES);
+  if (authMode === "dev") auth.addClientToken(creds.clientToken, creds.userId, ALL_CLIENT_SCOPES);
   auth.addOwnerKey(creds.ownerKey, creds.userId);
   console.log(`[diaporia] dev credentials for user "${creds.userId}" are in ${file} (local only; never share or commit).`);
 }
