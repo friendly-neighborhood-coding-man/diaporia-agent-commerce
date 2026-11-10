@@ -236,3 +236,19 @@ describe("planner under the live default caps (CHANNEL3 1, TAVILY 2 per request)
     app.store.close(); store.close();
   });
 });
+
+describe("regression: holdout-2 q20 (a requested 2-pack was answered with a single bottle)", () => {
+  it("discovery with a stated pack size disqualifies single items and other pack sizes", () => {
+    const intent = parseResearchIntent({ request: "Insulated water bottle 2-pack under $80" });
+    expect(intent.attributes.pack).toBe("2");
+    const mk = (id: string, title: string, attrs: Record<string, string>, kind: "STANDALONE" | "BUNDLE", price: number): CandidateInput => ({
+      product: product(id, title, "Adatum", "Summit", null, { category: "water-bottles", research: { kind, modelBasis: "NAMED_MODEL", attributes: attrs, conflictingAxes: [], categoryTitle: "Water Bottles", titleCondition: null,
+        provenance: { provider: "t", providerProductId: id, observedAt: "", query: null, page: null, mode: null }, alsoListedAs: [], siblingVariants: [] } }),
+      offers: [offer(id, price)], must: {}, nice: {}, notChecked: [], limitReached: false });
+    const d = decide(intent, [mk("single", "Adatum Summit 32 oz", { capacity: "32 oz" }, "STANDALONE", 3900), mk("two", "Adatum Summit 32 oz, 2-Pack", { capacity: "32 oz", pack: "2" }, "BUNDLE", 6900),
+      mk("four", "Adatum Summit 32 oz, 4-Pack", { capacity: "32 oz", pack: "4" }, "BUNDLE", 7000)], { now: NOW });
+    expect(d.state).toBe("RECOMMEND");
+    expect(d.recommendation!.productId).toBe("two");
+    expect(d.ranking.filter((r) => !r.eligible).map((r) => r.productId).sort()).toEqual(["four", "single"]);
+  });
+});

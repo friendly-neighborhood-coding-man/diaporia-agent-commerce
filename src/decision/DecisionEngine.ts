@@ -145,6 +145,9 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
     if (intent.category && cat && cat !== intent.category) dq.push({ code: "CATEGORY_MISMATCH", detail: `category ${cat}, requested ${intent.category}` });
     if (f.kind === "ACCESSORY") dq.push({ code: "NOT_STANDALONE", detail: `accessory${f.accessoryNoun ? ` (${f.accessoryNoun})` : ""}, not the product itself` });
     if (f.kind === "BUNDLE" && (intent.excludeBundles || intent.attributes.pack === undefined)) dq.push({ code: intent.excludeBundles ? "BUNDLE_EXCLUDED" : "NOT_STANDALONE", detail: "bundle / multi-pack, not the standalone product" });
+    // A requested multi-pack is never answered with a single item or a different pack size (holdout-2 q20 regression).
+    if (intent.attributes.pack !== undefined && intent.attributes.pack !== "1" && (f.attributes.pack ?? "1") !== intent.attributes.pack)
+      dq.push({ code: "ATTRIBUTE_MISMATCH", detail: `pack of ${f.attributes.pack ?? "1"}, requested pack of ${intent.attributes.pack}` });
     for (const a of AXES.filter((x) => intent.attributes[x] && x !== "pack") as AttributeAxis[]) {
       const v = f.attributes[a];
       if (!v || v === "CONFLICT") bl.push({ code: "ATTRIBUTE_UNKNOWN", detail: `${a} ${intent.attributes[a]} is not confirmed by the listing` });
