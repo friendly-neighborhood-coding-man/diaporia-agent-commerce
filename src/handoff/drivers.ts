@@ -187,7 +187,7 @@ export class KernelDriver implements BrowserDriver {
     if (this.o.fetchImpl !== fetch || !existsSync(this.watchdogDir())) return 0;
     let recovered = 0;
     for (const name of readdirSync(this.watchdogDir())) {
-      if (!/^handoff-[A-Za-z0-9_-]{3,128}\\.json$/.test(name)) continue;
+      if (!/^handoff-[A-Za-z0-9_-]{3,128}\.json$/.test(name)) continue;
       let rec: { sessionId: string; deadline: number; status: string };
       try { rec = JSON.parse(readFileSync(join(this.watchdogDir(), name), "utf8")); }
       catch { throw new Error("KERNEL orphan cleanup journal is unreadable"); }
