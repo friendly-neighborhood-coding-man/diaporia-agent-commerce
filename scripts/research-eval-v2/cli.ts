@@ -16,7 +16,7 @@ const dir = join("docs", "evidence", "research-eval-v2"); mkdirSync(dir, { recur
 const file = join(dir, `${label}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
 writeFileSync(file, JSON.stringify({ schema: "diaporia.research-eval.v2", evidenceClass: "OFFLINE_AGENT_AUTHORED_FIXTURE_EVAL", label, root, commit,
   generatedAt: new Date().toISOString(), holdoutSha256: out.holdoutSha256, holdout2Sha256: out.holdout2Sha256, results: out.results, summary: out.summary }, null, 2) + "\n");
-const s = (x: any) => `state ${x.decisionStateAccuracy ?? JSON.stringify(x.stateAccuracy)} recall ${x.recallAt10?.toFixed?.(3)} ndcg ${x.ndcgAt5?.toFixed?.(3)} unsafe ${JSON.stringify(x.unsafeRecommendationRate)}`;
+const s = (x: any) => `state ${JSON.stringify(x.decisionStateAccuracy)} recall ${x.recallAt10?.toFixed?.(3)} ndcg ${x.ndcgAt5?.toFixed?.(3)} unsafe ${JSON.stringify(x.unsafeRecommendationRate)}`;
 for (const k of ["all", "dev", "holdout", "holdout2"] as const) console.log(k.padEnd(9), s((out.summary as any)[k]));
 console.log("misses:", out.results.filter((r) => !r.stateOk || r.unsafeForbidden || r.unsafeShouldNotRecommend).map((r) => `${r.id}:${r.state}`).join(" "));
 console.log(file);

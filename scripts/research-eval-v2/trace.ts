@@ -1,6 +1,7 @@
 /** Decision trace for one case against THIS checkout (V2 output): npx tsx scripts/research-eval-v2/trace.ts <caseId> [steps] */
 import { DEV_CASES } from "./cases.js";
 import { HOLDOUT_CASES } from "./holdout.js";
+import { HOLDOUT2_CASES } from "./holdout2.js";
 import { WORLD_SOURCES, newCounters, worldFetch } from "./world.js";
 import { createApp } from "../../src/http/server.js";
 import { DevAuth } from "../../src/auth/devAuth.js";
@@ -10,7 +11,7 @@ import { UsageLedger, PLACEHOLDER_PRICING } from "../../src/metering/UsageLedger
 import { Store } from "../../src/store/Database.js";
 import { TavilySearch } from "../../src/evidence/providers.js";
 const id = process.argv[2]!;
-const c = [...DEV_CASES, ...HOLDOUT_CASES].find((x) => x.id === id)!;
+const c = [...DEV_CASES, ...HOLDOUT_CASES, ...HOLDOUT2_CASES].find((x) => x.id === id)!;
 const counters = newCounters(); const fetchImpl = worldFetch(counters); const now = () => Date.parse("2026-11-10T12:00:00.000Z");
 const store = new Store(":memory:");
 const ledger = new UsageLedger(store, PLACEHOLDER_PRICING, { perRequestSupplierMicro: 10_000_000, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 6, TAVILY: 12, KERNEL: 0 } }, now);

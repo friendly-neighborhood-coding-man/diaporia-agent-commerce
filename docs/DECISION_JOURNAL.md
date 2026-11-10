@@ -211,3 +211,9 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
   - Three non-blocking interoperability observations are recorded in docs/INTEROP.md: the Hermes version line, the MCP protocol fallback, and Grok's internal tool-name retry.
   - Run 1 and run 2 evidence integrity: the sha256 listings of `.data/scenario-i-run1-ABORTED_DF3` and `.data/scenario-i-run2-FAILED_DF4` (50,169 files) taken at run 3 preflight and after run 3 are byte-identical: 0 changed, 0 added, 0 missing. The preflight listing was still being taken while run 3 ran; run 3 never wrote to either folder. Nothing was altered. The listings stay on the owner's PC.
 - **Next (owner):** an independent security review of the integrated MVP and a research/read-only remote MCP deployment plan. Neither may deploy anything or start a Sandbox, KERNEL or Cloudflare operation without a separate explicit authorization.
+
+## 2026-11-10 · Research & Decision V2 (branch feature/research-decision-v2, local)
+
+Separate journal: `docs/research/DECISION_JOURNAL.md` (J-01…J-10). Architecture `docs/research/RESEARCH_V2_ARCHITECTURE.md`,
+report `docs/research/V1_VS_V2_REPORT.md`, live-test plan `docs/research/LIVE_TEST_PLAN.md` (not authorized, not run).
+No payment, mandate, checkout, KERNEL or billing code changed.
