@@ -214,11 +214,11 @@
         "scenario J public HTTPS smoke not run"
       ],
       "securityBlockers": [],
-      "nextTask": "Run scenario I on owner PC",
+      "nextTask": "Scenario I run 3 on owner PC (separate owner go)",
       "approvalRequired": [
         "use of owner PC"
       ],
-      "scenarioI": "PREPARED_NOT_RUN: docs/SCENARIO_I_RUNBOOK.md; tooling self-test npm run scenario-i:selftest PASS (simulated host; proves tooling only)"
+      "scenarioI": "NOT_MET: run 1 ABORTED_DF3 (2009936); run 2 FAILED_DF4 (31c5110; Claude Code, Codex, Hermes individually completed, Grok used a leftover mandate). DF-3 and DF-4 fixed offline; run 3 awaits owner go on the new commit"
     }
   ],
   "dogfood": {
@@ -230,7 +230,7 @@
     "F": "PASS",
     "G": "PASS",
     "H": "PASS",
-    "I": "PREPARED_NOT_RUN",
+    "I": "NOT_MET_RUN2_FAILED_DF4",
     "J": "PASS_OFFLINE_LOOPBACK",
     "K": "PASS"
   },
@@ -300,6 +300,8 @@
   "defectsFoundByDogfooding": [
     "DF-1 startup recovery skipped UNKNOWN without capture id (fixed)",
     "DF-2 repeat prepare after COMPLETED created a new checkout (fixed)",
+    "DF-3 Referrer-Policy no-referrer made browsers send Origin null; owner pages refused every human (fixed, real-Chromium test)",
+    "DF-4 owner page created an unbound mandate for an expired/completed checkout; a later checkout used it without the owner (fixed: checkout-bound mandates, atomic authorization)",
     "research eval: dropped color word (fixed)"
   ],
   "statusVocabulary": [

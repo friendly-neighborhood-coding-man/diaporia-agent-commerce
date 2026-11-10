@@ -244,7 +244,7 @@ export function createApp(cfg: AppConfig): App {
           let out;
           try { out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum); }
           catch (e) {
-            if (e instanceof CommerceError && e.code === "INVALID_STATE") return html(res, 409, envPage("Already authorized", `<p class="state">${esc(cs.state)}</p><p>This checkout was already authorized or can no longer be paid. No new spending limit was created. Ask your AI assistant to check the checkout status.</p>`));
+            if (e instanceof CommerceError && e.code === "INVALID_STATE") return html(res, 409, envPage("Already authorized", `<p class="state">${esc(gateway.sessions.getCheckout(csId, sess.userId).state)}</p><p>This checkout was already authorized or can no longer be paid. No new spending limit was created. Ask your AI assistant to check the checkout status.</p>`));
             throw e;
           }
           if (out.decision.allowed && out.checkout.approvalUrl) { res.statusCode = 303; res.setHeader("Location", out.checkout.approvalUrl); return res.end(); }

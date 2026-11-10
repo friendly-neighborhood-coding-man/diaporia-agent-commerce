@@ -79,7 +79,7 @@ The MVP is **not** technically complete: three criteria are BLOCKED on owner-app
 ## Waiting on owner approval (prepared, not executed)
 
 1. ~~Push this branch and open a draft PR~~: done 2026-11-10 (draft PR #9, CI green). **Merge** still needs the owner, after the blockers in MERGE_READINESS.md.
-2. **Scenario I on the owner's PC**: [SCENARIO_I_RUNBOOK.md](SCENARIO_I_RUNBOOK.md). Four hosts run research → compare → prepare, the owner authorizes $60 on the owner page and approves on the MOCK PayPal page, then the hosts read status and receipt. Probes follow. No money and no paid DIAPORIA provider calls; it uses the owner's host subscriptions.
+2. **Scenario I on the owner's PC** (NOT MET: run 1 ABORTED_DF3, run 2 FAILED_DF4, both defects fixed offline; run 3 needs a separate owner go): [SCENARIO_I_RUNBOOK.md](SCENARIO_I_RUNBOOK.md). Four hosts run research → compare → prepare, the owner authorizes $60 on the owner page and approves on the MOCK PayPal page, then the hosts read status and receipt. Probes follow. No money and no paid DIAPORIA provider calls; it uses the owner's host subscriptions.
 3. **Remote host test**: deploy `DIAPORIA_AUTH_MODE=oauth` on an HTTPS host in research/read mode (payment tools are not offered there by design), then connect one remote MCP client. Needs a hostname, a Cloudflare route that does not touch existing routes, and an owner key held only by the owner.
 4. **Phase C C1** stays on hold as before (independent C0 review, exact HTTPS host, new signed approval). The merchant artifact hash changed in this branch, so any C1 statement must be generated from this commit.
 5. **Managed billing (PR #4)**: plan price, country eligibility, each Sandbox step.

@@ -66,16 +66,47 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
 - **Verification:** tests/browser-owner-flow.test.ts drives review → $60 → authorize → MOCK approve → COMPLETED in a real Chromium and asserts that all three POSTs carried the page's origin. A second test checks that `null` and foreign origins still get 403. The test fails on the old header. 349/349 tests pass.
 - **Uncertainty:** run 1 host phase-1 transcripts are kept as evidence of an aborted run. Its checkouts expired unauthorized. Any rerun is a new run on the new commit.
 
-## 2026-11-10 · Scenario I run 2 found DF-4 (owner page leaves spending authority behind)
+## 2026-11-10 · Scenario I run 2 FAILED_DF4 (owner page left transferable spending authority)
 
-- **Observed (run 2, commit 31c5110, owner's PC):**
-  - At 12:43:21Z the owner submitted Grok's original authorization link about 90 s after that checkout expired (12:41:52Z). The audit shows `CHECKOUT_EXPIRED`, then in the same second `MANDATE_CREATED_BY_OWNER`: an ACTIVE $60 mandate bound to no checkout.
-  - At 12:50:03Z Grok's phase-1 rerun (owner-approved after the expiry) called `prepare_checkout`. That call reserved the leftover mandate and created a MOCK order. It returned only `PAYPAL_BUYER_APPROVAL_REQUIRED`, so the owner never reviewed the new checkout.
-  - A second form submit after Claude Code's checkout had COMPLETED left another unused ACTIVE mandate.
-  - Nothing was captured (MOCK). The run's evidence is preserved untouched on the owner's PC.
-- **Cause:** `authorizeCheckoutAsOwner` created the mandate before checking whether a payment could still start. `startPayment` then threw `INVALID_STATE` (expired or completed checkout) and the new mandate stayed ACTIVE. A rejected limit (below the total) also left its mandate ACTIVE.
-- **Change:**
-  - The payable-state check (state PREPARED/APPROVAL_REQUIRED/HOLD, no provider order, no mandate yet) now runs before any mandate is created. A refused submit returns a 409 page that says no new limit was created.
-  - A mandate created on the page is revoked when no payment starts. Revocation is skipped if the mandate is already reserved or used, so recovery keeps it.
-- **Verification:** three tests in tests/approval-ui.test.ts cover the expired checkout, the resubmit after COMPLETED and the limit below the total. All three fail on the old code. 352/352 tests pass.
-- **Not changed:** the designed behaviour that a standing owner mandate (`/owner/mandates`) authorizes a matching later prepare. That is intended for mandates the owner creates on purpose. The defect was creating one by accident.
+- **Run status:** run 2 (commit 31c5110, owner's PC) is preserved as a failed security dogfood run, `FAILED_DF4`. Claude Code (rerun checkout cs_6c32fa23), Codex (rerun checkout cs_54f841c4) and Hermes (original checkout cs_84dddde0) each completed individually. Scenario I is **not** a PASS. Run 3 needs a separate owner go on a new commit.
+- **Observed:**
+  - Grok's original checkout cs_80366711 expired at 12:41:52Z. At 12:43:21Z the owner submitted its authorization link. The audit shows `CHECKOUT_EXPIRED` and then, in the same second, `MANDATE_CREATED_BY_OWNER`: mandate mdt_117bf235, ACTIVE, $60, bound to no checkout.
+  - At 12:50:03Z Grok's phase-1 rerun (owner-approved) prepared a new checkout, cs_3cda1b43. That call reserved mdt_117bf235 and created MOCK order MOCK26420B07124853FF. It returned only `PAYPAL_BUYER_APPROVAL_REQUIRED`, so the owner never reviewed cs_3cda1b43. There was no buyer approval and no capture.
+  - At 12:42:41Z a submit after Claude Code's checkout had COMPLETED left a second unused ACTIVE mandate, mdt_4f1ffbd3.
+  - Both mandates were recorded in the preserved evidence (`.data/scenario-i-run2-FAILED_DF4/` on the owner's PC, not committed). They were not revoked with owner keys. Both have a 30-minute TTL, so they expire about 13:13Z. That run's server is to be stopped before any new run.
+- **Root cause:**
+  - The owner checkout-approval page created a general-purpose mandate (any merchant-matching checkout up to the limit) before checking that its own checkout could still be paid. When `startPayment` refused the expired or completed checkout, the mandate stayed ACTIVE.
+  - The policy engine's mandate selection (`findApplicable`) then let any later prepare from the same user pick that mandate up automatically. One-checkout approvals and standing owner mandates were the same kind of object.
+- **Changed invariants:**
+  1. **Binding.** A page-created mandate has `scope = CHECKOUT_BOUND` and `bound_checkout_session_id = <that checkout>`. `evaluate` denies it for any other checkout (`BOUND_TO_OTHER_CHECKOUT`). `findApplicable` only ever selects `REUSABLE` mandates, so a bound mandate never authorizes a new checkout. Its merchant, maximum, currency and single transaction are the existing mandate limits; product identity, amount and currency are fixed on the bound checkout itself.
+  2. **Distinguishable.** `PurchaseMandate.scope` is `REUSABLE` (owner API `/owner/mandates`) or `CHECKOUT_BOUND` (owner page). `create` refuses a page mandate without a bound id and an API mandate with one. Legacy page mandates from before the migration have no bound id, so they read as `CHECKOUT_BOUND` bound to nothing and are unusable.
+  3. **Eligibility.** The authorize handler creates nothing unless the checkout is PREPARED, APPROVAL_REQUIRED or HOLD, has not expired (expiry is applied first), has no provider order and has no mandate. A refused submit returns 409 ("No new spending limit was created") and writes `OWNER_AUTHORIZATION_REFUSED`.
+  4. **Atomicity.** The eligibility re-read, the expiry, the mandate insert and its audit event run in one `BEGIN IMMEDIATE` transaction. A partial UNIQUE index (`mandates_one_live_per_bound_checkout`) allows at most one non-revoked mandate per bound checkout as a database backstop.
+  5. **Failure and uncertainty.** If payment initiation throws or is denied, a bound mandate that is unreserved and unused is revoked (`MANDATE_REVOKED_UNUSED`). A provider error releases the reservation, and `release` now revokes a released bound mandate. A provider timeout after create keeps the checkout `UNKNOWN` with its reservation for reconciliation. The bound mandate cannot be moved to another checkout, and a new prepare needs the owner again with no new order. Buyer cancel revokes the bound mandate.
+- **Not changed:** an owner's explicit reusable mandate still authorizes a matching later prepare, as designed.
+- **Independent review (fresh reviewer, given the code, not this entry):** invariants 1–4 and the release paths (buyer and owner cancel, expiry, failure, declined capture, consume, legacy rows, HOLD retry) were verified to hold. Findings:
+  - F1 (medium, reproduced): an UNKNOWN create timeout had no provider order id, so nothing could reconcile it and its reservation stayed forever. Now fixed. `reconcile` replays the same create request with the same idempotency key, which recovers the one order and never makes a second. It then follows the normal path: an APPROVED order is captured and consumes the mandate. An unapproved order past expiry closes as CANCELLED, which releases and revokes the bound mandate. A failed replay keeps UNKNOWN and the reservation. Startup recovery stays read-only and does not replay.
+  - F2 (low, not reproduced): with two server processes on one database, a cancel landing between the claim and the reservation could strand a reservation on a dead checkout. It stays bound to that checkout and is not transferable. One process per database is the supported deployment.
+  - F3 (low, pre-existing, outside DF-4): a buyer return after the checkout's expiry is still captured. That affects only that checkout.
+  - Cosmetic: the 409 page now shows the state after the re-check.
+  - Recheck of the F1 fix: the replay was confirmed safe (one order, no capture, nothing released on failure).
+    - N1 (medium, reproduced): the new close-after-expiry released the reservation using a checkout read before an await, so a racing buyer approval could capture with the limit handed back. Fixed: it re-reads, compare-and-sets and only then releases, all in one transaction, and a moved checkout is left alone. The regression test fails on the earlier code.
+    - Low, left open: startup recovery does not replay or close. An expired recovered checkout waits for an owner reconcile, still bound and non-transferable.
+    - Not tested: PayPal honours a repeated PayPal-Request-Id only for a limited window. A replay after that window would create a second order. No one ever received the first order's link, so at most one order could be approved.
+- **Verification:**
+  - tests/df4-authorization-binding.test.ts (12 tests, real Chromium for the attack sequence) covers:
+    - the exact run-2 sequence: expired A, owner submit, 409, no live mandate, then B still needs the owner with no createOrder;
+    - a live bound mandate for A refused for B;
+    - a legacy unbound page mandate unusable;
+    - completed, cancelled and already-authorized checkouts refused;
+    - 6 concurrent submits giving 1×303 and 5×409, one mandate and one order;
+    - the UNIQUE backstop;
+    - createOrder error giving FAILED with no live mandate;
+    - timeout-after-create giving UNKNOWN with the mandate kept and bound, and no new order;
+    - buyer cancel revoking the bound mandate;
+    - UNKNOWN recovered by idempotent replay then COMPLETED (one order, one capture, mandate EXHAUSTED), and UNKNOWN past expiry closed with the mandate REVOKED (both fail without the fix);
+    - the reconcile/buyer-approval race (N1): one capture, mandate EXHAUSTED, nothing handed back;
+    - a reusable mandate still auto-authorizing.
+  - The three tests in tests/approval-ui.test.ts stay.
+  - 364/364 tests, build, secret scan, dogfood A–H, J, K and the Scenario I self-test pass.
+- **Run 3 precondition:** a fresh data directory on the new commit, with run 2's server stopped and its two mandates expired or revoked. The original Scenario I prompts and acceptance criteria are unchanged.
