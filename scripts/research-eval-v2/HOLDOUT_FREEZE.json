@@ -1,0 +1,9 @@
+{
+  "file": "scripts/research-eval-v2/holdout.ts",
+  "sha256": "adec5184345249f4510cc9b984e4cc3e1ee1dd7bfbf145d456e2653bd5d04b18",
+  "frozenAt": "2026-11-10",
+  "frozenBefore": "any system (V1 baseline c46a0f4 or V2) was run on these cases",
+  "cases": 34,
+  "provenance": "AGENT_AUTHORED; not independently reviewed",
+  "rule": "Never edit holdout.ts. Corrections or additions go in a new file with new case ids, reported separately."
+}
