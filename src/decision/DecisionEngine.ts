@@ -125,6 +125,8 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
       verifyBeforePurchase: [
         "Get a merchant quote with compare_purchase_offers (shipping, tax and fees) for a destination before any checkout.",
         ...(intent.conditionStated ? [] : ["Condition was assumed NEW: confirm the offer is new."]),
+        ...(o.exactLock && Object.keys(factsOf(a.c.product).attributes).length === 0 && !a.c.product.identity.variant
+          ? ["The listing states no color or variant: confirm which variant ships before purchase."] : []),
         ...(a.usable.some((x) => x.listedIdentity.condition === "unknown") ? ["Some offers do not state their condition."] : []),
         "Confirm the merchant identity and stock at checkout time (search data can be stale).",
         ...unknownsFor(a).filter((u) => /nice-to-have/.test(u)),
