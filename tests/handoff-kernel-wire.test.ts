@@ -4,6 +4,9 @@
  * no network, no cost. It proves the request shapes and that the live-view capability never leaks.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { KernelDriver, LocalFixtureDriver, type LocalFixtureSession } from "../src/handoff/drivers.js";
 import { OWNER } from "./helpers.js";
 import { OwnerBrowser, call, closeSharedBrowser, prepareBravo, sharedBrowser, startHandoffHarness, type HandoffHarness } from "./handoff-helpers.js";
@@ -20,6 +23,10 @@ function fakeKernel() {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     log.push({ method, path: u.pathname, body });
     if ((init?.headers as Record<string, string>)?.Authorization !== "Bearer sk_test_kernel_key_000") return new Response("{}", { status: 401 });
+    if (method === "GET" && u.pathname === "/browsers") {
+      return Response.json([...sessions.entries()].filter(([, s]) => s.phase !== "CLOSED")
+        .map(([session_id]) => ({ session_id })));
+    }
     if (method === "POST" && u.pathname === "/browsers") {
       const id = `kb_${sessions.size + 1}`;
       sessions.set(id, await local.open());
@@ -99,6 +106,28 @@ describe("KERNEL driver (offline wire test)", () => {
     expect(s.phase).toBe("AUTOMATION");
     await s.close();
     expect(s.phase).toBe("CLOSED");
+  });
+
+  it("recovers an orphaned KERNEL browser from a durable journal after a simulated process restart", async () => {
+    const k = fakeKernel();
+    const dir = mkdtempSync(join(tmpdir(), "diaporia-kernel-orphan-"));
+    try {
+      const first = new KernelDriver("sk_test_kernel_key_000", { allowLive: true, fetchImpl: k.fetchImpl,
+        journalDir: dir, watchdog: async () => undefined });
+      const stranded = await first.open({ label: "restart-test", merchantHost: "example.org",
+        allowedHosts: ["example.org"], timeoutSeconds: 90 });
+      const journal = join(dir, "handoff-kb_1.json");
+      expect(JSON.parse(readFileSync(journal, "utf8")).status).toBe("PENDING");
+
+      // Drop the original driver's owner without calling finish / cancel / close.
+      const restarted = new KernelDriver("sk_test_kernel_key_000", { allowLive: true, fetchImpl: k.fetchImpl,
+        journalDir: dir, watchdog: async () => undefined });
+      expect(await restarted.recoverOrphanedBrowsers()).toBe(1);
+      expect(JSON.parse(readFileSync(journal, "utf8")).status).toBe("VERIFIED_DELETED");
+      expect(await restarted.recoverOrphanedBrowsers()).toBe(0);
+      expect(k.log.some(l => l.method === "GET" && l.path === "/browsers")).toBe(true);
+      await stranded.close(); // idempotent provider cleanup after the other driver reaped it
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it("enforces a per-process browser cap", async () => {
