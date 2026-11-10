@@ -198,7 +198,7 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
   2. Hermes needs a gateway pre-warm in a fresh home; proposed as a runbook step.
   3. Claude and Grok first offer MCP protocol 2026-07-28, get a 400, and fall back to 2025-11-25.
   4. Grok's first phase-2 `use_tool` used an unqualified tool name and failed inside Grok before reaching the server. The server saw exactly one status call and one receipt call.
-- **Evidence:** on the owner's PC in `.data/scenario-i-run3/evidence`: `matrix.json`, the four host files and `semantic-fidelity.json`. A grep for token or key prefixes, personal email and user paths found 0 matches. It is not committed. Run 1 and run 2 are preserved; their sha256 re-check was still running at the time of writing.
+- **Evidence:** on the owner's PC in `.data/scenario-i-run3/evidence`: `matrix.json`, the four host files and `semantic-fidelity.json`. A grep for token or key prefixes, personal email and user paths found 0 matches. It is not committed. Run 1 and run 2 are preserved; their sha256 re-check was still running at the time of writing (result below: unchanged).
 - **Acceptance:** run 3 meets the Scenario I PASS definition (4/4 hosts plus probes) for MOCK on loopback. Full acceptance is the owner's decision, after the five human-review items.
 
 ## 2026-11-10 · Scenario I ACCEPTED, LOCAL MOCK VERIFIED
@@ -209,4 +209,5 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
 - **Follow-ups done:**
   - The runbook pre-warms the Hermes gateway (`hermes gateway ensure --timeout 120`) and records only the `^Hermes Agent v` version line.
   - Three non-blocking interoperability observations are recorded in docs/INTEROP.md: the Hermes version line, the MCP protocol fallback, and Grok's internal tool-name retry.
+  - Run 1 and run 2 evidence integrity: the sha256 listings of `.data/scenario-i-run1-ABORTED_DF3` and `.data/scenario-i-run2-FAILED_DF4` (50,169 files) taken at run 3 preflight and after run 3 are byte-identical: 0 changed, 0 added, 0 missing. The preflight listing was still being taken while run 3 ran; run 3 never wrote to either folder. Nothing was altered. The listings stay on the owner's PC.
 - **Next (owner):** an independent security review of the integrated MVP and a research/read-only remote MCP deployment plan. Neither may deploy anything or start a Sandbox, KERNEL or Cloudflare operation without a separate explicit authorization.

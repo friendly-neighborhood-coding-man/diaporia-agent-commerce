@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { OWNER, TOKENS, buyer, call, createMandate, mcpClient, researchAndCompare, SONY_BLACK, startHarness, type Harness } from "./helpers.js";
 import { sharedBrowser, closeSharedBrowser } from "./handoff-helpers.js";
 import { ProviderError, ProviderTimeoutError } from "../src/payment/PaymentProvider.js";
@@ -20,6 +20,8 @@ const TTL = 15 * 60_000;
 let h: Harness;
 beforeEach(async () => { h = await startHarness(); });
 afterEach(async () => { await h.close(); });
+// Launch Chromium once, outside the first browser test's 60 s budget (cold launch on a contended CI runner), as phase-c-handoff does.
+beforeAll(async () => { await sharedBrowser(); }, 120_000);
 afterAll(async () => { await closeSharedBrowser(); });
 
 const form = (body: Record<string, string>, cookie?: string) => ({ method: "POST", redirect: "manual" as const,
