@@ -411,10 +411,28 @@ export class CommerceGateway {
   async authorizeCheckoutAsOwner(ownerUserId: string, checkoutSessionId: string, maximumTotalMinor: number) {
     const cs = this.expireIfNeeded(this.sessions.getCheckout(checkoutSessionId, ownerUserId));
     if (!isMinor(maximumTotalMinor) || maximumTotalMinor <= 0) throw new CommerceError("INVALID_INPUT", "Maximum must be a positive amount");
+    // DF-4: check that a payment can still start BEFORE creating spending authority. A resubmitted
+    // owner form for a checkout that already has a provider order (or is already COMPLETED) used to
+    // leave a fresh ACTIVE mandate behind, bound to no checkout.
+    if (!["PREPARED", "APPROVAL_REQUIRED", "HOLD"].includes(cs.state) || cs.providerOrderId || cs.mandateId) {
+      this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_AUTHORIZATION_REFUSED", { state: cs.state, reason: "ALREADY_AUTHORIZED_OR_NOT_PAYABLE" });
+      throw new CommerceError("INVALID_STATE", `Checkout is ${cs.state} and already authorized or not payable; no new spending limit was created.`);
+    }
     const mandate = this.mandates.create({ userId: ownerUserId, productIdentity: cs.identity, currency: cs.currency, maximumTotalMinor, maximumQuantity: cs.quantity,
       maximumTransactions: 1, ttlSeconds: 1800, allowedMerchantIds: [cs.merchantId], createdVia: "OWNER_APPROVAL_PAGE" });
     this.audit.append(cs.checkoutSessionId, ownerUserId, "MANDATE_CREATED_BY_OWNER", { mandateId: mandate.mandateId, maximumTotalMinor });
-    return { mandate, ...(await this.startPayment(cs, mandate.mandateId)) };
+    // A limit created on this page exists only for this checkout: if no payment starts, withdraw it.
+    const revokeUnused = (why: string) => {
+      const m = this.mandates.get(mandate.mandateId, ownerUserId);
+      if (!m || m.reservedMinor > 0 || m.transactionsUsed > 0) return; // reserved: recovery and reconciliation own it now
+      try { this.mandates.revoke(mandate.mandateId, ownerUserId); this.audit.append(cs.checkoutSessionId, ownerUserId, "MANDATE_REVOKED_UNUSED", { mandateId: mandate.mandateId, why }); }
+      catch { /* already reserved or consumed: leave it to the reservation logic */ }
+    };
+    let out;
+    try { out = await this.startPayment(cs, mandate.mandateId); }
+    catch (e) { revokeUnused(e instanceof CommerceError ? e.code : "ERROR"); throw e; }
+    if (!out.decision.allowed) revokeUnused(out.decision.code);
+    return { mandate, ...out };
   }
 
   /**

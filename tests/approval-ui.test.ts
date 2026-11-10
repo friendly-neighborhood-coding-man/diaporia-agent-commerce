@@ -115,4 +115,40 @@ describe("owner approval and trust interface", () => {
     expect(b.returnHtml).toContain("This page does not itself prove payment");
     await client.close();
   });
+  describe("DF-4: an owner submit never leaves spending authority behind (Scenario I run 2)", () => {
+    const authorize = async (url: string, maximum = "60.00") => { const r = await review(url); return fetch(url, form({ action: "authorize", csrf: r.csrf, maximum }, r.cookie)); };
+
+    it("authorizing an EXPIRED checkout is refused and creates no mandate; a later checkout still needs the owner", async () => {
+      const { client, prep } = await preparedWithoutMandate();
+      h.clock.offsetMs += 16 * 60_000; // past the 15-minute checkout expiry
+      const r = await authorize(prep.userAuthorizationUrl);
+      expect(r.status).toBe(409);
+      expect(h.app.gateway.mandates.listActive("alice")).toHaveLength(0);
+      const { prep: again } = await preparedWithoutMandate();
+      expect(again.state).toBe("APPROVAL_REQUIRED");
+      expect(again.authorizationRequirements).toContain("OWNER_MANDATE_REQUIRED");
+      expect(h.mock.calls.createOrder).toBe(0);
+      await client.close();
+    });
+
+    it("re-submitting the form after the checkout COMPLETED is refused and creates no second mandate", async () => {
+      const { client, prep } = await preparedWithoutMandate();
+      const first = await authorize(prep.userAuthorizationUrl);
+      expect(first.status).toBe(303);
+      await buyer(h, first.headers.get("location")!);
+      expect((await call(client, "get_checkout_status", { checkoutSessionId: prep.checkoutSessionId })).state).toBe("COMPLETED");
+      const second = await authorize(prep.userAuthorizationUrl);
+      expect(second.status).toBe(409);
+      expect(h.app.gateway.mandates.listActive("alice")).toHaveLength(0);
+      await client.close();
+    });
+
+    it("a limit below the total HOLDs the checkout and the page's own mandate is revoked, not left active", async () => {
+      const { client, prep } = await preparedWithoutMandate();
+      const r = await authorize(prep.userAuthorizationUrl, "10.00");
+      expect(r.status).toBe(403);
+      expect(h.app.gateway.mandates.listActive("alice")).toHaveLength(0);
+      await client.close();
+    });
+  });
 });

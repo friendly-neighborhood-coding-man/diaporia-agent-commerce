@@ -241,7 +241,12 @@ export function createApp(cfg: AppConfig): App {
           try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
           let maximum: number;
           try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, envPage("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
-          const out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum);
+          let out;
+          try { out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum); }
+          catch (e) {
+            if (e instanceof CommerceError && e.code === "INVALID_STATE") return html(res, 409, envPage("Already authorized", `<p class="state">${esc(cs.state)}</p><p>This checkout was already authorized or can no longer be paid. No new spending limit was created. Ask your AI assistant to check the checkout status.</p>`));
+            throw e;
+          }
           if (out.decision.allowed && out.checkout.approvalUrl) { res.statusCode = 303; res.setHeader("Location", out.checkout.approvalUrl); return res.end(); }
           return html(res, 403, envPage("Checkout not authorized", `<p class="state">${esc(out.decision.code)}</p><p>${esc(out.decision.detail)}</p><p>No payment was started.</p>`));
         }

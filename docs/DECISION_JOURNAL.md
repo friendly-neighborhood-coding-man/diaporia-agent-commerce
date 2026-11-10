@@ -65,3 +65,17 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
 - **Change:** `Referrer-Policy: same-origin` on the server and on the handoff pages. A referrer still never leaves the origin, and same-origin POSTs now carry the real Origin. The Origin check is unchanged: `null` and foreign origins are still refused.
 - **Verification:** tests/browser-owner-flow.test.ts drives review → $60 → authorize → MOCK approve → COMPLETED in a real Chromium and asserts that all three POSTs carried the page's origin. A second test checks that `null` and foreign origins still get 403. The test fails on the old header. 349/349 tests pass.
 - **Uncertainty:** run 1 host phase-1 transcripts are kept as evidence of an aborted run. Its checkouts expired unauthorized. Any rerun is a new run on the new commit.
+
+## 2026-11-10 · Scenario I run 2 found DF-4 (owner page leaves spending authority behind)
+
+- **Observed (run 2, commit 31c5110, owner's PC):**
+  - At 12:43:21Z the owner submitted Grok's original authorization link about 90 s after that checkout expired (12:41:52Z). The audit shows `CHECKOUT_EXPIRED`, then in the same second `MANDATE_CREATED_BY_OWNER`: an ACTIVE $60 mandate bound to no checkout.
+  - At 12:50:03Z Grok's phase-1 rerun (owner-approved after the expiry) called `prepare_checkout`. That call reserved the leftover mandate and created a MOCK order. It returned only `PAYPAL_BUYER_APPROVAL_REQUIRED`, so the owner never reviewed the new checkout.
+  - A second form submit after Claude Code's checkout had COMPLETED left another unused ACTIVE mandate.
+  - Nothing was captured (MOCK). The run's evidence is preserved untouched on the owner's PC.
+- **Cause:** `authorizeCheckoutAsOwner` created the mandate before checking whether a payment could still start. `startPayment` then threw `INVALID_STATE` (expired or completed checkout) and the new mandate stayed ACTIVE. A rejected limit (below the total) also left its mandate ACTIVE.
+- **Change:**
+  - The payable-state check (state PREPARED/APPROVAL_REQUIRED/HOLD, no provider order, no mandate yet) now runs before any mandate is created. A refused submit returns a 409 page that says no new limit was created.
+  - A mandate created on the page is revoked when no payment starts. Revocation is skipped if the mandate is already reserved or used, so recovery keeps it.
+- **Verification:** three tests in tests/approval-ui.test.ts cover the expired checkout, the resubmit after COMPLETED and the limit below the total. All three fail on the old code. 352/352 tests pass.
+- **Not changed:** the designed behaviour that a standing owner mandate (`/owner/mandates`) authorizes a matching later prepare. That is intended for mandates the owner creates on purpose. The defect was creating one by accident.
