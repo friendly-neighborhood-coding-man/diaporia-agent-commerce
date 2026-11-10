@@ -1,6 +1,9 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { startHarness, mcpClient, call, TOKENS, OWNER, SONY_BLACK, CA } from "./helpers.js";
 import { sharedBrowser, closeSharedBrowser } from "./handoff-helpers.js";
+
+// Same budget as the other real-Chromium files: a cold browser launch under a parallel full-suite run can exceed the 20 s default.
+vi.setConfig({ testTimeout: 60_000 });
 
 /**
  * DF-3 (Scenario I, 2026-11-10): with `Referrer-Policy: no-referrer` a real browser sends `Origin: null` on a
