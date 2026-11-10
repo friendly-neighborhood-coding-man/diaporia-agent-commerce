@@ -48,7 +48,7 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 138 tests
+npm test            # all automated mock and offline integration tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
@@ -84,7 +84,7 @@ This is a separate path for real merchants that DIAPORIA does not pay. It works 
 3. The human takes over the same browser through an owner-authenticated, short-lived page and uses the merchant's own PayPal button.
 4. Only authenticated seller-side confirmation yields `ORDER_CONFIRMED`.
 
-Phase A (offline fixture) is verified, with `npm run demo:handoff`. KERNEL Live View (Phase B) and the PayPal Sandbox step (Phase C) are **not yet run**. See [docs/BROWSER_CHECKOUT_HANDOFF.md](docs/BROWSER_CHECKOUT_HANDOFF.md), [the security review](docs/HANDOFF_SECURITY_REVIEW.md) and [the host matrix](docs/HANDOFF_HOST_MATRIX.md).
+Phase A (offline fixture) and Phase B (**one owner-approved, live KERNEL session proving a synthetic same-browser popup**) are verified. Phase C, which requires the **actual PayPal Sandbox button and buyer login**, remains **NOT RUN**. The integrated code now requires a reviewed exact-host KERNEL egress allowlist for real merchant recipes, plus explicit browser opt-in, and implements a best-effort independent 10-minute cleanup watchdog. Network/IP isolation and crash recovery remain unverified in the real KERNEL environment. See [docs/BROWSER_CHECKOUT_HANDOFF.md](docs/BROWSER_CHECKOUT_HANDOFF.md), [the security review](docs/HANDOFF_SECURITY_REVIEW.md) [the host matrix](docs/HANDOFF_HOST_MATRIX.md) and [the Phase C approval runbook](docs/PHASE_C_RUNBOOK.md).
 
 ## Architecture
 
