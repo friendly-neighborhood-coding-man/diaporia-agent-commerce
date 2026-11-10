@@ -31,12 +31,12 @@ const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:h|hr|hrs|hours?|gb|tb|mb|mm|cm|m|in|inch|ft
 /** Words that end a named-model phrase: product nouns, descriptors, connectors. */
 const GENERIC = new Set(`wireless wired bluetooth noise cancelling canceling noise-cancelling noise-canceling active headphones headphone headset earbuds earbud earphones
   over-ear on-ear in-ear laptop laptops notebook computer smartphone phone cell mobile running shoes shoe sneakers boots boot hiking men's women's mens womens kids
-  unisex coffee maker brewer programmable insulated water bottle tumbler flask office chair chairs task gaming monitor display screen backpack daypack bag cordless stick
+  unisex coffee maker brewer programmable insulated water bottle tumbler flask office chair chairs gaming monitor display screen backpack daypack bag cordless stick
   vacuum cleaner robot with and for the a an in of by from to new used refurbished renewed edition version model series usb-c usb hdmi led lcd oled hd uhd
   replacement spare case cover charger adapter cable strap stand mount filter pads pad cushions cushion carafe protector bundle kit combo set pack lumbar support
   waterproof water-resistant lightweight portable smart premium classic original official stainless steel plastic glass leather mesh ergonomic compact`.split(/\s+/).filter(Boolean));
 /** A word after a model mention that makes it a DIFFERENT model in the same family ("Nova 9" vs "Nova 9 Pro"). */
-export const MODEL_EXTENSIONS = new Set(["pro", "max", "plus", "ultra", "mini", "lite", "air", "se", "fe", "neo", "prime", "edge", "go", "xl", "fhd", "4k", "uhd", "elite", "sport", "s", "x", "ii", "iii", "iv", "2", "3", "4", "5"]);
+export const MODEL_EXTENSIONS = new Set(["pro", "max", "plus", "ultra", "mini", "lite", "air", "se", "fe", "neo", "prime", "edge", "go", "xl", "fhd", "elite", "sport", "s", "x", "ii", "iii", "iv", "2", "3", "4", "5"]);
 
 const ACCESSORY_NOUN = /\b(case|cover|sleeve|skin|charger|adapter|power supply|cable|cord|ear ?pads?|ear ?cushions?|ear ?tips|cushions?|carafe|strap|band|screen protector|protector|stand|mount|dock|filter|replacement battery|battery pack|remote|lid|brush head|bag|pouch|parts?|kit for)\b/i;
 export const BUNDLE_RE = /\bw\/|\bbundle\b|\bkit\b|\bcombo\b|\b\d+[- ]?(?:pack|pk|count|ct)\b|\bpack of \d+\b|\bset of \d+\b|\btwin[- ]pack\b|\s\+\s|\bwith (?:travel |carrying |charging |protective )?(?:case|charger|stand|dock|bag)\b/i;
@@ -71,7 +71,7 @@ export function parseAttributes(text: string): VariantAttributes {
   const size = /\b(?:size|sz|사이즈)\s*:?\s*(\d+(?:\.\d+)?|xxs|xs|s|m|l|xl|xxl|xxxl|small|medium|large|x-large)\b/i.exec(t) ?? /사이즈\s*(\d+(?:\.\d+)?)/.exec(t);
   if (size) out.size = size[1]!.toUpperCase().replace(/^SMALL$/, "S").replace(/^MEDIUM$/, "M").replace(/^LARGE$/, "L").replace(/^X-LARGE$/, "XL");
   else {
-    const inch = /(\d{2}(?:\.\d)?)\s?(?:-?\s?inch|"|”|in\b|인치)/i.exec(t);
+    const inch = /(?<![\d.])(\d{2}(?:\.\d)?)\s?(?:-?\s?inch(?:es)?\b|"|”|-in\b|인치)/i.exec(t);
     if (inch) out.size = `${inch[1]} in`;
   }
   const pack = /\b(\d+)[- ]?(?:pack|pk|count|ct)\b|\bpack of (\d+)\b|\bset of (\d+)\b|\b(twin)[- ]pack\b|(\d+)\s?개입/i.exec(t);
@@ -132,9 +132,12 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
     rest = t.slice(m.index + m[0].length);
   }
   const words: string[] = [];
-  for (const raw of rest.split(/\s+/)) {
-    if (!raw) continue;
-    if (/^[,;:()|/–—-]/.test(raw)) break;
+  const parts = rest.split(/\s+/).filter(Boolean);
+  for (const [i, raw] of parts.entries()) {
+    if (/^[,;:()|/–—+&-]/.test(raw)) break;
+    // Attribute phrases end the model: "size 10.5", "32 oz", "2-pack", "12 cup" (requests rarely have commas).
+    if (/^(size|sz|사이즈)$/i.test(raw) || /^\d+[- ]?(pack|pk|count|ct)$/i.test(raw)) break;
+    if (/^\d+(?:\.\d+)?$/.test(raw) && /^(oz|fl|ounces?|cups?|gb|tb|inch|in|ml|l|liters?|qt|pack|pk|-pack|hours?|h)\b/i.test(parts[i + 1] ?? "")) break;
     const w = raw.replace(/[,;:()|]+$/, "");
     const stop = /[,;:()|]$/.test(raw);
     const lw = w.toLowerCase().replace(/[’']s$/, "'s");
