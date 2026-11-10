@@ -84,6 +84,11 @@ app.server.listen(port, host, () => {
     .then((r) => { if (r.length) console.log(`[diaporia] startup reconciliation: ${r.map((x) => `${x.checkoutSessionId.slice(0, 11)}… ${x.outcome} → ${x.state}`).join("; ")}`); })
     .catch((e) => console.error("[diaporia] startup reconciliation failed:", e instanceof Error ? e.message : "unknown"));
 });
-const stop = () => app.server.close(() => { void handoff?.shutdown().finally(() => process.exit(0)); });
+const stop = () => app.server.close(() => {
+  void (handoff?.shutdown() ?? Promise.resolve()).then(
+    () => process.exit(0),
+    () => { console.error("[diaporia] FATAL: browser cleanup was not verified during shutdown"); process.exit(1); },
+  );
+});
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
