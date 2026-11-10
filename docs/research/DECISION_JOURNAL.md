@@ -86,3 +86,25 @@ HEAD at run time; draft runs were taken on an uncommitted working tree on top of
   and counted, caps checked before sending, stop on 401/402/403/432/433 and on a repeated 429, service caps pinned).
 - **Not done:** provider docs could not be re-read (docs hosts blocked by this container's network policy); credit
   balances need the owner's dashboards. Live test remains NOT AUTHORIZED.
+
+## J-12 · Independent review of PR #13: ACCEPT WITH CHANGES; fixes (local, after 74fb5f8)
+Review: `/mnt/project-files/agent-commerce-research-v2/independent-review/RESEARCH-V2-INDEPENDENT-REVIEW.md` (separate
+thread, reproduced every HIGH finding).
+- **R-01 attribution:** `statementFrom` now counts a clause only if it names this exact model and no other product, or is
+  a product-free clause in a single-product hit. Comparison/"best of" titles never count through the second rule.
+  Questions are not statements. `OTHER_BRAND_WORDS` is a starter list; other model codes are detected by shape.
+- **R-02 manufacturer:** `SourceRegistry` uses an explicit official-domain registry (`STARTER_OFFICIAL_DOMAINS` +
+  `officialDomains`); `brand.<tld>` look-alikes are UNKNOWN.
+- **R-03 ranking:** the listing-text prior orders only candidates with unverified must-haves. Among recommendable ones the
+  cheapest objective sorts by price, the best objective by nice-to-haves then utility.
+- **R-04 budget:** every budget match is considered; a number followed by a unit is a quantity; "up to/max/within" need a
+  currency marker. "battery up to N hours" now becomes `battery_Nh`.
+- **R-06:** a brandless listing never matches a branded exact request. **R-07:** a text budget in another currency than
+  the structured one is recorded as `budgetConflict` and the decision HOLDs with a question. **R-08:** service adapters
+  refuse redirects and make one HTTP attempt per metered call (`SERVICE_LIVE_RETRY`). **R-09:** cheapest objective spends
+  evidence on the cheapest eligible candidate first; planner header corrected (fallback threshold 5).
+- **R-05:** eval reported at service caps 1/2 (81/90, 0 unsafe); live plan has an arm A at 1/2. R-10…R-12 left for later.
+- **Verification:** 21 regression tests (`tests/research-v2-review.test.ts`), full suite 492 pass; eval unchanged at eval
+  caps (87/90), which shows the corpus cannot see these defects.
+- **Still open:** new independently written frozen cases (multi-product snippets, look-alike domains, quantity phrases,
+  service caps) before the next clean number; provider docs re-check and credit balances (owner).

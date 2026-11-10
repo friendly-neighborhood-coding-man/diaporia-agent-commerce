@@ -16,7 +16,7 @@ node --env-file=<owner env with CHANNEL3_API_KEY, TAVILY_API_KEY> --import tsx s
 10 fixed requests (in the script, `LIVE_REQUESTS`): Sony WH-CH720N Black (replay of the 2026-11-09 smoke), Sony
 WH-CH720N, ANC + multipoint headphones under $150, AirPods Pro 2 with USB-C case (generation/variant trap), renewed
 iPhone 13 128GB (condition), waterproof hiking boots size 10 under $200, cheapest programmable coffee maker with thermal
-carafe, 4K USB-C monitor under $400, a Korean KRW request (expected currency blocker), cordless HEPA vacuum under $300.
+carafe, 4K USB-C monitor under $400, a Korean KRW request (expected currency blocker), cordless HEPA vacuum under $300. Each request runs once per arm (20 runs).
 Research only: no `compare_purchase_offers`, no mandate, no checkout.
 
 ## Two different cap sets
@@ -24,7 +24,12 @@ Research only: no `compare_purchase_offers`, no mandate, no checkout.
 | Cap set | Channel3 / Tavily / KERNEL per request | Where | Changed by this plan? |
 |---|---|---|---|
 | **Service caps** (normal operation with live keys) | 1 / 2 / 1 | `SERVICE_LIVE_CAPS` in `src/metering/LiveCallGuard.ts`, used by `main.ts` | **No** (a test pins them) |
-| **LTP-V2-01 live-test allowance** (this run only) | 3 / 6 / 0 | `LTP_V2_01_PER_REQUEST_ALLOWANCE` in the script | only exists inside the script |
+| **LTP-V2-01 live-test allowance** (arm B only) | 3 / 6 / 0 | `LTP_V2_01_PER_REQUEST_ALLOWANCE` in the script | only exists inside the script |
+
+**Two arms (review R-05).** Arm A runs the 10 requests at exactly the service configuration (1 / 2 per request, one
+HTTP attempt per call, as `main.ts`). Arm B runs them again at the 3 / 6 allowance with one bounded retry. Each arm has
+its own empty store, so arm B reuses nothing from arm A. Arm A is the number that describes the deployed service;
+arm B only shows what larger caps would buy. Offline, the same split gives 81/90 (service caps) vs 87/90 (eval caps).
 
 ## Outer guard (`src/metering/LiveCallGuard.ts`, unit-tested in `tests/live-call-guard.test.ts`)
 
@@ -44,14 +49,14 @@ Research only: no `compare_purchase_offers`, no mandate, no checkout.
 
 | | Per request | Whole run | Credits per call | Max credits | Max USD after free tier |
 |---|---|---|---|---|---|
-| Channel3 HTTP (search; detail is free but counted) | ≤ 3 | ≤ 30 | 1 (search) / 0 (detail) | 30 | $0.21 |
-| Tavily HTTP (`basic` depth only) | ≤ 6 | ≤ 60 | 1 | 60 | $0.48 |
+| Channel3 HTTP (search; detail is free but counted) | A ≤ 1, B ≤ 3 | ≤ 40 | 1 (search) / 0 (detail) | 40 | $0.28 |
+| Tavily HTTP (`basic` depth only) | A ≤ 2, B ≤ 6 | ≤ 80 | 1 | 80 | $0.64 |
 | KERNEL | 0 | 0 | – | 0 | $0 |
-| **Total** | | **≤ 90 HTTP calls** | | | **≤ $0.69** |
+| **Total** | | **≤ 120 HTTP calls** | | | **≤ $0.92** |
 
 Both providers give 1,000 free credits per month. The committed evidence records 2 Channel3 searches and 1 Tavily
 search this month (two smokes and one evidence check on 2026-11-09); any other use of the keys is unknown to me. If
-nothing else used them, the expected cost is $0. Retries are bounded (one retry
+nothing else used them, the expected cost is $0. Arm B retries are bounded (one retry
 on 429/5xx/network, Retry-After ≤ 3 s) and every retry counts against the caps above. Per-request allowance is
 enforced by the `UsageLedger`; run totals, hosts and redirects by `LiveCallGuard`.
 
@@ -68,12 +73,19 @@ One file, `docs/evidence/live-research-v2-<timestamp>.json`:
 No API keys, headers or raw full pages are logged. The repository is public, so the owner reviews the file before it
 is committed (third-party snippets are kept short for that reason).
 
+## Service path (review R-08)
+
+The running service now has the same two protections as the test guard, inside the adapters: requests use
+`redirect: "manual"` and any 3xx is refused (never followed, never retried), and `main.ts` builds both live adapters with
+one HTTP attempt per metered call (`SERVICE_LIVE_RETRY`), so the ledger's call count is the HTTP count. The hosts are
+fixed constants in the adapters (`api.trychannel3.com`, `api.tavily.com`).
+
 ## Owner pre-flight before approval (not possible from the cloud container)
 
 1. Re-read the provider docs: `docs.tavily.com` and `docs.trychannel3.com` were not reachable from this container on
    2026-11-10 (DNS blocked by the network policy), so `PROVIDER_CONTRACTS.md` (read earlier the same day) was not
    re-verified. Check: hosts, credit cost per endpoint/depth, `limit ≤ 30`, error codes 429/432/433.
-2. Check remaining credits in each provider dashboard (≥ 30 Channel3 and ≥ 60 Tavily for a $0 run). The script makes no
+2. Check remaining credits in each provider dashboard (≥ 40 Channel3 and ≥ 80 Tavily for a $0 run). The script makes no
    usage/credit API call.
 3. Run from the owner's machine with a dedicated env file; nothing in the plan needs PayPal, KERNEL or Cloudflare keys
    and the guard refuses any other host.

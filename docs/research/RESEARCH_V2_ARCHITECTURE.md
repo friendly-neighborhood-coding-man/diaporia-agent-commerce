@@ -28,8 +28,8 @@ the product, used/refurbished never mixes with new, no SKU is invented, and an u
 
 | Module | Role |
 |---|---|
-| `src/evidence/SourceRegistry.ts` | Classifies a URL as MANUFACTURER (brand slug is the registrable domain label), EXPERT_REVIEW (registry), RETAILER (registry or any domain selling in this session), USER_FORUM, or UNKNOWN. Starter lists are data, overridable per deployment. |
-| `src/evidence/EvidenceV2.ts` | `statementFrom` accepts a statement only if the text names the exact model (a family extension such as "Pro" does not count), comes from one explicit clause, is not a table row, and does not clash with the product's attributes. `judgeV2` is the sufficiency rule below. |
+| `src/evidence/SourceRegistry.ts` | Classifies a URL as MANUFACTURER (only a registered official domain of the brand, `STARTER_OFFICIAL_DOMAINS` + `officialDomains`; `brand.<tld>` look-alikes are UNKNOWN), EXPERT_REVIEW (registry), RETAILER (registry or any domain selling in this session), USER_FORUM, or UNKNOWN. Starter lists are data, overridable per deployment. |
+| `src/evidence/EvidenceV2.ts` | `statementFrom` accepts a statement only if the text names the exact model (a family extension such as "Pro" does not count), comes from one explicit clause about this product (the clause names this model and no other product, or is a product-free clause in a single-product, non-comparison page), is not a table row or a question, and does not clash with the product's attributes. `judgeV2` is the sufficiency rule below. |
 | `src/evidence/EvidenceRouter.ts` | `verifyMany`: stored evidence first (reclassified on read), then one combined Tavily query for up to 3 capabilities (`exact_match`, sellers excluded, `basic` depth = 1 credit), metered and cached; actual credits recorded. The V1 `verify` path is unchanged and still used when the router policy is `v1`. |
 | `src/evidence/providers.ts` | `TavilySearch.searchV2` with only documented parameters; never `include_answer` or `auto_parameters`. |
 
@@ -49,8 +49,9 @@ counted. A retailer claim alone never establishes a fact.
 2. **Blockers (eligible but not recommendable):** MUST_HAVE_UNVERIFIED / CONTRADICTED, VERIFICATION_LIMIT_REACHED,
    PRICE_NOT_IN_REQUESTED_CURRENCY, BUDGET_TIGHT (> 90% of budget), AVAILABILITY_UNKNOWN, CONDITION_UNCONFIRMED,
    ATTRIBUTE_UNKNOWN.
-3. **Order:** eligible → fewer blockers → more verified nice-to-haves → listing-claim prior (ordering only, never
-   evidence) → utility → price.
+3. **Order:** eligible → fewer blockers → then, among recommendable candidates, price first (cheapest objective) or
+   verified nice-to-haves → utility → price (best objective); among candidates with unverified must-haves, verified
+   nice-to-haves → listing-claim prior (ordering only, never evidence) → utility → price.
 4. **State:** RECOMMEND only if the top candidate is eligible with zero blockers; INVESTIGATE if eligible with blockers
    (the open items are listed); HOLD otherwise, with reasons.
 5. **Rationale (six parts):** whySelected, whyOthersRankedLower, verifiedFacts (with sources), unknownOrDisputed,

@@ -94,3 +94,28 @@ combined evidence query per candidate instead of one per capability.
 Real catalog noise, real Tavily snippet quality, real rate limits and latency, Korean real-world coverage (Channel3
 has no KRW and no Korean locale), and whether the cases represent real users. The live-test plan
 (`LIVE_TEST_PLAN.md`) is the next step and needs owner approval.
+
+## Addendum after the independent review (R-01 … R-09)
+
+**At the service caps (review R-05).** The tables above use the eval's per-request caps (Channel3 6, Tavily 12), which
+give the planner room. The deployed service runs 1 / 2. At 1 / 2 (`--service-caps`, same cases, same world):
+
+| All 90 at service caps 1/2 | V1 (c46a0f4) | V2 (review fixes) |
+|---|---|---|
+| Decision-state accuracy | 32/90 | 81/90 |
+| Unsafe recommendations | 10/90 | 0/90 |
+| Recall@10 / NDCG@5 | 0.249 / 0.234 | 0.857 / 0.879 |
+| Correct HOLD / false HOLD | 15/17 / 43/60 | 17/17 / 5/60 |
+| Calls per case / USD per case mean (max) | 1.46 / $0.011 ($0.071) | 1.49 / $0.011 ($0.023) |
+
+Holdout 2 at 1/2: V2 19/22 (recall 0.814), V1 10/22. Misses at 1/2 are d28, d33, h15, h17, h18, h25, q09, q13 and q22.
+The 7 not missed at eval caps (d28, d33, h15, h17, h18, q13, q22) all end in HOLD instead of RECOMMEND or INVESTIGATE:
+with one catalog call there is no fallback query, no second page and no variant-detail call, and with two Tavily calls
+fewer candidates get evidence. They fail safe. (d32 passes at 1/2 and misses at 6/12; not investigated.) Evidence: `v2-review-fixes-service-caps-*.json`, `v1-baseline-c46a0f4-service-caps-*.json`.
+
+**What the review fixes changed in these numbers: nothing.** At eval caps the fixed code scores the same 87/90, 0 unsafe
+(`v2-review-fixes-*.json`). That is expected and is itself a limitation: the corpus has only single-product snippets on
+correctly named brand domains and no quantity phrases, so it could not detect R-01, R-02 or R-04 (reviewer's analysis).
+Those fixes are covered by `tests/research-v2-review.test.ts`, built from the reviewer's reproductions, not by the eval.
+The harness now hands the system the world's official brand domains the same way it hands over the expert list
+(`WORLD_OFFICIAL_DOMAINS`), so manufacturer classification in the eval is still correct by construction.
