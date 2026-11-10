@@ -57,6 +57,21 @@ export function validateRecipe(r: MerchantCheckoutRecipe, opts: { allowLoopbackO
   // A recipe step may never target a payment / order-submission control, even by id.
   if (r.steps.some((s) => s.action === "click" && PAYMENT_CONTROL.test(s.selector))) return "RECIPE_TARGETS_PAYMENT_CONTROL";
   if (r.paymentHosts.some((h) => !/^[a-z0-9.-]{3,253}(:\d{1,5})?$/.test(h))) return "RECIPE_PAYMENT_HOST_INVALID";
+  // Real KERNEL merchant sessions require an explicit, reviewed egress allowlist.
+  // Only exact public DNS hostnames: no wildcards, raw IPs or CIDRs in Phase C.
+  if (!opts.allowLoopbackOrigin) {
+    const allowed = r.networkAllowedHosts;
+    if (!Array.isArray(allowed) || allowed.length === 0 || allowed.length > 100)
+      return "RECIPE_EGRESS_ALLOWLIST_REQUIRED";
+    const validHost = (h: string): boolean => typeof h === "string" &&
+      /^(?=.{3,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(h) &&
+      !/(^|\.)(localhost|local|internal|lan|home|corp|test|example|invalid)$/.test(h);
+    if (allowed.some(h => !validHost(h)) || new Set(allowed).size !== allowed.length)
+      return "RECIPE_EGRESS_HOST_INVALID";
+    if (!allowed.includes(o.hostname.toLowerCase()) ||
+        r.paymentHosts.some(h => !allowed.includes(h)))
+      return "RECIPE_EGRESS_REQUIRED_HOST_MISSING";
+  }
   return null;
 }
 
