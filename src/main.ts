@@ -5,12 +5,15 @@ import { PayPalSandboxProvider } from "./payment/PayPalCheckoutAdapter.js";
 import { MockPayPalProvider } from "./payment/MockPayPalProvider.js";
 import { PayPalWebhookSignatureVerifier } from "./payment/PayPalWebhook.js";
 import { Store } from "./store/Database.js";
+import { createManagedBilling } from "./billing/subscriptions/factory.js";
 import { UsageLedger, LIVE_PRICES_UNKNOWN, PLACEHOLDER_PRICING } from "./metering/UsageLedger.js";
 import { Channel3ResearchAdapter } from "./research/Channel3ResearchAdapter.js";
 import { EvidenceRouter } from "./evidence/EvidenceRouter.js";
 import { MockKernelInspector, MockTavilySearch, TavilySearch } from "./evidence/providers.js";
+import { KernelPageInspector } from "./evidence/KernelPageInspector.js";
 import { MockPayPalBillingProvider } from "./billing/Billing.js";
 import { randomBytes } from "node:crypto";
+import { configureHandoffFromEnv } from "./handoff/config.js";
 
 const env = process.env;
 const host = env.HOST ?? "127.0.0.1";
@@ -48,17 +51,25 @@ const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY
 const ledger = byok || liveCatalog
   ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1, TAVILY: 2, KERNEL: 1 } })
   : new UsageLedger(serviceStore, PLACEHOLDER_PRICING);
+// Independent explicit opt-in: merely keeping KERNEL_API_KEY in .env.local must NEVER trigger paid browsing.
+// The remote egress controls are defense-in-depth, not an audited DNS rebinding / IP-layer firewall.
+const kernelEnabled = !!byok && !!env.KERNEL_API_KEY && env.DIAPORIA_ENABLE_LIVE_KERNEL_INSPECTION === "1";
+const kernel = kernelEnabled ? new KernelPageInspector(env.KERNEL_API_KEY!, deploymentMode, { maxSessions: Number(env.KERNEL_MAX_SESSIONS ?? 20) }) : null;
 const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
   byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode) : new MockTavilySearch(),
-  byok ? null /* KERNEL BYOK adapter is not part of the public repo yet */ : new MockKernelInspector(),
+  byok ? kernel : new MockKernelInspector(),
   { billable: deploymentMode === "managed" });
 const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
-  billing: deploymentMode === "managed" ? new MockPayPalBillingProvider(serviceStore, env.MOCK_BILLING_WEBHOOK_SECRET ?? randomBytes(24).toString("hex")) : null,
+  billing: deploymentMode === "managed" ? createManagedBilling(env, serviceStore, ledger, baseUrl) : null, // MANAGED_BILLING=legacy-mock keeps MockPayPalBillingProvider
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
-console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? "BYOK Tavily (KERNEL disabled)" : "MOCK"}`);
+console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? `BYOK Tavily, KERNEL ${kernel ? "BYOK (live, paid per browser-second)" : "disabled (requires key and explicit opt-in)"}` : "MOCK"}`);
+
+const handoff = await configureHandoffFromEnv(env);
+if (handoff) console.log(`[diaporia] browser checkout handoff: driver=${handoff.config.driver.name}${handoff.note ? ` (${handoff.note})` : ""}`);
 
 const app = createApp({
   service,
+  ...(handoff ? { handoff: handoff.config } : {}),
   ...(liveCatalog ? { research: liveCatalog } : {}),
   host, port, baseUrl, authMode, auth,
   webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath: env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite",
@@ -73,6 +84,11 @@ app.server.listen(port, host, () => {
     .then((r) => { if (r.length) console.log(`[diaporia] startup reconciliation: ${r.map((x) => `${x.checkoutSessionId.slice(0, 11)}… ${x.outcome} → ${x.state}`).join("; ")}`); })
     .catch((e) => console.error("[diaporia] startup reconciliation failed:", e instanceof Error ? e.message : "unknown"));
 });
-const stop = () => app.server.close(() => process.exit(0));
+const stop = () => app.server.close(() => {
+  void (handoff?.shutdown() ?? Promise.resolve()).then(
+    () => process.exit(0),
+    () => { console.error("[diaporia] FATAL: browser cleanup was not verified during shutdown"); process.exit(1); },
+  );
+});
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);

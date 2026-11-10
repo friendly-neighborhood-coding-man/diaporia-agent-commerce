@@ -1,0 +1,63 @@
+{
+  "phase": "B",
+  "kind": "KERNEL_LIVE_VIEW_SAME_SESSION_POPUP",
+  "startedAt": "2026-11-09T18:38:35.558Z",
+  "browser": {
+    "headless": false,
+    "gpu": false,
+    "kiosk": false,
+    "telemetry": "disabled",
+    "replays": "never started",
+    "stealth": false
+  },
+  "liveViewEvents": [
+    {
+      "type": "KERNEL_CONNECTED",
+      "reason": null,
+      "at": "2026-11-09T18:38:52.826Z"
+    },
+    {
+      "type": "KERNEL_PLAYING",
+      "reason": null,
+      "at": "2026-11-09T18:38:54.748Z"
+    },
+    {
+      "type": "KERNEL_PAUSED",
+      "reason": null,
+      "at": "2026-11-09T18:38:58.517Z"
+    },
+    {
+      "type": "KERNEL_PLAYING",
+      "reason": null,
+      "at": "2026-11-09T18:38:58.518Z"
+    }
+  ],
+  "human": {
+    "popupVisible": true,
+    "popupInteractive": true
+  },
+  "observedPages": [
+    {
+      "buttonText": null,
+      "kind": "test-page",
+      "title": "DIAPORIA Phase B popup test",
+      "typedChars": null
+    },
+    {
+      "buttonText": "CLICKED",
+      "kind": "about:blank",
+      "title": "Synthetic popup",
+      "typedChars": 5
+    }
+  ],
+  "popupWindowExistsInSameSession": true,
+  "popupClickedByHuman": true,
+  "popupTypedByHuman": true,
+  "payment": "NONE — synthetic page only; no PayPal, merchant, order or credential",
+  "cleanup": {
+    "reason": "END",
+    "deleteSent": true,
+    "verifiedGone": true,
+    "browserSeconds": 64
+  }
+}

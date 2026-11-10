@@ -1,5 +1,7 @@
 # Four-host MCP interoperability
 
+Two scenarios were run with the same four hosts: `research_purchase` alone (2026-11-09, first section) and the two-step `research_purchase` → `compare_purchase_offers` workflow (2026-11-10, section below).
+
 The same DIAPORIA MCP server was used by four independent AI hosts, each through its own MCP client. The server was this repository at `ac0a4c1`, with no changes for any host. **No payment state machine, purchase policy, authorization or validation was changed for any host.** No PayPal call and no paid research call was made.
 
 ### What is live and what is mock
@@ -24,6 +26,33 @@ All four `research_purchase` results are identical on every compared field: mode
 <!-- MATRIX:END -->
 
 **PASS** means all nine checks in [`scripts/interop/build-evidence.mjs`](../scripts/interop/build-evidence.mjs) hold. In particular, the server saw the call from that host's own token, the host's own transcript shows it issued the call, and the result matches the reference result field for field. **NOT_TESTED** means no host-originated tool call happened. Compatibility is never inferred from discovery alone.
+
+## Two-step workflow: `research_purchase` → `compare_purchase_offers` (2026-11-10)
+
+The same four hosts ran a second, longer scenario on 2026-11-10 against this repository's branch `feature/byok-completion-v1`, built from this PR's code. Each host had to call `research_purchase`, then pass **its own** returned `purchaseSessionId` and `identity.lockedIdentity` to `compare_purchase_offers` with destination US/CA. Payments: `PAYMENT_PROVIDER=mock`; tokens carried only `purchase.research,purchase.read`, so no payment tool was listed.
+
+| Host | Version | Client seen by server (User-Agent) | Result | How the calls were made |
+|---|---|---|---|---|
+| Claude Code | Claude Code 2.1.310 | claude-code/2.1.310 (claude-desktop, agent-sdk/0.3.317) | **PASS** | `claude -p`; native MCP tools `mcp__diaporia__research_purchase`, `mcp__diaporia__compare_purchase_offers` |
+| OpenAI Codex CLI | codex-cli 0.160.0 (codex exec --json) | codex-mcp-client/0.160.0 | **PASS** | `codex exec --json`; two `mcp_tool_call` items |
+| xAI Grok Build | grok 1.0.77 (50ca579fa996) [stable] | grok-cli/1.0.77 | **PASS** | `grok -p`; both tools through `use_tool`. Grok also read its own saved copy of the long compare result with local `grep`/`read_file` (host-side, no server call). xAI cost $0.16 |
+| Nous Research Hermes Agent | Hermes Agent v0.22.7 (2026.9.24) · stable · local b200f5bc60e3 | python-httpx/0.28.1 / python-httpx2/2.15.1 | **PASS** | `hermes chat --oneshot`, model Claude Haiku via the Claude subscription provider plugin; Hermes' own MCP client executed both calls (after host-internal `tool_search`, `tool_describe`) |
+
+All four hosts got identical results for both calls: `RESEARCHED` / `LOCKED`, then `OFFER_VERIFIED` with lowest verified eligible offer `off_alpha` at 5939 USD cents, 1 eligible and 10 ineligible offers, no hold reasons, `paymentEffect: NONE`. Each host's purchase session is stored under its own user id with the audit chain `RESEARCH_STARTED → RESEARCHED → OFFERS_COMPARED`.
+
+**Authorization checks in the same run:**
+- A request without a token: **401**.
+- Cross-host probe (direct to the server, not through a host): the Codex token asked `compare_purchase_offers` to use Claude Code's research session → `NOT_FOUND` ("Purchase session not found"). Sessions are scoped to the token's user.
+
+**PASS** here means all twelve checks in [`scripts/interop/build-compare-evidence.mjs`](../scripts/interop/build-compare-evidence.mjs) hold, including: one call of each tool from that host's own token, compare after research, compare bound to the research result's own session id and locked identity, both calls visible in the host's own transcript, results identical to the reference, and `paymentEffect: NONE` on both.
+
+**What was not tested:** `prepare_checkout`, `get_checkout_status` and `get_purchase_receipt` were not offered to any host in either scenario, and no host used live Channel3, Tavily or KERNEL data. Remote hosts (claude.ai connector, ChatGPT, Grok web) were not tested.
+
+Reproduce: same setup as below with `.data/interop-compare/` instead of `.data/interop/`, server on 18891 and proxy on 18890 (18791 was briefly unavailable on the test machine), prompt in `.data/interop-compare/prompt.txt`:
+
+> Use the MCP server named diaporia. List its tools. Then make exactly two tool calls, in this order: 1. Call research_purchase exactly once with exactly these arguments: `{"request":"Buy Sony WH-CH720N Black","currency":"USD","budgetMinor":6000,"mustHave":["active_noise_cancellation"]}` 2. Call compare_purchase_offers exactly once with these arguments: researchSessionId = the purchaseSessionId returned by step 1; productIdentity = the identity.lockedIdentity object returned by step 1, copied exactly with all of its fields; destination = `{"country":"US","region":"CA"}`. Do not call any other tool and do not use any other way to reach the server. Then report: …
+
+Evidence: `docs/evidence/interop/compare/` (`matrix.json` and one file per host). Regenerate with `node scripts/interop/build-compare-evidence.mjs`.
 
 ## Fixture scenario (reproducible)
 

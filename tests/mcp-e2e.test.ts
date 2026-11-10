@@ -236,6 +236,10 @@ describe("mock end-to-end purchase", () => {
     const receipt = await call(client, "get_purchase_receipt", { checkoutSessionId: prep.checkoutSessionId });
     expect(receipt.paymentResult).toMatchObject({ status: "COMPLETED", provider: "MOCK_PAYPAL", amount: { totalMinor: 5939 } });
     expect(receipt.merchantOrder.status).toBe("NOT_VERIFIED");
+    // Payment completion is reported separately from merchant order confirmation and fulfillment.
+    for (const r of [status, receipt]) expect(r.purchaseOutcome).toMatchObject({ payment: "PAYMENT_COMPLETED", merchantOrderConfirmation: "NOT_CONFIRMED", fulfillment: "NOT_VERIFIED", merchantPurchaseComplete: false });
+    expect(receipt.purchaseOutcome.statement).toMatch(/^Payment captured \(MOCK.*not a completed merchant purchase\.$/);
+    expect(b.returnHtml).toMatch(/no merchant order confirmation or shipment is verified/);
     expect(receipt).toMatchObject({ paymentEnvironment: "MOCK", liveMerchantCheckout: false });
     expect(receipt.auditTimeline.map((e: any) => e.type)).toEqual(expect.arrayContaining(["RESEARCHED", "OFFERS_COMPARED", "CHECKOUT_PREPARED", "MANDATE_RESERVED", "BUYER_APPROVAL_VERIFIED", "PAYMENT_COMPLETED_VERIFIED"]));
     const mandate = h.app.gateway.mandates.listActive("alice");
