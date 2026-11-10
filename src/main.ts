@@ -51,8 +51,10 @@ const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY
 const ledger = byok || liveCatalog
   ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1, TAVILY: 2, KERNEL: 1 } })
   : new UsageLedger(serviceStore, PLACEHOLDER_PRICING);
-// KERNEL page inspection is paid per browser-second: it runs only when BOTH byok evidence is selected AND a KERNEL key is set.
-const kernel = byok && env.KERNEL_API_KEY ? new KernelPageInspector(env.KERNEL_API_KEY, deploymentMode, { maxSessions: Number(env.KERNEL_MAX_SESSIONS ?? 20) }) : null;
+// Independent explicit opt-in: merely keeping KERNEL_API_KEY in .env.local must NEVER trigger paid browsing.
+// The remote egress controls are defense-in-depth, not an audited DNS rebinding / IP-layer firewall.
+const kernelEnabled = !!byok && !!env.KERNEL_API_KEY && env.DIAPORIA_ENABLE_LIVE_KERNEL_INSPECTION === "1";
+const kernel = kernelEnabled ? new KernelPageInspector(env.KERNEL_API_KEY!, deploymentMode, { maxSessions: Number(env.KERNEL_MAX_SESSIONS ?? 20) }) : null;
 const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
   byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode) : new MockTavilySearch(),
   byok ? kernel : new MockKernelInspector(),
@@ -60,7 +62,7 @@ const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
 const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
   billing: deploymentMode === "managed" ? createManagedBilling(env, serviceStore, ledger, baseUrl) : null, // MANAGED_BILLING=legacy-mock keeps MockPayPalBillingProvider
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
-console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? `BYOK Tavily, KERNEL ${kernel ? "BYOK (live, paid per browser-second)" : "disabled (no KERNEL_API_KEY)"}` : "MOCK"}`);
+console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? `BYOK Tavily, KERNEL ${kernel ? "BYOK (live, paid per browser-second)" : "disabled (requires key and explicit opt-in)"}` : "MOCK"}`);
 
 const handoff = await configureHandoffFromEnv(env);
 if (handoff) console.log(`[diaporia] browser checkout handoff: driver=${handoff.config.driver.name}${handoff.note ? ` (${handoff.note})` : ""}`);
