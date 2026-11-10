@@ -1,0 +1,32 @@
+# STAGING TEMPLATE ONLY, do not install/start without C1 operator approval.
+# Install as /etc/systemd/system/diaporia-phase-c-merchant.service
+# Pre-create user "diaporia-merchant", code checkout /opt/diaporia-agent-commerce,
+# persistent data under /var/lib/diaporia-phase-c/, and root-owned env file
+# /etc/diaporia/phase-c-merchant.env (0600, NOT IN GIT).
+[Unit]
+Description=DIAPORIA Phase C test merchant (MOCK by default; Sandbox gated)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/diaporia/phase-c-merchant.env
+
+[Service]
+Type=simple
+User=diaporia-merchant
+Group=diaporia-merchant
+WorkingDirectory=/opt/diaporia-agent-commerce
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/diaporia/phase-c-merchant.env
+ExecStart=/usr/bin/node /opt/diaporia-agent-commerce/dist-merchant/apps/phase-c-test-merchant/src/main.js
+Restart=no
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/diaporia-phase-c
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
