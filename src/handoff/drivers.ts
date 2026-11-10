@@ -8,8 +8,8 @@
  * Nothing here returns cookies, CDP/WebDriver endpoints, or the live-view URL to callers other than the handoff page.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 export type DriverPhase = "AUTOMATION" | "HUMAN_TAKEOVER" | "OBSERVATION" | "CLOSED";
 
@@ -166,16 +166,68 @@ export class KernelDriver implements BrowserDriver {
   }
   get sessionsCreated() { return this.#created; }
 
+  private watchdogDir(): string { return resolve(process.cwd(), ".data/kernel-watchdogs"); }
+  private watchdogFile(id: string): string { return join(this.watchdogDir(), `handoff-${id}.json`); }
+
+  /** Only session ids and lifecycle timestamps go on disk; never tokens or Live View URLs. */
+  private markWatchdog(id: string, deadline: number, status: "PENDING" | "VERIFIED_DELETED") {
+    if (this.o.fetchImpl !== fetch) return;
+    mkdirSync(this.watchdogDir(), { recursive: true, mode: 0o700 });
+    writeFileSync(this.watchdogFile(id), JSON.stringify({
+      sessionId: id, deadline, status, checkedAt: Date.now(),
+    }), { mode: 0o600 });
+  }
+
+  /**
+   * After a restart, a prior in-memory human session no longer has an owner and must be killed.
+   * The detached watchdog handles ordinary process crashes; this handles machine restarts.
+   * If provider cleanup cannot be VERIFIED, refuse to bring up live handoff.
+   */
+  async recoverOrphanedBrowsers(): Promise<number> {
+    if (this.o.fetchImpl !== fetch || !existsSync(this.watchdogDir())) return 0;
+    let recovered = 0;
+    for (const name of readdirSync(this.watchdogDir())) {
+      if (!/^handoff-[A-Za-z0-9_-]{3,128}\\.json$/.test(name)) continue;
+      let rec: { sessionId: string; deadline: number; status: string };
+      try { rec = JSON.parse(readFileSync(join(this.watchdogDir(), name), "utf8")); }
+      catch { throw new Error("KERNEL orphan cleanup journal is unreadable"); }
+      const id = rec.sessionId;
+      if (name !== `handoff-${id}.json` || !Number.isSafeInteger(rec.deadline))
+        throw new Error("KERNEL orphan cleanup journal is malformed");
+      if (rec.status === "VERIFIED_DELETED") continue;
+      try {
+        await this.api("DELETE", `/browsers/${encodeURIComponent(id)}`, undefined, 10_000)
+          .catch(async (e: Error) => { if (!/KERNEL HTTP 404/.test(e.message)) throw e; });
+        await this.verifyDeleted(id);
+        this.markWatchdog(id, rec.deadline, "VERIFIED_DELETED");
+      } catch { throw new Error("KERNEL orphan browser cleanup unverified; live handoff refused"); }
+      recovered++;
+    }
+    return recovered;
+  }
+
+  /** Mark a session deleted only after the provider confirms it is absent. */
+  journalVerifiedDeletion(id: string): void {
+    if (this.o.fetchImpl !== fetch || !existsSync(this.watchdogFile(id))) return;
+    let deadline: number;
+    try { deadline = JSON.parse(readFileSync(this.watchdogFile(id), "utf8")).deadline; }
+    catch { throw new Error("KERNEL watchdog journal corrupted"); }
+    if (!Number.isSafeInteger(deadline)) throw new Error("KERNEL watchdog journal malformed");
+    this.markWatchdog(id, deadline, "VERIFIED_DELETED");
+  }
+
   /** Detached hard-wall-clock deletion, independent of the MCP server lifetime. */
   private async armWatchdog(id: string): Promise<void> {
     if (this.o.fetchImpl !== fetch) { await this.o.watchdog(id, this.o.maxWallMs); return; } // fake HTTP, no paid backend
     const file = resolve(process.cwd(), "scripts/kernel-handoff-watchdog.mjs");
     if (!existsSync(file)) throw new Error("KERNEL watchdog missing; refusing live handoff");
+    const until = Date.now() + this.o.maxWallMs;
+    this.markWatchdog(id, until, "PENDING");
     const child = spawn(process.execPath, [file], {
       detached: true, stdio: "ignore", windowsHide: true,
       env: { DIAPORIA_KERNEL_WATCHDOG_SESSION: id, DIAPORIA_KERNEL_WATCHDOG_KEY: this.#key,
-        DIAPORIA_KERNEL_WATCHDOG_DEADLINE: String(Date.now() + this.o.maxWallMs),
-        DIAPORIA_KERNEL_WATCHDOG_DIR: resolve(process.cwd(), ".data/kernel-watchdogs") },
+        DIAPORIA_KERNEL_WATCHDOG_DEADLINE: String(until),
+        DIAPORIA_KERNEL_WATCHDOG_DIR: this.watchdogDir() },
     });
     await new Promise<void>((done, fail) => {
       child.once("spawn", () => done());
@@ -268,6 +320,7 @@ export class KernelSession extends PhasedSession implements BrowserSession {
     this.#closing = (async () => {
       await this.driver.api("DELETE", `/browsers/${encodeURIComponent(this.#id)}`, undefined, 10_000);
       await this.driver.verifyDeleted(this.#id);
+      this.driver.journalVerifiedDeletion(this.#id);
     })();
     try { await this.#closing; }
     catch (e) { this.#closing = null; throw e; } // caller may retry; detached watchdog also retries
