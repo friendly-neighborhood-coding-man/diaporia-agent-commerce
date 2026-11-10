@@ -69,16 +69,22 @@ export function refuseUrl(raw: string): string | null {
 /** Remote snippet. `target`/`nav` are injected as JSON literals; nothing else from untrusted input enters the code. */
 function remoteCode(target: string, navMs: number): string {
   return `const target = ${JSON.stringify(target)};
-const allowed = new URL(target).hostname.toLowerCase().replace(/^www\\./, "");
-await page.route("**/*", (route) => {
+const allowedOrigin = new URL(target).origin;
+const context = page.context();
+// Treat every document, frame, fetch/XHR and subresource as untrusted. Do not silently
+// permit cross-origin requests just because they are not main-frame navigations.
+await context.route("**/*", (route) => {
   const req = route.request(); let u;
   try { u = new URL(req.url()); } catch { return route.abort(); }
-  if (u.protocol !== "https:") return route.abort();
-  if (["image", "media", "font"].includes(req.resourceType())) return route.abort();
-  let mainNav = false; try { mainNav = req.isNavigationRequest() && req.frame() === page.mainFrame(); } catch { mainNav = req.isNavigationRequest(); }
-  if (mainNav && u.hostname.toLowerCase().replace(/^www\\./, "") !== allowed) return route.abort();
+  if (u.protocol !== "https:" || u.origin !== allowedOrigin || u.username || u.password) return route.abort();
+  if (["image", "media", "font", "websocket", "eventsource"].includes(req.resourceType())) return route.abort();
   return route.continue();
 });
+// Playwright's HTTP request routing does not intercept WebSocket handshakes.
+if (typeof context.routeWebSocket !== "function") throw new Error("WebSocket route guard unavailable");
+await context.routeWebSocket("**/*", (ws) => ws.close());
+// A fresh disposable context must not install a Service Worker that bypasses routing.
+await context.addInitScript(() => { try { Object.defineProperty(navigator, "serviceWorker", { value: undefined }); } catch {} });
 let status = null;
 try { const resp = await page.goto(target, { waitUntil: "domcontentloaded", timeout: ${Math.floor(navMs)} }); status = resp ? resp.status() : null; }
 catch (e) { return { navigationError: String(e && e.message || e).slice(0, 200), finalUrl: page.url(), status }; }
@@ -132,6 +138,8 @@ export class KernelPageInspector implements PageInspectionProvider {
     this.o = { fetchImpl: opts.fetchImpl ?? fetch, baseUrl: (opts.baseUrl ?? "https://api.onkernel.com").replace(/\/$/, ""),
       totalTimeoutMs: opts.totalTimeoutMs ?? 45_000, navigationTimeoutMs: opts.navigationTimeoutMs ?? 15_000, maxSessions: opts.maxSessions ?? 20,
       resolve: opts.resolve, now: opts.now };
+    if (!opts.fetchImpl && this.o.baseUrl !== "https://api.onkernel.com")
+      throw new Error("Live KERNEL endpoint must be the official API host");
   }
   get sessionsCreated() { return this.#sessions; }
 
@@ -162,24 +170,53 @@ export class KernelPageInspector implements PageInspectionProvider {
     const now = this.o.now ?? Date.now;
     const deadline = AbortSignal.timeout(this.o.totalTimeoutMs);
     const execSec = Math.max(5, Math.floor((this.o.totalTimeoutMs - 5_000) / 1000));
+    const allowedHost = new URL(url).hostname;
     this.#sessions++;
     const started = now();
     let id: string | null = null;
+    let result: PageInspectionResult | null = null;
+    let capturedError: unknown = null;
+    let cleanupFailed = false;
     try {
-      const created = await this.api("POST", "/browsers", { headless: true, stealth: false, timeout_seconds: Math.max(30, execSec + 15) }, deadline);
+      const created = await this.api("POST", "/browsers", {
+        headless: true, stealth: false, timeout_seconds: Math.max(30, execSec + 15),
+        // Provider-side egress allowlist, in addition to Playwright's per-request route.
+        // It restricts KERNEL-managed egress; do not assume it is an IP-layer firewall.
+        network: { allowed_hosts: [allowedHost] },
+      }, deadline);
       id = typeof created?.session_id === "string" ? created.session_id : null;
       if (!id) throw new Error("KERNEL returned no session id");
       const out = await this.api("POST", `/browsers/${encodeURIComponent(id)}/playwright/execute`,
         { code: remoteCode(url, Math.min(this.o.navigationTimeoutMs, execSec * 1000 - 2_000)), timeout_sec: execSec }, deadline);
-      if (!out || out.success !== true) throw new Error(`KERNEL execution failed: ${String(out?.error ?? "no result").slice(0, 100)}`);
-      const res = extractStatements(url, (out.result ?? {}) as RemotePage, capability, modelToken);
-      return { ...res, browserSeconds: Math.max(1, Math.ceil((now() - started) / 1000)) };
-    } catch (e) {
-      if (deadline.aborted) throw new Error(`KERNEL inspection timed out after ${this.o.totalTimeoutMs} ms`);
-      throw e;
-    } finally {
-      if (id) await this.api("DELETE", `/browsers/${encodeURIComponent(id)}`, undefined, AbortSignal.timeout(10_000)).catch(() => undefined);
+      if (!out || out.success !== true) throw new Error("KERNEL inspection execution failed");
+      result = extractStatements(url, (out.result ?? {}) as RemotePage, capability, modelToken);
+    } catch (e) { capturedError = e; }
+    finally {
+      if (id) {
+        try {
+          await this.api("DELETE", `/browsers/${encodeURIComponent(id)}`, undefined, AbortSignal.timeout(10_000));
+          if (this.o.fetchImpl === fetch) {
+            // Do not treat an unverified DELETE as success, especially after a timeout.
+            let fullyListed = false;
+            for (let offset = 0; offset <= 1000; offset += 100) {
+              const listed = await this.api("GET", `/browsers?limit=100&offset=${offset}`, undefined, AbortSignal.timeout(10_000));
+              const rows = Array.isArray(listed) ? listed : Array.isArray(listed?.data) ? listed.data : null;
+              if (!rows || rows.some((b: any) => b?.session_id === id && !b?.deleted_at))
+                throw new Error("KERNEL browser deletion unverified");
+              if (rows.length < 100) { fullyListed = true; break; }
+            }
+            if (!fullyListed) throw new Error("KERNEL browser list incomplete");
+          }
+        } catch { cleanupFailed = true; }
+      }
     }
+    if (cleanupFailed) throw new Error("KERNEL browser deletion unverified; evidence withheld and operator cleanup required");
+    if (capturedError) {
+      if (deadline.aborted) throw new Error(`KERNEL inspection timed out after ${this.o.totalTimeoutMs} ms`);
+      throw capturedError;
+    }
+    if (!result) throw new Error("KERNEL inspection returned no result");
+    return { ...result, browserSeconds: Math.max(1, Math.ceil((now() - started) / 1000)) };
   }
   toJSON() { return { name: this.name, provenance: this.provenance, key: "[REDACTED]" }; }
 }
