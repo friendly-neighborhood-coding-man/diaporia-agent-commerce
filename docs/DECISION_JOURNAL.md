@@ -110,3 +110,58 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
   - The three tests in tests/approval-ui.test.ts stay.
   - 364/364 tests, build, secret scan, dogfood A–H, J, K and the Scenario I self-test pass.
 - **Run 3 precondition:** a fresh data directory on the new commit, with run 2's server stopped and its two mandates expired or revoked. The original Scenario I prompts and acceptance criteria are unchanged.
+
+## 2026-11-10 · Expiry hardening: an expired checkout never starts a capture
+
+- **Request:** the owner accepted DF-4 for the verified MOCK scope and asked for one more hardening pass before run 3. Run 3 is not started.
+- **Defect (pre-existing, found in the DF-4 review as F3):** `handleBuyerReturn` never checked expiry. A buyer approval that arrived after `expiresAt` was still captured.
+- **Changed invariants:**
+  1. **No new capture past expiry.** The buyer return checks expiry before it verifies the approval. In APPROVAL_REQUIRED no capture was ever requested, so the checkout closes EXPIRED and the bound limit is revoked. The provider's order state is recorded (`BUYER_APPROVAL_AFTER_EXPIRY`).
+  2. **The capture decision is atomic and made last.** In `capture()`, one transaction re-reads the checkout and compare-and-sets it, after every await (merchant re-check, recipient read). It then either commits CAPTURE_PENDING, refuses (FAILED `CHECKOUT_EXPIRED_BEFORE_CAPTURE`, released), or holds UNKNOWN.
+  3. **Requested vs new capture.** `capture_requested_at` is written in that same transaction, before the provider call. Rows from before the column fall back to the `CAPTURE_REQUESTED` audit event or `CAPTURE_OUTCOME_UNKNOWN`. Unknown history counts as requested.
+  4. **Uncertain and expired: reads only.** Reconcile of an expired UNKNOWN never captures or replays. It adopts a capture the provider shows. It closes only when the provider reports the order VOIDED with no capture (`PROVIDER_ORDER_VOIDED`).
+  5. **No release while a requested capture could land.** A replay's own failures (mandate re-check, recipient read, a 4xx on the replayed capture) keep UNKNOWN and the reservation. Only the first request's 4xx is a definite rejection. Every close and expiry compare-and-sets before it releases, in one transaction; `expireIfNeeded` used to release first.
+  6. **Wording.** FAILED `CHECKOUT_EXPIRED_BEFORE_CAPTURE` is reported as `EXPIRED`: "DIAPORIA never requested one, so no payment was taken". UNKNOWN never claims "not paid".
+  7. **No refunds.** No refund or void call was added.
+- **Legitimate recovery preserved:** before expiry, an uncertain capture is replayed once with the same request id and completes exactly once. A capture requested before expiry whose answer arrives later is honoured.
+- **Independent review** (fresh reviewer, given the code only). It found:
+  - **blocker:** replay exits before the gate called `fail()`, releasing and claiming "nothing was captured";
+  - **high:** a 4xx on a replay was treated as a rejection;
+  - **medium:** CAPTURE_PENDING with no capture id was stuck forever;
+  - **low:** concurrent reconciles threw StaleStateError;
+  - **low:** "failed" wording for an expiry.
+  
+  All are fixed with tests. A stuck CAPTURE_PENDING is treated as uncertain only after 5 minutes, well beyond the 20 s provider timeout. A process or event-loop stall longer than that could still let reconcile replay a live capture with the same request id. The reviewer reproduced this with a faked stall: one capture, then COMPLETED. It is safe only through PayPal idempotency; see the risk register, R2.
+- **Recheck by the same reviewer:** the five fixes hold. It found G1, a blocker: two concurrent returns, where the second return's recipient read failed and its `fail()` moved the first return's in-flight CAPTURE_PENDING to FAILED with the reservation released. This was also possible before this change. Fixed: every pre-gate refusal compare-and-sets on the exact APPROVED version it started from, and re-decides "replay" on that fresh row. `holdUnknown` now also requires the version the caller decided on. The G1 regression test fails on the previous code. The cosmetic next action for an expiry before capture is now NEW_CHECKOUT_REQUIRED. A final recheck confirmed that G1 no longer reproduces and found no new money-unsafe path, with no blocker or high finding left. Its last low note is now closed: a 4xx on the first capture request also fails only the exact CAPTURE_PENDING version that call committed.
+- **Status:** 390/390 tests, typecheck, build, secret scan, dogfood (10 PASS, I not run) and the Scenario I self-test pass.
+- **Verification:** tests/expiry-capture.test.ts has 18 tests.
+  - Real Chromium: expiry before approval, and expiry before capture via a delayed provider read.
+  - Deterministic:
+    - a late provider answer;
+    - an uncertain capture then expiry: no retry, then VOIDED;
+    - a lost response then expiry: adopted;
+    - the legacy row;
+    - five concurrent late returns across expiry: one refusal, zero captures, one release;
+    - concurrent in-time returns: one capture;
+    - review F1–F5 and G1.
+  - Fourteen fail on the code from before their fixes, one of them only because the old code never sets the new marker.
+  - The DF-4 race test was rewritten: past expiry the correct result is now no capture.
+
+## 2026-11-10 · Semantic Fidelity v1 and DF-5 (MOCK checkouts said "PayPal Sandbox")
+
+- **Observation (run 2, kept unchanged on the owner's PC):** Hermes told the user to "approve the PayPal sandbox payment" for a MOCK checkout. Run 2 remains FAILED_DF4; nothing is re-labelled.
+- **Cause found (DF-5):** the server said so itself in MOCK mode:
+  - every checkout summary's `disclosure` read "PayPal Sandbox demonstration…";
+  - the `prepare_checkout` tool description said "a PayPal Sandbox order is created";
+  - the MOCK order description said "DIAPORIA Sandbox demo".
+  
+  The host repeated server text that contradicted the server's own `paymentEnvironment: MOCK`.
+- **Change:** disclosure, tool description and order description now name the environment that runs. `checkoutPath: PAYPAL_SANDBOX_DEMO_MERCHANT` is an enum contract value and is unchanged; see the risk register, R5.
+- **Evaluation:** `scripts/interop/semantic-fidelity.mjs` (`npm run eval:semantic-fidelity`), ruleset `semantic-fidelity/v1`.
+  - **Separate from the 17 checks.** It never changes a host's PASS/FAIL or Scenario I PASS. The original prompts and checks are unchanged.
+  - **Inputs.** Phase 1 and phase 2 host text, compared against `prepare_checkout` and `get_checkout_status` evidence.
+  - **Dimensions.** MOCK/Sandbox/live, payment vs merchant order, fulfillment, UNKNOWN/pending.
+  - **Ambiguity.** Quoted claims; negated, hedged or mixed wording goes to `humanReview[]`.
+  - **Verdicts.** CONTRADICTED, NEEDS_HUMAN_REVIEW or NO_CONTRADICTION. There is no PASS.
+  - **Tests.** tests/semantic-fidelity.test.ts has 8 tests, including the Hermes sentence (CONTRADICTED) and a check that the CLI leaves its inputs untouched.
+- **Remaining risks:** docs/RISK_REGISTER.md. No open run 3 blocker. Phase C blocker: unverified PayPal idempotency retention (R2).

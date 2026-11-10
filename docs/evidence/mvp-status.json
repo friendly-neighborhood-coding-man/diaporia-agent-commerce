@@ -302,6 +302,8 @@
     "DF-2 repeat prepare after COMPLETED created a new checkout (fixed)",
     "DF-3 Referrer-Policy no-referrer made browsers send Origin null; owner pages refused every human (fixed, real-Chromium test)",
     "DF-4 owner page created an unbound mandate for an expired/completed checkout; a later checkout used it without the owner (fixed: checkout-bound mandates, atomic authorization)",
+    "Expiry hardening: a buyer approval after checkout expiry was still captured (pre-existing; fixed: atomic capture gate, capture_requested_at, read-only reconcile past expiry)",
+    "DF-5 MOCK checkouts told hosts \"PayPal Sandbox demonstration\"; Hermes repeated it in run 2 (fixed; measured by semantic-fidelity/v1, separate from the 17 checks)",
     "research eval: dropped color word (fixed)"
   ],
   "statusVocabulary": [

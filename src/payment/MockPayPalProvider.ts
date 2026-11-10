@@ -51,6 +51,12 @@ export class MockPayPalProvider implements PaymentProvider {
     return u.toString();
   }
 
+  /** Test hook: the provider voids an order that was never captured (as PayPal does to stale approved orders). */
+  voidOrder(orderId: string): void {
+    const o = this.mustGet(orderId);
+    if (o.captures.length === 0) o.status = "VOIDED";
+  }
+
   buyerCancel(orderId: string): string {
     const o = this.mustGet(orderId);
     const u = new URL(o.cancelUrl);

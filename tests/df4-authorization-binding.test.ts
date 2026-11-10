@@ -205,27 +205,30 @@ describe("DF-4: owner-page authorization is bound to one checkout", () => {
     await client.close();
   });
 
-  it("closing an expired UNKNOWN checkout cannot release a reservation that a racing buyer approval then captures (review N1)", async () => {
+  it("an expired UNKNOWN checkout racing a late buyer approval: no capture, the reservation released exactly once (review N1 + expiry hardening)", async () => {
     const client = await mcpClient(h.url, TOKENS.alice);
     await createMandate(h.url, OWNER.alice, { productIdentity: SONY_BLACK, currency: "USD", maximumTotalMinor: 6000 });
     const { research } = await researchAndCompare(client);
     h.mock.createOutcomes.push("TIMEOUT_AFTER_CREATE");
     const a = await call(client, "prepare_checkout", { purchaseSessionId: research.purchaseSessionId, offerId: "off_alpha", maximumApprovedTotalMinor: 6000, currency: "USD", quantity: 1 });
     h.clock.offsetMs += 16 * 60_000;
-    // Hold the owner's reconcile at its order read (status CREATED) while the buyer approves and returns.
+    // Hold the owner's reconcile at its first order read (status CREATED) while the buyer approves and returns.
     const orig = h.mock.getOrder.bind(h.mock);
     let open!: () => void; const gate = new Promise<void>((r) => (open = r)); let n = 0;
-    (h.mock as any).getOrder = async (id: string) => { n++; const o = await orig(id); if (n === 1) { const snap = structuredClone(o); await gate; return snap; } if (n === 3) { open(); await new Promise((r) => setTimeout(r, 20)); } return o; };
+    (h.mock as any).getOrder = async (id: string) => { n++; const o = await orig(id); if (n === 1) { const snap = structuredClone(o); await gate; return snap; } return o; };
     const r1 = h.app.gateway.reconcile("alice", a.checkoutSessionId);
     await new Promise((r) => setTimeout(r, 20));
     const orderId = (db().prepare("SELECT provider_order_id p FROM checkout_sessions WHERE id = ?").get(a.checkoutSessionId) as any).p;
     h.mock.buyerApprove(orderId);
-    const r2 = h.app.gateway.handleBuyerReturn(a.checkoutSessionId, orderId);
-    await Promise.all([r1, r2]);
-    expect((db().prepare("SELECT state FROM checkout_sessions WHERE id = ?").get(a.checkoutSessionId) as any).state).toBe("COMPLETED");
-    expect(h.mock.calls.captureOrder).toBe(1);
+    const r2 = await h.app.gateway.handleBuyerReturn(a.checkoutSessionId, orderId);
+    expect(r2.state).toBe("FAILED");
+    expect(r2.failureCode).toBe("CHECKOUT_EXPIRED_BEFORE_CAPTURE");
+    open();
+    const after1 = await r1;                                                  // the held reconcile sees the moved checkout and does nothing
+    expect(after1.state).toBe("FAILED");
+    expect(h.mock.calls.captureOrder).toBe(0);
     expect(db().prepare("SELECT status, reserved_minor, consumed_minor, transactions_used FROM mandates WHERE user_id = 'alice'").all())
-      .toEqual([{ status: "EXHAUSTED", reserved_minor: 0, consumed_minor: 5939, transactions_used: 1 }]);   // captured AND accounted: no limit handed back
+      .toEqual([{ status: "ACTIVE", reserved_minor: 0, consumed_minor: 0, transactions_used: 0 }]);   // released once, never negative, nothing consumed
     await client.close();
   });
 

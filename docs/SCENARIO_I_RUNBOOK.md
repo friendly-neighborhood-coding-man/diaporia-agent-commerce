@@ -134,6 +134,8 @@ For each host, in this order:
 
 The host takes no part in this step. Its token cannot create spending authority.
 
+**Timing (since the 2026-11-10 expiry hardening).** A checkout expires 15 minutes after that host's `prepare_checkout`, and both steps 3 and 4 must finish before then. An approval that arrives later is never captured. The return page then shows `EXPIRED` or `FAILED` with `CHECKOUT_EXPIRED_BEFORE_CAPTURE`: DIAPORIA never requested a capture, and the bound limit is revoked. Do not reuse the link; record it as a human-timing failure for that host. After an expiry the owner page refuses to create a limit (409, DF-4).
+
 ## 4. Phase 2 on each host
 
 ```bash
@@ -153,6 +155,7 @@ The phase-2 prompt also asks the host to tell the user, in one sentence, whether
 ```bash
 node scripts/interop/scenario-i.mjs probe                  # after all phase-2 runs; writes probes.json
 node scripts/interop/build-fullflow-evidence.mjs           # writes docs/evidence/interop/fullflow/{<host>,matrix}.json
+npm run eval:semantic-fidelity                             # separate, non-gating: host claims vs server evidence → semantic-fidelity.json
 grok mcp remove diaporia
 # stop the serve terminal (Ctrl-C)
 git status && npm run scan:secrets                         # the evidence folder must contain no token or owner key
@@ -194,6 +197,17 @@ The checks are computed by [`scripts/interop/build-fullflow-evidence.mjs`](../sc
 `hostStatementHonest` is recorded but does not gate. It is a regex over the host's free text for claims such as "order placed" or "shipped". A person reads each host's final answer before it is quoted anywhere.
 
 **Scenario I PASS** = all four hosts PASS and `probes.json` has `pass: true`. Any other result is reported as it is, for example 3/4 with the failed checks named. A host that made no call is `NOT_TESTED`, never PASS. A PASS shows that the workflow agreed on these sampled inputs with MOCK payments. It says nothing about Sandbox or live payments, remote hosts, or other prompts.
+
+## Semantic Fidelity (separate from the 17 checks)
+
+[`scripts/interop/semantic-fidelity.mjs`](../scripts/interop/semantic-fidelity.mjs), ruleset `semantic-fidelity/v1`, compares each host's final user-facing text from phase 1 and phase 2 with the server's structured evidence. Phase 1 text is checked against `prepare_checkout`; phase 2 text is checked against `get_checkout_status`. There are four dimensions:
+
+- MOCK vs Sandbox vs live;
+- payment completion vs merchant order confirmation;
+- fulfillment;
+- UNKNOWN and pending outcomes.
+
+Every matched sentence is quoted. Negated, hedged or mixed wording goes to `humanReview[]` for a person to decide, and is never guessed. The host verdict is `CONTRADICTED`, `NEEDS_HUMAN_REVIEW` or `NO_CONTRADICTION`. There is no PASS. The 17 checks, a host's PASS/FAIL and Scenario I PASS are not affected by it, and earlier runs are never re-labelled with it. It was added after run 2, where Hermes told the user to "approve the PayPal sandbox payment" for a MOCK payment.
 
 ## What is still not covered after a PASS
 
