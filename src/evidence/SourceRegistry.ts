@@ -28,20 +28,45 @@ export function registrableDomain(h: string): string {
 const inList = (h: string, list: Iterable<string>) => { for (const d of list) { if (d.endsWith(".") ? h.startsWith(d) || h.includes(`.${d}`) : h === d || h.endsWith(`.${d}`)) return true; } return false; };
 export const brandSlugs = (brand: string) => { const b = brand.toLowerCase().normalize("NFKC").replace(/[’']s\b/g, "s"); return new Set([b.replace(/[^a-z0-9]+/g, ""), b.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")]); };
 
+/**
+ * Official manufacturer domains by brand (review R-02). A domain is MANUFACTURER only if it is (a sub-domain of) a
+ * registered official domain of the listing's brand. A domain whose label merely equals the brand ("sony.shop",
+ * "nest.org") is UNKNOWN: anyone can register brand.<tld>, and common-word brands map to unrelated sites.
+ * Starter data only; deployments extend it with `officialDomains`.
+ */
+export const STARTER_OFFICIAL_DOMAINS: Record<string, string[]> = {
+  sony: ["sony.com"], bose: ["bose.com"], apple: ["apple.com"], samsung: ["samsung.com"], sennheiser: ["sennheiser.com"], jbl: ["jbl.com"],
+  anker: ["anker.com"], soundcore: ["soundcore.com"], jabra: ["jabra.com"], beats: ["beatsbydre.com"], google: ["google.com"], dell: ["dell.com"],
+  lenovo: ["lenovo.com"], hp: ["hp.com"], asus: ["asus.com"], acer: ["acer.com"], microsoft: ["microsoft.com"], lg: ["lg.com"], dyson: ["dyson.com"],
+  irobot: ["irobot.com"], breville: ["breville.com"], cuisinart: ["cuisinart.com"], keurig: ["keurig.com"], nike: ["nike.com"], adidas: ["adidas.com"],
+  garmin: ["garmin.com"], logitech: ["logitech.com"],
+};
+
 export class SourceRegistry {
   readonly expert: Set<string>; readonly retailer: Set<string>; readonly forum: Set<string>;
-  constructor(cfg: { expertReviewDomains?: string[]; retailerDomains?: string[]; forumDomains?: string[]; replaceStarter?: boolean } = {}) {
+  readonly official: Map<string, Set<string>>;
+  constructor(cfg: { expertReviewDomains?: string[]; retailerDomains?: string[]; forumDomains?: string[]; officialDomains?: Record<string, string[]>; replaceStarter?: boolean } = {}) {
     const base = cfg.replaceStarter ? { e: [], r: [], f: [] } : { e: STARTER_EXPERT_DOMAINS, r: STARTER_RETAILER_DOMAINS, f: STARTER_FORUM_DOMAINS };
     this.expert = new Set([...base.e, ...(cfg.expertReviewDomains ?? [])].map((d) => d.toLowerCase()));
     this.retailer = new Set([...base.r, ...(cfg.retailerDomains ?? [])].map((d) => d.toLowerCase()));
     this.forum = new Set([...base.f, ...(cfg.forumDomains ?? [])].map((d) => d.toLowerCase()));
+    this.official = new Map();
+    for (const src of [cfg.replaceStarter ? {} : STARTER_OFFICIAL_DOMAINS, cfg.officialDomains ?? {}])
+      for (const [brand, domains] of Object.entries(src)) for (const slug of brandSlugs(brand)) {
+        const set = this.official.get(slug) ?? new Set<string>(); domains.forEach((d) => set.add(d.toLowerCase())); this.official.set(slug, set);
+      }
+  }
+  /** True only for a registered official domain (or its sub-domain) of this brand. */
+  isOfficial(h: string, brand: string): boolean {
+    for (const slug of brandSlugs(brand)) { const set = this.official.get(slug); if (set && inList(h, set)) return true; }
+    return false;
   }
   /** `sellers`: domains selling any candidate in this session (merchant-controlled, never independent). */
   classify(url: string, brand: string | null, sellers: Iterable<string> = []): SourceClass {
     const h = host(url);
     if (!h) return "UNKNOWN";
     if (inList(h, sellers) || inList(h, this.retailer)) return "RETAILER";
-    if (brand) { const label = registrableDomain(h).split(".")[0]!; if (brandSlugs(brand).has(label)) return "MANUFACTURER"; }
+    if (brand && this.isOfficial(h, brand)) return "MANUFACTURER";
     if (inList(h, this.forum)) return "USER_FORUM";
     if (inList(h, this.expert)) return "EXPERT_REVIEW";
     return "UNKNOWN";

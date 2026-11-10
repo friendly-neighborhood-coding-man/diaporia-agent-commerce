@@ -12,7 +12,7 @@ import { TavilySearch } from "../src/evidence/providers.js";
 import { Store } from "../src/store/Database.js";
 import { UsageLedger, PLACEHOLDER_PRICING } from "../src/metering/UsageLedger.js";
 import type { CatalogProduct, MerchantOffer } from "../src/domain/types.js";
-import { runSuite } from "../scripts/research-eval-v2/run.js";
+import { runSuite, WORLD_OFFICIAL_DOMAINS } from "../scripts/research-eval-v2/run.js";
 
 const NOW = Date.parse("2026-11-10T12:00:00.000Z");
 const product = (id: string, title: string, brand: string, model: string, variant: string | null, extra: Partial<CatalogProduct> = {}): CatalogProduct =>
@@ -112,7 +112,8 @@ describe("exact identity V2 (never substitutes)", () => {
 });
 
 describe("evidence V2 (source classes, syndication, contradiction, attribution)", () => {
-  const reg = new SourceRegistry({ expertReviewDomains: ["lab-a.example", "lab-b.example"], forumDomains: ["forum.x.example"] });
+  const reg = new SourceRegistry({ expertReviewDomains: ["lab-a.example", "lab-b.example"], forumDomains: ["forum.x.example"],
+    officialDomains: { Contoso: ["contoso.example"], "Contoso Basics": ["contoso-basics.example"] } });
   it("classifies manufacturer, retailer (incl. this session's sellers), forum, expert and unknown", () => {
     expect(reg.classify("https://contoso.example/cx", "Contoso")).toBe("MANUFACTURER");
     expect(reg.classify("https://contoso-basics.example/b", "Contoso Basics")).toBe("MANUFACTURER");
@@ -123,6 +124,11 @@ describe("evidence V2 (source classes, syndication, contradiction, attribution)"
     expect(reg.classify("https://www.reddit.com/r/x", "Contoso")).toBe("USER_FORUM");
     expect(reg.classify("https://lab-a.example/r", "Contoso")).toBe("EXPERT_REVIEW");
     expect(reg.classify("https://blog.example/r", "Contoso")).toBe("UNKNOWN");
+    // Review R-02: only registered official domains are the manufacturer; brand.<any tld> is not.
+    expect(reg.classify("https://shop.contoso.example/cx", "Contoso")).toBe("MANUFACTURER");
+    for (const [u, b] of [["https://sony.shop/x", "Sony"], ["https://sony.xyz/r", "Sony"], ["https://nest.org/blog", "Nest"], ["https://ring.io/x", "Ring"], ["https://contoso.shop/x", "Contoso"], ["https://sony.com.evil.example/x", "Sony"]])
+      expect(reg.classify(u!, b!)).toBe("UNKNOWN");
+    expect(reg.classify("https://electronics.sony.com/p", "Sony")).toBe("MANUFACTURER");
   });
   it("one expert is not enough; a syndicated copy is the same source; weak sources never count; disagreement is CONTRADICTED", () => {
     const q = "We measured the Lumen Q5 noise cancelling at 25 dB attenuation in our chamber at 100 Hz.";
@@ -147,7 +153,7 @@ describe("evidence V2 (source classes, syndication, contradiction, attribution)"
       { url: "https://alpha.example/p", title: "Contoso CX-500", content: "Contoso CX-500 has no multipoint." }] }); }) as typeof fetch;
     const store = new Store(":memory:");
     const ledger = new UsageLedger(store, PLACEHOLDER_PRICING, { perRequestSupplierMicro: 10_000_000, monthlyBillableMinor: 0, perRequestCalls: { TAVILY: 1 } }, () => NOW);
-    const router = new EvidenceRouter(store, ledger, new TavilySearch("tvly-TEST-0000000", "community", fetchImpl), null, { billable: false, now: () => NOW, policy: "v2" });
+    const router = new EvidenceRouter(store, ledger, new TavilySearch("tvly-TEST-0000000", "community", fetchImpl), null, { billable: false, now: () => NOW, policy: "v2", sources: { officialDomains: { Contoso: ["contoso.example"] } } });
     const p = product("cx", "Contoso CX-500 Headphones", "Contoso", "CX-500", "Black");
     const r = await router.verifyMany(p, ["active_noise_cancellation", "multipoint"], { userId: "u", requestId: "r1" }, { sellers: ["alpha.example"] });
     expect(bodies).toHaveLength(1);
@@ -224,7 +230,7 @@ describe("planner under the live default caps (CHANNEL3 1, TAVILY 2 per request)
     const counters = newCounters(); const fetchImpl = worldFetch(counters); const now = () => NOW;
     const store = new Store(":memory:");
     const ledger = new UsageLedger(store, PLACEHOLDER_PRICING, { perRequestSupplierMicro: 10_000_000, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1, TAVILY: 2, KERNEL: 0 } }, now);
-    const router = new EvidenceRouter(store, ledger, new TavilySearch("tvly-TEST-0000000", "community", fetchImpl), null, { billable: false, now, policy: "v2", sources: { expertReviewDomains: WORLD_SOURCES.expertReview } });
+    const router = new EvidenceRouter(store, ledger, new TavilySearch("tvly-TEST-0000000", "community", fetchImpl), null, { billable: false, now, policy: "v2", sources: { expertReviewDomains: WORLD_SOURCES.expertReview, officialDomains: WORLD_OFFICIAL_DOMAINS } });
     const app = createApp({ host: "127.0.0.1", port: 0, baseUrl: "http://127.0.0.1:1", authMode: "dev", dbPath: ":memory:", auth: new DevAuth(), now,
       research: new Channel3ResearchAdapter("ch3-TEST-KEY-000000", { fetchImpl, now }), service: { mode: "community", ledger, router, billing: null } } as any);
     const out: any = await app.gateway.researchPurchase("u", { request: "Laptop with USB-C charging, backlit keyboard and 10+ hour battery under $1000" });

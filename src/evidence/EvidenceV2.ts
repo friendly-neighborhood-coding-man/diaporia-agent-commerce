@@ -7,7 +7,7 @@ import { jaccard, registrableDomain, shingles, hostOf, type SourceClass, type So
 /**
  * Evidence statements and the V2 sufficiency rule (research V2). Pure functions; the router does I/O and metering.
  *
- * STATEMENT RULE: a search result yields a statement about (product, capability) only when
+ * STATEMENT RULE: a search result yields a statement about (product, capability) only when (see statementFrom for attribution)
  *   (a) its title+snippet names the exact model (separator-tolerant; a family extension such as "Pro" is a different model),
  *   (b) one clause of the snippet states the capability explicitly (negation must govern the phrase),
  *   (c) that clause does not name a different value of an attribute the product has ("the 8-cup model" ≠ 12-cup),
@@ -36,7 +36,50 @@ export const STALE_AFTER_DAYS = 4 * 365;
 export const evidenceKindOf = (c: SourceClass): EvidenceKind =>
   c === "MANUFACTURER" ? "MANUFACTURER" : c === "EXPERT_REVIEW" ? "INDEPENDENT_REVIEW" : c === "RETAILER" ? "RETAILER_ASSERTION" : c === "USER_FORUM" ? "USER_FORUM" : "SEARCH_SNIPPET";
 
-/** Statements one search hit makes about a capability (first explicit clause), or null. */
+/**
+ * Known product brands that are NOT the candidate's (attribution guard, review R-01). Starter data, not exhaustive: a
+ * clause that names any of these, or another model code, is about another product and never counts for this one.
+ */
+export const OTHER_BRAND_WORDS = ["sony", "bose", "apple", "airpods", "beats", "sennheiser", "jbl", "anker", "soundcore", "jabra", "samsung", "google",
+  "skullcandy", "audio-technica", "marshall", "shure", "philips", "panasonic", "lg", "dell", "lenovo", "asus", "acer", "microsoft", "macbook", "iphone", "ipad", "dyson", "irobot", "roomba", "breville", "cuisinart", "keurig", "nike", "adidas", "brooks", "hoka", "salomon", "merrell",
+  "yeti", "garmin", "fitbit", "xiaomi", "huawei", "oneplus", "logitech", "razer", "corsair", "steelcase", "nespresso", "hydro flask",
+  "herman miller", "bang & olufsen", "sonos", "edifier", "1more", "tozo", "jlab", "soundpeats"];
+/** Titles of pages that discuss several products. Their statements never count unless the clause names only this model. */
+const COMPARISON_TITLE = /\b(?:vs\.?|versus|compared?|comparison|alternatives?|best\b.*\b(?:of|for|under|20\d\d)|top \d+|round-?up|buying guide|which (?:is|should))\b/i;
+/** Model-code tokens: letters and digits with a hyphen (WH-1000XM5), 2+ capitals then 2+ digits (QC45), or one capital + 2+ digits (Q20). */
+const MODEL_CODE = /(?<![A-Za-z0-9])(?:[A-Z][A-Za-z]*-[A-Z0-9]*\d[A-Z0-9-]*|[A-Z]{2,}\d{2,}[A-Za-z0-9]*|[A-Z]\d{2,}[A-Za-z]?)(?![A-Za-z0-9])/g;
+/** Standards and ratings that look like model codes (IP68, MIL-STD-810, USB-C, HDMI-2). */
+const NOT_A_MODEL = /^(?:IP[X\d]\d.*|MIL-STD.*|USB.*|HDMI.*|WI-?FI.*|BT\d.*|IEEE.*|ISO.*|ANSI.*|DDR\d.*|PCIE.*|LPDDR.*|UHS.*|RTX\d.*|GTX\d.*)$/i;
+const keyOf = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** True if `text` names a product other than this one (another brand, another model code, or a family extension). */
+export function namesOtherProduct(text: string, product: CatalogProduct): boolean {
+  const lower = ` ${text.toLowerCase()} `;
+  const own = new Set([product.identity.brand, product.identity.model, product.title].filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9&-]+/).filter(Boolean));
+  const ownBrand = (product.identity.brand ?? "").toLowerCase();
+  for (const b of OTHER_BRAND_WORDS) {
+    if (b === ownBrand || own.has(b) || ownBrand.includes(b) || b.includes(ownBrand) && ownBrand.length > 2) continue;
+    if (new RegExp(`(^|[^a-z0-9])${b.replace(/[.*+?^${}()|[\]\\&]/g, "\\$&")}(?=$|[^a-z0-9])`).test(lower)) return true;
+  }
+  const model = product.identity.model;
+  const ownKey = model ? keyOf(model) : null;
+  for (const m of text.matchAll(MODEL_CODE)) {
+    const k = keyOf(m[0]);
+    if (ownKey && (k === ownKey || ownKey.includes(k))) continue;
+    if (own.has(m[0].toLowerCase()) || NOT_A_MODEL.test(m[0])) continue;
+    return true;
+  }
+  // A family extension of this model ("Nova 9 Pro" for "Nova 9"): the loose name is present but the exact model is not.
+  if (model && keyOf(text).includes(keyOf(model)) && !mentionsExactModel(text, model)) return true;
+  return false;
+}
+
+/**
+ * Statements one search hit makes about a capability (first attributable clause), or null.
+ * ATTRIBUTION (review R-01): a clause counts only if (a) it names this exact model and no other product, or (b) it names
+ * no product at all AND the whole hit (title + snippet) names no other product AND the page is not a comparison page
+ * (a pronoun clause in a single-product review). Comparison and "best of" pages never count through rule (b).
+ */
 export function statementFrom(hit: { title: string; snippet: string }, product: CatalogProduct, capability: string): { value: boolean; quote: string } | null {
   const model = product.identity.model;
   const text = `${hit.title}. ${hit.snippet}`;
@@ -46,9 +89,14 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     const words = product.title.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
     if (!product.identity.brand || !text.toLowerCase().includes(product.identity.brand.toLowerCase()) || words.filter((w) => text.toLowerCase().includes(w)).length < 3) return null;
   }
+  const comparisonPage = COMPARISON_TITLE.test(hit.title);
+  const hitNamesOther = namesOtherProduct(text, product);
   const facts = factsOf(product);
-  for (const clause of hit.snippet.split(/(?<=[.!?])\s+|;\s*|\s+—\s+/)) {
-    if (/\|/.test(clause)) continue;
+  for (const clause of hit.snippet.split(/(?<=[.!?])\s+|;\s*|\s+—\s+|:\s+/)) {
+    if (/\|/.test(clause) || /\?\s*$/.test(clause)) continue; // table rows and questions are not statements
+    const clauseNamesThis = model ? mentionsExactModel(clause, model) : false;
+    if (namesOtherProduct(clause, product)) continue;
+    if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
     const said = parseAttributes(clause);
     const clash = (Object.keys(said) as AttributeAxis[]).some((a) => a !== "color" && facts.attributes[a] && normalizeKey(said[a]!) !== normalizeKey(facts.attributes[a]!));
     if (clash) continue;

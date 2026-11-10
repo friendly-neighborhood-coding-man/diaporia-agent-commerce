@@ -49,6 +49,9 @@ const groupOf = (productId: string | null | undefined): string | null => {
 };
 const BRAND_DOMAINS = new Set(WORLD.map((p) => p.brand).filter((b): b is string => !!b).map((b) => `${b.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, "")}.example`)
   .concat(WORLD.map((p) => p.brand).filter((b): b is string => !!b).map((b) => `${b.toLowerCase().replace(/[^a-z0-9]+/g, "")}.example`)));
+/** Official domains of the world's brands (`brand.example`), given to the system the same way as the expert list (harness-supplied registry, review R-02). */
+export const WORLD_OFFICIAL_DOMAINS: Record<string, string[]> = Object.fromEntries([...new Set(WORLD.map((p) => p.brand).filter((b): b is string => !!b))]
+  .map((b) => [b, [`${b.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, "")}.example`, `${b.toLowerCase().replace(/[^a-z0-9]+/g, "")}.example`]]));
 const strongSource = (url: string): boolean => {
   try { const h = new URL(url).hostname.replace(/^www\./, ""); return BRAND_DOMAINS.has(h) || WORLD_SOURCES.expertReview.includes(h); } catch { return false; }
 };
@@ -122,15 +125,18 @@ function worldAdapter(inner: any, claims: Record<string, unknown>, now: () => nu
   return a;
 }
 
-export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2): Promise<CaseOutcome> {
+/** Eval per-request caps. EVAL_CAPS (6/12) give the planner room to show its stopping rules; SERVICE caps (1/2) are what main.ts runs (review R-05). */
+export const EVAL_CAPS = Object.freeze({ CHANNEL3: 6, TAVILY: 12 });
+export const SERVICE_ARM_CAPS = Object.freeze({ CHANNEL3: 1, TAVILY: 2 });
+export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2, caps: { CHANNEL3: number; TAVILY: number } = EVAL_CAPS): Promise<CaseOutcome> {
   const counters: WorldCounters = newCounters();
   const fetchImpl = worldFetch(counters);
   const now = () => Date.parse("2026-11-10T12:00:00.000Z");
   const store = new L.Store(":memory:");
-  const ledger = new L.UsageLedger(store, L.PLACEHOLDER_PRICING, { perRequestSupplierMicro: 10_000_000, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 6, TAVILY: 12, KERNEL: 0 } }, now);
+  const ledger = new L.UsageLedger(store, L.PLACEHOLDER_PRICING, { perRequestSupplierMicro: 10_000_000, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: caps.CHANNEL3, TAVILY: caps.TAVILY, KERNEL: 0 } }, now);
   const tavily = new L.TavilySearch("tvly-EVAL-FAKE-KEY-000", "community", fetchImpl);
   const router = new L.EvidenceRouter(store, ledger, tavily, null, { billable: false, now, policy: "v2",
-    sources: { expertReviewDomains: WORLD_SOURCES.expertReview, forumDomains: WORLD_SOURCES.forums } });
+    sources: { expertReviewDomains: WORLD_SOURCES.expertReview, forumDomains: WORLD_SOURCES.forums, officialDomains: WORLD_OFFICIAL_DOMAINS } });
   const ch3 = new L.Channel3ResearchAdapter("ch3-EVAL-FAKE-KEY-0000", { fetchImpl, now });
   const app = L.createApp({ host: "127.0.0.1", port: 0, baseUrl: "http://127.0.0.1:1", authMode: "dev", dbPath: ":memory:", auth: new L.DevAuth(), now,
     research: worldAdapter(ch3, L.MERCHANT_CLAIMS, now), service: { mode: "community", ledger, router, billing: null } });
@@ -206,14 +212,14 @@ export function summarize(rs: CaseOutcome[]) {
   };
 }
 
-export async function runSuite(root: string, opts: { splits?: Array<"dev" | "holdout" | "holdout2"> } = {}) {
+export async function runSuite(root: string, opts: { splits?: Array<"dev" | "holdout" | "holdout2">; caps?: { CHANNEL3: number; TAVILY: number } } = {}) {
   const freeze = verifyHoldoutFreeze();
   const freeze2 = verifyHoldoutFreeze("holdout2.ts", "HOLDOUT2_FREEZE.json");
   const L = await load(root);
   const cases = [...DEV_CASES, ...HOLDOUT_CASES, ...HOLDOUT2_CASES].filter((c) => !opts.splits || opts.splits.includes(c.split));
   const results: CaseOutcome[] = [];
-  for (const c of cases) results.push(await runCase(L, c));
-  return { holdoutSha256: freeze.sha256, holdout2Sha256: freeze2.sha256, results,
+  for (const c of cases) results.push(await runCase(L, c, opts.caps ?? EVAL_CAPS));
+  return { holdoutSha256: freeze.sha256, holdout2Sha256: freeze2.sha256, caps: opts.caps ?? EVAL_CAPS, results,
     summary: { all: summarize(results), dev: summarize(results.filter((r) => r.split === "dev")), holdout: summarize(results.filter((r) => r.split === "holdout")),
       holdout2: summarize(results.filter((r) => r.split === "holdout2")) } };
 }

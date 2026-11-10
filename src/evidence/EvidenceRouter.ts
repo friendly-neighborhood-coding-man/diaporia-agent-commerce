@@ -79,7 +79,7 @@ function fingerprint(text: string): string {
 export class EvidenceRouter {
   constructor(private readonly store: Store, private readonly ledger: UsageLedger, private readonly search: IndependentSearchProvider | null,
     private readonly inspector: PageInspectionProvider | null,
-    private readonly opts: { billable: boolean; now?: () => number; policy?: "v1" | "v2"; sources?: { expertReviewDomains?: string[]; forumDomains?: string[]; retailerDomains?: string[] } } = { billable: false }) {
+    private readonly opts: { billable: boolean; now?: () => number; policy?: "v1" | "v2"; sources?: { expertReviewDomains?: string[]; forumDomains?: string[]; retailerDomains?: string[]; officialDomains?: Record<string, string[]> } } = { billable: false }) {
     this.policy = opts.policy ?? "v1";
     this.registry = new SourceRegistry(opts.sources ?? {});
     store.db.exec(`CREATE TABLE IF NOT EXISTS evidence_items (id TEXT PRIMARY KEY, product_key TEXT NOT NULL, capability TEXT NOT NULL, value INTEGER NOT NULL,
