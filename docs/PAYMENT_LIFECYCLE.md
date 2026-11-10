@@ -7,7 +7,9 @@ DIAPORIA tracks four things separately and never infers one from another:
 | Provider **order** status | `GET /v2/checkout/orders/{id}` | audit only; never decides payment state |
 | Provider **capture** status | `GET /v2/payments/captures/{id}` (Payments v2) | `payment.providerCaptureStatus`, `paymentStatus` |
 | Merchant **funds availability** | not exposed by the Capture API | `merchantFundsAvailability: "NOT_DETERMINED_BY_CAPTURE_API"` |
-| Merchant **order** acceptance / fulfillment | no merchant integration | `merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED"`, `fulfillment: "NOT_VERIFIED"` |
+| Merchant **order** acceptance / fulfillment | no merchant integration | `merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED"`, `fulfillment: "NOT_VERIFIED"`, `purchaseOutcome { merchantOrderConfirmation: "NOT_CONFIRMED", merchantPurchaseComplete: false }` |
+
+A completed PayPal capture proves only that the payer's funds were captured for the payee. It is never reported as a completed merchant purchase. `purchaseOutcome.statement` says which layers are and are not verified.
 
 Two observations from Sandbox run 2 shape this design:
 - PayPal reports an order as `COMPLETED` as soon as a capture exists, even when that capture is `PENDING`.

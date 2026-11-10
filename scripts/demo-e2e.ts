@@ -68,7 +68,9 @@ await fetch(approve.headers.get("location")!);
 step("6.", "Buyer approved on the (mock) PayPal page; server verified approval with the provider and captured once.");
 
 const status = await call("get_checkout_status", { checkoutSessionId: prep.checkoutSessionId });
-step("7.", `get_checkout_status → ${status.state} (server-verified), ${usd(status.amount.totalMinor)}, capture ${status.capture.captureId}, fulfillment ${status.fulfillment}`);
+step("7.", `get_checkout_status → ${status.state} (server-verified), ${usd(status.amount.totalMinor)}, capture ${status.capture.captureId}, fulfillment ${status.fulfillment}
+   purchaseOutcome: payment ${status.purchaseOutcome.payment}, merchant order ${status.purchaseOutcome.merchantOrderConfirmation}, fulfillment ${status.purchaseOutcome.fulfillment}, merchantPurchaseComplete ${status.purchaseOutcome.merchantPurchaseComplete}
+   "${status.purchaseOutcome.statement}"`);
 const receipt = await call("get_purchase_receipt", { checkoutSessionId: prep.checkoutSessionId });
 step("8.", `get_purchase_receipt → ${receipt.paymentStatusNote} Merchant order: ${receipt.merchantOrder.status}. Audit events: ${receipt.auditTimeline.map((e: any) => e.type).join(" → ")}`);
 

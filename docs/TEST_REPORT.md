@@ -293,3 +293,25 @@ Evidence independence now counts subdomains of one site, and syndicated copies o
 - **New finding:** amazon.com (a retailer) was among the counted sources. Retailer and marketplace domains are now excluded from independent evidence (tested offline, not re-run live). Without amazon.com the claim remains sufficient from editorial review sites. reddit.com is still counted; it is user-generated.
 - **Ledger:** both runs recorded `BYOK_LIVE` usage with **unknown** supplier cost (not 0) and 0 billable.
 - **Suite:** `npm test`: **9 files, 115 passed, 0 failed**.
+
+## BYOK Completion V1 round (2026-11-10, branch `feature/byok-completion-v1` from `main` @ `280e869`)
+
+**Evidence classes:** live MCP host calls (four local hosts) with MOCK commerce data; everything else MOCK or fake-HTTP. No PayPal order, capture or refund. No Channel3, Tavily, KERNEL or Shopify call.
+
+- **KERNEL BYOK adapter** (`src/evidence/KernelPageInspector.ts`, `tests/kernel-inspector.test.ts`, 21 tests, fake HTTP only): create, execute and delete lifecycle; key sent only to the API host and never in errors or JSON; delete after execution failure and after the total deadline; per-process session cap; URL and DNS policy refused before any request; zero statements for off-model, redirected, HTTP 4xx, challenge, empty, navigation-failed, malformed or silent pages; explicit negation recorded as false. Router integration: a refused URL costs nothing, an inspection is metered as `KERNEL / browser_second` with measured quantity, `BYOK_LIVE` provenance and unknown (`NULL`) price; cached pages are reused without a new session; a per-request cap of 0 gives `BLOCKED_BY_LIMIT` with the capability left `INSUFFICIENT`; transient outcomes are not cached.
+- **Payment vs merchant order vs fulfillment:** `purchaseOutcome` on `get_checkout_status` and `get_purchase_receipt`, asserted in `tests/mcp-e2e.test.ts` after a MOCK completed capture (`merchantOrderConfirmation: NOT_CONFIRMED`, `fulfillment: NOT_VERIFIED`, `merchantPurchaseComplete: false`); server instructions and the buyer return page say the same (`tests/mcp-instructions.test.ts`). Payment and mandate state machines unchanged.
+- **Four-host two-step workflow (LIVE hosts, MOCK data):** Claude Code 2.1.310, Codex CLI 0.160.0, Grok Build 1.0.77 and Hermes Agent 0.22.7 each made exactly one `research_purchase` and one `compare_purchase_offers` call: **4/4 PASS**, identical results; unauthenticated request 401; cross-host session probe `NOT_FOUND`. Details in `docs/INTEROP.md`. Grok's xAI cost: $0.16.
+- **Not tested in this round:** any live KERNEL call (paid; needs owner approval), `prepare_checkout` or status tools through the four hosts, remote hosts.
+
+## Browser Checkout Handoff V0 (2026-11-10, offline only)
+
+`npm test`: **14 files, 171 passed, 0 failed.** The previous 119 tests are unchanged and still pass.
+
+The new handoff tests:
+
+- `handoff-fixture` (20): real local Chromium against the synthetic merchant.
+- `handoff-unit`: states, constraints, money parsing, recipes and module boundaries.
+- `handoff-kernel-wire`: KERNEL REST shapes, run against a fake backend that executes the same snippets locally.
+- `handoff-host-contract`: four host-named MCP clients receive the same contract.
+
+No KERNEL, PayPal or real-merchant call was made. Phases B and C are not run.

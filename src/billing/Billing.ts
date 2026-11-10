@@ -18,9 +18,11 @@ export interface BillingAuthorization {
   userId: string;
   status: BillingAuthorizationStatus;
   planId: string | null;
-  source: "MOCK_PAYPAL_SUBSCRIPTIONS" | "PAYPAL_SUBSCRIPTIONS";
+  source: "MOCK_PAYPAL_SUBSCRIPTIONS" | "PAYPAL_SUBSCRIPTIONS" | "PAYPAL_SANDBOX_SUBSCRIPTIONS";
   subscriptionRef: string | null;
   verifiedAt: string;
+  /** Subscription billing only: why the user is (not) entitled right now, and the current paid period. */
+  entitlement?: unknown;
 }
 
 export interface BillingPlan { planId: string; name: string; currency: "USD"; monthlyCapMinor: number; description: string }
@@ -35,8 +37,8 @@ export class BillingUnavailableError extends Error {}
 export interface BillingProvider {
   readonly name: string;
   getAuthorization(userId: string): Promise<BillingAuthorization>;
-  /** Records a period summary with the billing system. MOCK only here: nothing is charged. */
-  submitPeriodSummary(summary: PeriodSummary): Promise<{ status: "SUBMITTED_MOCK"; reference: string }>;
+  /** Records a period summary with the billing system. MOCK only here: nothing is charged. Not used by subscription billing. */
+  submitPeriodSummary?(summary: PeriodSummary): Promise<{ status: "SUBMITTED_MOCK"; reference: string }>;
 }
 
 /**

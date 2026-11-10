@@ -26,6 +26,7 @@
 | MCPCommerceAdapter | `src/mcp/MCPCommerceAdapter.ts` | Tool registration, schemas, annotations, scope checks |
 | CommerceGateway | `src/engine/CommerceGateway.ts` | Orchestrates all flows |
 | HTTP server | `src/http/server.ts` | `/mcp`, owner API/page, PayPal return/cancel, mock PayPal page |
+| ManagedSubscriptionBilling | `src/billing/subscriptions/` | Service billing (separate from purchases): PayPal Subscriptions adapter (Sandbox only), subscription state machine, paid-period grants, `EntitlementGuard` inside `UsageLedger.begin`. See [MANAGED_BILLING.md](MANAGED_BILLING.md) |
 
 ## State machine
 

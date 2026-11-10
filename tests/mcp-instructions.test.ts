@@ -24,3 +24,11 @@ describe("serverInstructions", () => {
     expect(serverInstructions(principal([SCOPES.RESEARCH]), { exposePaymentTools: true })).not.toContain("get_checkout_status");
   });
 });
+
+describe("payment completion vs merchant order vs fulfillment", () => {
+  it("instructions say COMPLETED is payment capture only, never a merchant purchase or shipment", () => {
+    const t = serverInstructions(principal(ALL_CLIENT_SCOPES), { exposePaymentTools: true });
+    expect(t).toMatch(/COMPLETED means only that the payment was captured/);
+    expect(t).toMatch(/not a merchant order confirmation and not fulfillment/);
+  });
+});

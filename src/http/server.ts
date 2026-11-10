@@ -9,10 +9,13 @@ import { MockPayPalProvider } from "../payment/MockPayPalProvider.js";
 import type { PaymentProvider } from "../payment/PaymentProvider.js";
 import { DevAuth, SCOPES, type Principal } from "../auth/devAuth.js";
 import { createCommerceMcpServer } from "../mcp/MCPCommerceAdapter.js";
+import { handleSubscriptionRoutes } from "../billing/subscriptions/http.js";
 import { parseDecimalToMinor } from "../domain/money.js";
 import { NotFoundError } from "../checkout/CheckoutSessionManager.js";
 import { esc, money, page } from "./html.js";
 import { RateLimiter } from "./rateLimit.js";
+import { BrowserCheckoutHandoff } from "../handoff/BrowserCheckoutHandoff.js";
+import { createHandoffRoutes } from "../handoff/http.js";
 
 export interface AppConfig {
   host: string;
@@ -35,6 +38,8 @@ export interface AppConfig {
   readRetry?: { attempts: number; baseDelayMs: number };
   /** Metering, evidence routing, community/managed mode and service billing. */
   service?: import("../engine/ServicePlane.js").ServicePlane | null;
+  /** Browser checkout handoff (separate path; absent = disabled). */
+  handoff?: Omit<import("../handoff/BrowserCheckoutHandoff.js").HandoffConfig, "baseUrl" | "enabled"> | null;
 }
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -44,7 +49,7 @@ export function isLoopbackUrl(u: string): boolean {
   try { return LOOPBACK.test(new URL(u).hostname); } catch { return false; }
 }
 
-export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean }
+export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean; handoff: BrowserCheckoutHandoff | null }
 
 export function createApp(cfg: AppConfig): App {
   const now = cfg.now ?? Date.now;
@@ -66,6 +71,11 @@ export function createApp(cfg: AppConfig): App {
   const mcpLimiter = new RateLimiter(120, 60_000);
   const webLimiter = new RateLimiter(30, 60_000);
   const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number }>();
+  const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
+  const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
+    sameOrigin: (req) => sameOrigin(req, allowedOrigins), readText }) : null;
+  const handoffTimer = handoff ? setInterval(() => { void handoff.tick(); }, 15_000) : null;
+  handoffTimer?.unref();
 
   const server = createServer(async (req, res) => {
     try {
@@ -86,7 +96,7 @@ export function createApp(cfg: AppConfig): App {
         if (!principal) { res.setHeader("WWW-Authenticate", 'Bearer realm="diaporia-dev", error="invalid_token"'); return send(res, 401, { error: "Missing or invalid bearer token" }); }
         if (!mcpLimiter.take(`${principal.tokenFingerprint}|${ip}`)) return send(res, 429, { error: "Rate limit exceeded" });
         const body = await readJson(req);
-        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools: cfg.authMode === "dev" && principal.scopes.has(SCOPES.PREPARE) });
+        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools: cfg.authMode === "dev" && principal.scopes.has(SCOPES.PREPARE), handoff });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts, allowedOrigins });
         res.on("close", () => { void transport.close(); void mcp.close(); });
         await mcp.connect(transport);
@@ -96,7 +106,7 @@ export function createApp(cfg: AppConfig): App {
 
       if (!webLimiter.take(ip)) return send(res, 429, { error: "Rate limit exceeded" });
       // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
-      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
+      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
       // ---- Owner API (human-held owner key; AI client tokens cannot reach this) ----
       if (url.pathname === "/owner/mandates" && req.method === "POST") {
@@ -177,6 +187,9 @@ export function createApp(cfg: AppConfig): App {
         return send(res, 400, { error: "Unknown action" });
       }
 
+      // ---- Managed subscription billing (owner subscribe/cancel, buyer return, verified PayPal billing webhook) ----
+      if (await handleSubscriptionRoutes(req, res, url, { billing: cfg.service?.billing ?? null, auth: cfg.auth, allowedOrigins, send, html, readJson, readText, header, sameOrigin })) return;
+
       // ---- Mock service-billing webhook (simulation only; HMAC-signed) ----
       if (url.pathname === "/billing/webhook/mock" && req.method === "POST") {
         const billing = cfg.service?.billing as { handleWebhook?: (raw: string, sig: string | undefined) => { accepted: boolean; outcome: string } } | null | undefined;
@@ -204,7 +217,8 @@ export function createApp(cfg: AppConfig): App {
           const cs = url.pathname === "/paypal/return" ? await gateway.handleBuyerReturn(csId, orderId) : await gateway.handleBuyerCancel(csId, orderId);
           return html(res, 200, page("Payment status", `<p>Server-verified state: <span class="state">${esc(cs.state)}</span></p>
             ${cs.failureCode ? `<p class="muted">${esc(cs.failureCode)}: ${esc(cs.failureReason)}</p>` : ""}
-            <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>`));
+            <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>
+            <p class="muted">Even a COMPLETED payment is only the payment step: no merchant order confirmation or shipment is verified by DIAPORIA.</p>`));
         } catch (e) {
           if (e instanceof NotFoundError) return html(res, 404, page("Not found", "<p>Unknown checkout.</p>"));
           throw e;
@@ -228,6 +242,9 @@ export function createApp(cfg: AppConfig): App {
         return send(res, 405, { error: "Method not allowed" });
       }
 
+      // ---- Browser checkout handoff page (owner-authenticated; separate from the PayPal Sandbox path) ----
+      if (handoffRoutes && await handoffRoutes(req, res, url)) return;
+
       return send(res, 404, { error: "Not found" });
     } catch (e) {
       if (e instanceof BodyTooLarge) return send(res, 413, { error: "Request body too large" });
@@ -240,8 +257,8 @@ export function createApp(cfg: AppConfig): App {
   });
   server.requestTimeout = 30_000;
   server.headersTimeout = 10_000;
-  server.on("close", () => store.close());
-  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled };
+  server.on("close", () => { if (handoffTimer) clearInterval(handoffTimer); void handoff?.shutdown(); store.close(); });
+  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled, handoff };
 }
 
 class BodyTooLarge extends Error {}
