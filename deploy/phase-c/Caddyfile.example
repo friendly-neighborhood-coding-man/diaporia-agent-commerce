@@ -1,0 +1,19 @@
+# STAGING TEMPLATE ONLY — do not enable without confirmed Cloudflare zone and valid Origin CA cert.
+# Set Cloudflare DNS: phase-c -> <VPS PUBLIC IPV4> (Proxied).
+# Cloudflare Full (strict) must be effective for this hostname; don't alter zone-wide settings
+# without verifying the existing diaporia.com site.
+#
+# Provision Cloudflare Origin CA for phase-c.diaporia.com and install certificate/key
+# on VPS, owned by root (key group caddy, mode 0640), never commit private key.
+#
+# Operator-only paths are intentionally blocked at the public reverse proxy.
+# On the VPS, operator calls http://127.0.0.1:8791/operator/* over an SSH session.
+# DIAPORIA seller-status verification uses /api/orders/status and remains available.
+phase-c.diaporia.com {
+    tls /etc/caddy/origin/phase-c.pem /etc/caddy/origin/phase-c.key
+
+    @operator path /operator /operator/*
+    respond @operator 403
+
+    reverse_proxy 127.0.0.1:8791
+}
