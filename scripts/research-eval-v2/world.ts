@@ -435,9 +435,10 @@ function detail(id: string, params: URLSearchParams): Record<string, unknown> | 
   // option_<Name>=<Label>: a value with product_id navigates; an impossible selection is RELAXED (documented behaviour).
   for (const [k, v] of params) {
     if (!k.startsWith("option_") || !p!.variants) continue;
-    const opt = p!.variants.options.find((x) => x.name === k.slice(7));
-    const val = opt?.values.find((x) => x.label === v);
-    if (val?.product_id) p = WORLD.find((x) => x.id === val.product_id) ?? p;
+    const opt: NonNullable<WProduct["variants"]>["options"][number] | undefined = p!.variants.options.find((x) => x.name === k.slice(7));
+    const val: { label: string; product_id?: string } | undefined = opt?.values.find((x) => x.label === v);
+    const target: WProduct | undefined = val?.product_id ? WORLD.find((x) => x.id === val.product_id) : undefined;
+    if (target) p = target;
   }
   const out = publicProduct(p!, params.get("currency") ?? "USD");
   const variants = out.variants as WProduct["variants"] | null;

@@ -1,0 +1,200 @@
+/**
+ * Category-agnostic product identity extraction (research V2). Deterministic; no model calls.
+ *
+ * V1 locked a product only when its title held a mixed letter+digit token of 4–26 characters. That rejected named
+ * models ("Trail Runner", "Ergo Pro", "Q5"), took capacities as models ("12-Cup"), and gave accessories the model of
+ * the product they fit ("Ear Pads for CX-500" → "CX-500"). This module separates:
+ *   - kind:       STANDALONE | BUNDLE (kits, multi-packs, "+ case") | ACCESSORY ("... for <product>")
+ *   - model:      the model-number token when there is one, else the named model phrase after the brand
+ *   - attributes: colour, memory, storage, capacity, size, pack — each a separate variant axis
+ * The identity KEY (brand + model) decides "same product family"; attributes decide the variant; kind is encoded in
+ * the variant string, so compareIdentity() can never treat a bundle or accessory as the standalone item.
+ * Nothing here invents a SKU: Channel3 has no SKU/GTIN field (docs/research/PROVIDER_CONTRACTS.md).
+ */
+export type ProductKind = "STANDALONE" | "BUNDLE" | "ACCESSORY";
+export type AttributeAxis = "color" | "memory" | "storage" | "capacity" | "size" | "pack";
+export type VariantAttributes = Partial<Record<AttributeAxis, string>>;
+export const AXES: AttributeAxis[] = ["color", "memory", "storage", "capacity", "size", "pack"];
+
+/** English colour words plus Korean equivalents (normalized to the English name). */
+export const COLOR_WORDS: Record<string, string> = Object.fromEntries([
+  ...["black", "white", "blue", "silver", "gray", "grey", "graphite", "red", "green", "pink", "beige", "midnight", "purple", "violet", "lavender", "orange",
+    "yellow", "gold", "rose", "navy", "teal", "brown", "cream", "ivory", "sand", "olive", "coral", "champagne", "titanium", "starlight", "moss", "charcoal", "slate", "khaki"]
+    .map((c) => [c, c[0]!.toUpperCase() + c.slice(1)]),
+  ["블랙", "Black"], ["검정", "Black"], ["검은색", "Black"], ["화이트", "White"], ["흰색", "White"], ["하얀색", "White"], ["블루", "Blue"], ["파란색", "Blue"],
+  ["실버", "Silver"], ["은색", "Silver"], ["그레이", "Gray"], ["회색", "Gray"], ["레드", "Red"], ["빨간색", "Red"], ["그린", "Green"], ["초록색", "Green"],
+  ["핑크", "Pink"], ["분홍색", "Pink"], ["베이지", "Beige"], ["네이비", "Navy"], ["골드", "Gold"], ["퍼플", "Purple"], ["보라색", "Purple"],
+]);
+const GREY = (c: string) => (c === "Grey" ? "Gray" : c);
+
+const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:h|hr|hrs|hours?|gb|tb|mb|mm|cm|m|in|inch|ft|w|kw|mah|v|oz|ml|l|cup|cups|qt|lb|lbs|kg|g|k|p|hz|fps|pack|pk|ct)$/i;
+/** Words that end a named-model phrase: product nouns, descriptors, connectors. */
+const GENERIC = new Set(`wireless wired bluetooth noise cancelling canceling noise-cancelling noise-canceling active headphones headphone headset earbuds earbud earphones
+  over-ear on-ear in-ear laptop laptops notebook computer smartphone phone cell mobile running shoes shoe sneakers boots boot hiking men's women's mens womens kids
+  unisex coffee maker brewer programmable insulated water bottle tumbler flask office chair chairs task gaming monitor display screen backpack daypack bag cordless stick
+  vacuum cleaner robot with and for the a an in of by from to new used refurbished renewed edition version model series usb-c usb hdmi led lcd oled hd uhd
+  replacement spare case cover charger adapter cable strap stand mount filter pads pad cushions cushion carafe protector bundle kit combo set pack lumbar support
+  waterproof water-resistant lightweight portable smart premium classic original official stainless steel plastic glass leather mesh ergonomic compact`.split(/\s+/).filter(Boolean));
+/** A word after a model mention that makes it a DIFFERENT model in the same family ("Nova 9" vs "Nova 9 Pro"). */
+export const MODEL_EXTENSIONS = new Set(["pro", "max", "plus", "ultra", "mini", "lite", "air", "se", "fe", "neo", "prime", "edge", "go", "xl", "fhd", "4k", "uhd", "elite", "sport", "s", "x", "ii", "iii", "iv", "2", "3", "4", "5"]);
+
+const ACCESSORY_NOUN = /\b(case|cover|sleeve|skin|charger|adapter|power supply|cable|cord|ear ?pads?|ear ?cushions?|ear ?tips|cushions?|carafe|strap|band|screen protector|protector|stand|mount|dock|filter|replacement battery|battery pack|remote|lid|brush head|bag|pouch|parts?|kit for)\b/i;
+export const BUNDLE_RE = /\bw\/|\bbundle\b|\bkit\b|\bcombo\b|\b\d+[- ]?(?:pack|pk|count|ct)\b|\bpack of \d+\b|\bset of \d+\b|\btwin[- ]pack\b|\s\+\s|\bwith (?:travel |carrying |charging |protective )?(?:case|charger|stand|dock|bag)\b/i;
+
+export function normalizeKey(s: string): string {
+  return s.normalize("NFKC").toUpperCase().replace(/[^A-Z0-9가-힣]/g, "");
+}
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Variant attributes stated in a title or a request. Values are canonical ("256GB", "32 oz", "10.5", "12 cup", "2"). */
+export function parseAttributes(text: string): VariantAttributes {
+  const t = text.normalize("NFKC");
+  const out: VariantAttributes = {};
+  const lower = t.toLowerCase();
+  for (const [w, c] of Object.entries(COLOR_WORDS)) {
+    const re = /[가-힣]/.test(w) ? new RegExp(escapeRe(w)) : new RegExp(`\\b${escapeRe(w)}\\b`, "i");
+    if (re.test(lower)) { out.color = GREY(c); break; }
+  }
+  for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s?(GB|TB)\b(\s*(?:of\s+)?(RAM|memory|unified memory|SSD|storage|HDD|eMMC))?/gi)) {
+    const val = `${m[1]}${m[2]!.toUpperCase()}`;
+    const ctx = (m[4] ?? "").toLowerCase();
+    const axis: AttributeAxis = /ram|memory/.test(ctx) ? "memory" : /ssd|storage|hdd|emmc/.test(ctx) ? "storage"
+      : m[2]!.toUpperCase() === "TB" || Number(m[1]) >= 64 ? "storage" : "memory";
+    if (!out[axis]) out[axis] = val;
+  }
+  const cap = /(\d+(?:\.\d+)?)\s?-?\s?(fl\.? ?oz|oz|ounces?|ml|l|liters?|litres?|cups?|qt|quarts?)\b/i.exec(t);
+  if (cap) {
+    const u = cap[2]!.toLowerCase().replace(/\s|\./g, "");
+    const unit = /^(floz|oz|ounce|ounces)$/.test(u) ? "oz" : /^ml$/.test(u) ? "ml" : /^(l|liter|liters|litre|litres)$/.test(u) ? "L" : /^cups?$/.test(u) ? "cup" : "qt";
+    out.capacity = `${cap[1]} ${unit}`;
+  }
+  const size = /\b(?:size|sz|사이즈)\s*:?\s*(\d+(?:\.\d+)?|xxs|xs|s|m|l|xl|xxl|xxxl|small|medium|large|x-large)\b/i.exec(t) ?? /사이즈\s*(\d+(?:\.\d+)?)/.exec(t);
+  if (size) out.size = size[1]!.toUpperCase().replace(/^SMALL$/, "S").replace(/^MEDIUM$/, "M").replace(/^LARGE$/, "L").replace(/^X-LARGE$/, "XL");
+  else {
+    const inch = /(\d{2}(?:\.\d)?)\s?(?:-?\s?inch|"|”|in\b|인치)/i.exec(t);
+    if (inch) out.size = `${inch[1]} in`;
+  }
+  const pack = /\b(\d+)[- ]?(?:pack|pk|count|ct)\b|\bpack of (\d+)\b|\bset of (\d+)\b|\b(twin)[- ]pack\b|(\d+)\s?개입/i.exec(t);
+  if (pack) out.pack = pack[4] ? "2" : (pack[1] ?? pack[2] ?? pack[3] ?? pack[5])!;
+  return out;
+}
+
+/** Canonical variant string: axes in a fixed order. Colour-only keeps the V1 form ("Black"). */
+export function canonicalVariant(attrs: VariantAttributes, kind: ProductKind = "STANDALONE", accessoryNoun?: string | null): string | null {
+  const parts = AXES.filter((a) => attrs[a] && a !== "pack").map((a) => (a === "color" ? attrs[a]! : `${a}=${attrs[a]}`));
+  if (attrs.pack && attrs.pack !== "1") parts.push(`pack=${attrs.pack}`);
+  const base = parts.length ? parts.join(" / ") : null;
+  if (kind === "BUNDLE") return `${base ?? "UNSPECIFIED"} BUNDLE`;
+  if (kind === "ACCESSORY") return `ACCESSORY ${accessoryNoun ?? "UNSPECIFIED"}${base ? ` / ${base}` : ""}`;
+  return base;
+}
+export function attributesFromVariant(variant: string | null): VariantAttributes {
+  const out: VariantAttributes = {};
+  if (!variant) return out;
+  for (const part of variant.replace(/ BUNDLE$/, "").replace(/^ACCESSORY [^/]*\/?\s*/, "").split(" / ")) {
+    const m = /^(memory|storage|capacity|size|pack)=(.+)$/.exec(part.trim());
+    if (m) out[m[1] as AttributeAxis] = m[2]!; else if (part.trim() && part.trim() !== "UNSPECIFIED") out.color = part.trim();
+  }
+  return out;
+}
+
+/** The model-number token: letters and digits mixed (CX-500, WH-1000XM5, NW-200, Q5, S7), never a unit ("12-Cup", "32GB"). */
+export function modelNumberToken(text: string): string | null {
+  const tokens = text.normalize("NFKC").match(/\b[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*\b/g) ?? [];
+  const ok = tokens.filter((raw) => {
+    const t = raw.replace(/[-_]/g, "");
+    if (UNIT_TOKEN.test(t) || UNIT_TOKEN.test(raw)) return false;
+    if (raw.split(/[-_]/).some((p) => UNIT_TOKEN.test(p)) && !/[A-Za-z]{2,}\d/.test(t)) return false;
+    return t.length >= 2 && t.length <= 26 && /[A-Za-z]/.test(t) && /\d/.test(t) && (t.length >= 4 || /^[A-Za-z]{1,2}\d{1,3}$/.test(t));
+  });
+  return ok.sort((a, b) => b.replace(/[-_]/g, "").length - a.replace(/[-_]/g, "").length)[0]?.toUpperCase() ?? null;
+}
+
+export interface ExtractedIdentity {
+  brand: string | null;
+  /** Model phrase ("CX-500", "Trail Runner", "Nova 9 Pro"). For accessories: the model of the product it fits. */
+  model: string | null;
+  modelBasis: "MODEL_NUMBER" | "NAMED_MODEL" | "NONE";
+  kind: ProductKind;
+  accessoryNoun: string | null;
+  attributes: VariantAttributes;
+  /** Condition stated by the title itself ("Renewed", "Refurbished", "Used"), else null. */
+  titleCondition: "refurbished" | "used" | "open_box" | null;
+}
+
+/** Named model phrase: words after the brand up to the first generic word, attribute or punctuation (max 4 words). */
+export function namedModelAfter(text: string, brand: string | null): string | null {
+  const t = text.normalize("NFKC");
+  let rest = t;
+  if (brand) {
+    const m = new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(brand)}(?:'s)?(?=[^A-Za-z0-9]|$)`, "i").exec(t);
+    if (!m) return null;
+    rest = t.slice(m.index + m[0].length);
+  }
+  const words: string[] = [];
+  for (const raw of rest.split(/\s+/)) {
+    if (!raw) continue;
+    if (/^[,;:()|/–—-]/.test(raw)) break;
+    const w = raw.replace(/[,;:()|]+$/, "");
+    const stop = /[,;:()|]$/.test(raw);
+    const lw = w.toLowerCase().replace(/[’']s$/, "'s");
+    if (!w || GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
+      || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
+    words.push(w);
+    if (stop || words.length >= 4) break;
+  }
+  return words.length ? words.join(" ") : null;
+}
+
+export function extractIdentity(title: string, brand: string | null): ExtractedIdentity {
+  const t = title.normalize("NFKC").replace(/\s+/g, " ").trim();
+  const attributes = parseAttributes(t);
+  const titleCondition = /\b(renewed|refurbished|reconditioned|refurb)\b/i.test(t) ? "refurbished" : /\bopen[- ]box\b/i.test(t) ? "open_box" : /\b(used|pre-?owned)\b/i.test(t) ? "used" : null;
+  // Accessory: "<accessory noun> ... for <product>" or "Replacement ...". The model is the TARGET product's model.
+  const forIdx = t.search(/\b(?:for|compatible with|fits)\b/i);
+  const head = forIdx > 0 ? t.slice(0, forIdx) : t;
+  const nounMatch = ACCESSORY_NOUN.exec(head);
+  const isAccessory = forIdx > 0 && (!!nounMatch || /^(replacement|spare)\b/i.test(t));
+  if (isAccessory) {
+    const target = t.slice(forIdx).replace(/^(?:for|compatible with|fits)\s+(?:the\s+)?/i, "");
+    const tb = brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(target) ? brand : null;
+    const num = modelNumberToken(target);
+    const named = namedModelAfter(target, tb);
+    const noun = (nounMatch?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, "");
+    return { brand, model: num ?? named, modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
+      attributes: { ...parseAttributes(head), ...(parseAttributes(target).capacity ? { capacity: parseAttributes(target).capacity } : {}) }, titleCondition };
+  }
+  const kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
+  const num = modelNumberToken(t.replace(/\(.*?\)/g, " "));
+  const named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null);
+  let model: string | null = null; let basis: ExtractedIdentity["modelBasis"] = "NONE";
+  if (num) {
+    // A model number inside the named phrase keeps the family words ("Sweep S7", "View 27 4K" stays named).
+    model = named && normalizeKey(named).includes(normalizeKey(num)) ? named : num; basis = "MODEL_NUMBER";
+    if (named && normalizeKey(named).includes(normalizeKey(num)) && named.split(" ").length > 1) basis = "NAMED_MODEL";
+  } else if (named) { model = named; basis = "NAMED_MODEL"; }
+  return { brand, model, modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
+}
+
+/** Identity key: brand + model, separator- and case-insensitive. Equal keys = same product family. */
+export function familyKey(brand: string | null, model: string | null): string {
+  return normalizeKey(`${brand ?? ""}${model ?? ""}`);
+}
+
+/**
+ * True when `text` mentions exactly this model: separator-tolerant, and not followed by a family extension
+ * ("Nova 9" does not match "Nova 9 Pro"; "CX-500" does not match "CX-5000").
+ */
+export function mentionsExactModel(text: string, model: string): boolean {
+  const body = model.replace(/[^A-Za-z0-9]/g, "").split("").map((ch) => escapeRe(ch)).join("[- ]?");
+  if (!body) return false;
+  const re = new RegExp(`(^|[^A-Za-z0-9])${body}(?=$|[^A-Za-z0-9])`, "gi");
+  const own = new Set(model.toLowerCase().split(/[^a-z0-9]+/));
+  for (const m of text.matchAll(re)) {
+    const after = text.slice((m.index ?? 0) + m[0].length).trimStart();
+    const next = /^[-\s]?([A-Za-z0-9]+)/.exec(after)?.[1]?.toLowerCase();
+    if (next && MODEL_EXTENSIONS.has(next) && !own.has(next)) continue;
+    return true;
+  }
+  return false;
+}

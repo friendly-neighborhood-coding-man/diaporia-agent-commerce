@@ -9,6 +9,24 @@ export interface ProductSearchQuery {
   category: string | null;
   brand: string | null;
   model: string | null;
+  /** Research V2 (optional; adapters that do not support a field ignore it). Explicit provider query string. */
+  query?: string;
+  currency?: string | null;
+  country?: string | null;
+  /** Upper price filter in minor units of `currency` (a search filter only, never a budget authority). */
+  maxPriceMinor?: number | null;
+  conditions?: Array<"new" | "used">;
+  mode?: "default" | "keyword" | "agentic";
+  limit?: number;
+}
+
+/** One provider page (research V2). */
+export interface SearchPage {
+  products: CatalogProduct[];
+  nextPageToken: string | null;
+  /** Provider HTTP attempts this page cost (including bounded retries). */
+  providerCalls: number;
+  locale?: { currencyRequested: string | null; currencySent: string | null; supported: boolean };
 }
 
 /**
@@ -27,6 +45,8 @@ export interface CommerceResearchAdapter {
   findOffers(identity: ProductIdentity): Promise<MerchantOffer[]>;
   /** Merchant-attested quote. Returns null when the merchant offers no quote. */
   getQuote(offerId: string, quantity: number, destination: ShippingDestination | null): Promise<MerchantQuote | null>;
+  /** Optional (research V2): one metered provider page. Absent = searchProducts is the only search. */
+  searchPage?(query: ProductSearchQuery, pageToken: string | null, page: number): Promise<SearchPage>;
 }
 
 export class MockCommerceResearchAdapter implements CommerceResearchAdapter {
