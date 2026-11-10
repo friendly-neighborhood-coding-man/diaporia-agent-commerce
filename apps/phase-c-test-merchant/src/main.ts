@@ -4,6 +4,7 @@
  */
 import { ConfigRefusedError, loadMerchantConfig } from "./config.js";
 import { startMerchantServer } from "./server.js";
+import { LedgerRefusedError } from "./spendLedger.js";
 
 async function main() {
   let config;
@@ -12,7 +13,12 @@ async function main() {
     console.error(e instanceof ConfigRefusedError ? `REFUSED ${e.message}` : `REFUSED ${(e as Error).message}`);
     process.exit(2);
   }
-  const m = await startMerchantServer({ config });
+  let m;
+  try { m = await startMerchantServer({ config }); }
+  catch (e) {
+    console.error(e instanceof LedgerRefusedError ? `REFUSED ${e.code}: ${e.message}` : `REFUSED ${(e as Error).message}`);
+    process.exit(2);
+  }
   // Never print secrets: only mode, origin, digest prefix and counters.
   console.log(JSON.stringify({ event: "MERCHANT_STARTED", mode: config.mode, listening: `${config.listenHost}:${(m.server.address() as any).port}`, origin: m.origin,
     approvalDigestPrefix: config.approval?.digest.slice(0, 12) ?? null, approvalExpiresAt: config.approval ? new Date(config.approval.expiresAtMs).toISOString() : null,

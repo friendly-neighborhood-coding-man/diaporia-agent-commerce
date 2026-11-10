@@ -21,13 +21,14 @@ export function mockConfig(extra: Record<string, string> = {}): MerchantConfig {
 /** Builds a Sandbox-mode environment whose digest matches, exactly as the operator would after owner approval. */
 export function sandboxEnv(gate: "C1" | "C2", over: Record<string, string | undefined> = {}, now = Date.now()): Record<string, string> {
   const expiresAt = new Date(now + 3600_000).toISOString();
+  const dataDir = over.MERCHANT_DATA_DIR ?? mkdtempSync(join(tmpdir(), "phc-"));
   const statement = buildApprovalStatement({ gate, merchantOrigin: ORIGIN, allowlist: loadAllowlist(allowlistText()), sellerMerchantId: SELLER_ID,
-    maxMinutes: 10, maxKernelUsd: "0.50", expiresAt });
+    maxMinutes: 10, kernelUsdEstimate: "0.50", merchantDataDir: dataDir, expiresAt });
   const env: Record<string, string | undefined> = {
     MERCHANT_CHECKOUT_MODE: gate === "C1" ? "SANDBOX_POPUP_TEST" : "SANDBOX_APPROVAL_TEST", MERCHANT_PUBLIC_ORIGIN: ORIGIN, MERCHANT_LISTEN_PORT: "0",
     MERCHANT_PAYPAL_CLIENT_ID: FAKE_CLIENT_ID, MERCHANT_PAYPAL_CLIENT_SECRET: FAKE_CLIENT_SECRET, MERCHANT_PAYPAL_SELLER_MERCHANT_ID: SELLER_ID,
-    MERCHANT_DATA_DIR: mkdtempSync(join(tmpdir(), "phc-")), MERCHANT_STATUS_SECRET: STATUS_SECRET, MERCHANT_OPERATOR_KEY: OPERATOR_KEY,
-    PHASE_C_APPROVAL_EXPIRES_AT: expiresAt, PHASE_C_MAX_MINUTES: "10", PHASE_C_MAX_KERNEL_USD: "0.50", PHASE_C_APPROVED_DIGEST: approvalDigest(statement), ...over,
+    MERCHANT_DATA_DIR: dataDir, MERCHANT_STATUS_SECRET: STATUS_SECRET, MERCHANT_OPERATOR_KEY: OPERATOR_KEY,
+    PHASE_C_APPROVAL_EXPIRES_AT: expiresAt, PHASE_C_MAX_MINUTES: "10", PHASE_C_KERNEL_USD_ESTIMATE: "0.50", PHASE_C_APPROVED_DIGEST: approvalDigest(statement), ...over,
   };
   return Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined)) as Record<string, string>;
 }

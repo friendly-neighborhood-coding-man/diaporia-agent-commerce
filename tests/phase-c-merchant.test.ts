@@ -200,7 +200,7 @@ describe("MOCK checkout: cart binding, idempotency, replay and failure states", 
     expect((await b.api("/api/checkout/orders/approve", { cartRef: c.ref, csrf: c.csrf, orderId: created.body.orderId })).body.state).toBe("CAPTURE_PENDING");
     expect(sellerStatusOf("CAPTURE_PENDING", true, true)).toBe("UNKNOWN");
     m.mock!.settlePending(created.body.orderId, "COMPLETED");
-    const op = await fetch(`${m.localUrl}/operator/reconcile`, { method: "POST", headers: { Authorization: `Bearer ${OPERATOR_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ cartRef: c.ref }) });
+    const op = await fetch(`${m.localUrl}/operator/reconcile?cart=${c.ref}`, { headers: { Authorization: `Bearer ${OPERATOR_KEY}` } });
     expect((await op.json()).state).toBe("ORDER_CONFIRMED");
     expect(m.mock!.calls.capture).toBe(1);
   });
@@ -217,9 +217,9 @@ describe("MOCK checkout: cart binding, idempotency, replay and failure states", 
     const { b, c, created } = await cartWithOrder(m);
     m.mock!.buyerApprove(created.body.orderId);
     expect((await b.api("/api/checkout/orders/approve", { cartRef: c.ref, csrf: c.csrf, orderId: created.body.orderId })).body.state).toBe("ORDER_UNKNOWN");
-    const unauth = await fetch(`${m.localUrl}/operator/reconcile`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cartRef: c.ref, retryCapture: true }) });
+    const unauth = await fetch(`${m.localUrl}/operator/reconcile?cart=${c.ref}`);
     expect(unauth.status).toBe(401);
-    const op = await fetch(`${m.localUrl}/operator/reconcile`, { method: "POST", headers: { Authorization: `Bearer ${OPERATOR_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ cartRef: c.ref, retryCapture: true }) });
+    const op = await fetch(`${m.localUrl}/operator/reconcile?cart=${c.ref}`, { headers: { Authorization: `Bearer ${OPERATOR_KEY}` } });
     expect((await op.json()).state).toBe("ORDER_CONFIRMED");
     expect(m.mock!.calls.capture).toBe(1); // the GET showed the capture had happened: no second capture
   });
@@ -285,7 +285,8 @@ describe("order status endpoint", () => {
 describe("Sandbox modes against a FAKE Sandbox REST backend (offline)", () => {
   it("SANDBOX_POPUP_TEST: SDK v6 button, Sandbox-only hosts, PayPal-Request-Id, and NO capture", async () => {
     const pp = fakeSandboxPayPal();
-    m = await startMerchantServer({ config: loadMerchantConfig(sandboxEnv("C1")), fetchImpl: pp.fetchImpl });
+    const env = sandboxEnv("C1");
+    m = await startMerchantServer({ config: loadMerchantConfig(env), fetchImpl: pp.fetchImpl });
     const b = new Buyer(m, ORIGIN);
     await b.addToCart();
     const c = await b.cart();
@@ -303,7 +304,8 @@ describe("Sandbox modes against a FAKE Sandbox REST backend (offline)", () => {
     expect(new Set(pp.requests.map((r) => new URL(r.url).origin))).toEqual(new Set(["https://api-m.sandbox.paypal.com"]));
     expect(pp.requests.some((r) => r.url.endsWith("/capture"))).toBe(false);
     const create = pp.requests.find((r) => r.method === "POST" && r.url.endsWith("/v2/checkout/orders"))!;
-    expect(create.headers["PayPal-Request-Id"]).toBe(`phc-create-${c.ref}`);
+    // Bound to the approval run, not the cart: a second instance would get this same order back and fail custom_id.
+    expect(create.headers["PayPal-Request-Id"]).toBe(`phc-create-run-${env.PHASE_C_APPROVED_DIGEST}`);
     expect(JSON.parse(create.body).purchase_units[0]).toMatchObject({ custom_id: c.ref, payee: { merchant_id: "SANDBOXSELLER01" }, amount: { currency_code: "USD", value: "107.60" } });
   });
 

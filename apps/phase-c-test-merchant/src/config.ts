@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FIXED_TOTAL_MINOR, MERCHANT_DOMAIN, PRODUCT } from "./catalog.js";
 
@@ -27,7 +28,7 @@ export class ConfigRefusedError extends Error {
 export interface Allowlist { browserHosts: string[]; sha256: string }
 
 export interface ApprovalStatement {
-  schema: "diaporia.phase-c.approval.v1";
+  schema: "diaporia.phase-c.approval.v2";
   gate: Gate;
   mode: Exclude<CheckoutMode, "MOCK">;
   merchantDomain: string;
@@ -39,10 +40,31 @@ export interface ApprovalStatement {
   capture: boolean;
   maxCaptures: number;
   sellerMerchantIdSha256: string;
+  /** Enforced by DIAPORIA's durable per-approval KERNEL creation ledger (src/handoff/kernelLedger.ts), not by the provider. */
   kernelBrowsers: 1;
   maxMinutes: number;
-  maxKernelUsd: string;
+  /**
+   * An ESTIMATE the owner accepts. Nothing in this repository can stop KERNEL from billing past it: it is not a
+   * monetary circuit breaker. Spending control = kernelBrowsers via the ledger + maxMinutes watchdog + the owner's
+   * own account-side limits and supervision.
+   */
+  kernelUsdEstimateNotEnforced: string;
+  /** Absolute merchant data directory. A data dir is bound to exactly one approval (one run); see spendLedger.ts. */
+  merchantDataDir: string;
+  /** One merchant process per approval: an exclusive lease file in merchantDataDir. Replicas are refused. */
+  merchantInstances: 1;
   expiresAt: string;
+}
+
+/** Owner approval for ONE capture retry of ONE C2 cart after a read-only reconciliation. Separate digest. */
+export interface CaptureRetryStatement {
+  schema: "diaporia.phase-c.capture-retry.v1";
+  gate: "C2_CAPTURE_RETRY";
+  c2ApprovalDigest: string;
+  cartRef: string;
+  merchantOrderRef: string;
+  maxRetries: 1;
+  sameRequestId: true;
 }
 
 export interface MerchantConfig {
@@ -109,25 +131,42 @@ export function kernelEgressHosts(origin: string, allowlist: Allowlist): string[
 
 export function buildApprovalStatement(p: {
   gate: Gate; merchantOrigin: string; allowlist: Allowlist; sellerMerchantId: string | null;
-  maxMinutes: number; maxKernelUsd: string; expiresAt: string;
+  maxMinutes: number; kernelUsdEstimate: string; merchantDataDir: string; expiresAt: string;
 }): ApprovalStatement {
   if (!Number.isInteger(p.maxMinutes) || p.maxMinutes < 1 || p.maxMinutes > 10) throw new ConfigRefusedError("APPROVAL_INVALID", "maxMinutes must be 1..10 (KERNEL watchdog ceiling)");
-  if (!/^\d{1,2}\.\d{2}$/.test(p.maxKernelUsd)) throw new ConfigRefusedError("APPROVAL_INVALID", "maxKernelUsd must look like 0.50");
+  if (!/^\d{1,2}\.\d{2}$/.test(p.kernelUsdEstimate)) throw new ConfigRefusedError("APPROVAL_INVALID", "the KERNEL USD estimate must look like 0.50");
+  const dataDir = parseDataDir(p.merchantDataDir);
   if (Number.isNaN(Date.parse(p.expiresAt))) throw new ConfigRefusedError("APPROVAL_INVALID", "expiresAt must be an ISO-8601 time");
   const c2 = p.gate === "C2";
   if (!p.sellerMerchantId) throw new ConfigRefusedError("APPROVAL_INVALID", "the Sandbox seller (business) merchant id is part of every approval");
   return {
-    schema: "diaporia.phase-c.approval.v1", gate: p.gate, mode: c2 ? "SANDBOX_APPROVAL_TEST" : "SANDBOX_POPUP_TEST",
+    schema: "diaporia.phase-c.approval.v2", gate: p.gate, mode: c2 ? "SANDBOX_APPROVAL_TEST" : "SANDBOX_POPUP_TEST",
     merchantDomain: MERCHANT_DOMAIN, merchantOrigin: p.merchantOrigin, networkAllowlistSha256: p.allowlist.sha256,
     kernelEgressHosts: kernelEgressHosts(p.merchantOrigin, p.allowlist),
     product: { sku: PRODUCT.sku, variant: PRODUCT.variant, quantity: PRODUCT.quantity, currency: PRODUCT.currency, fixedTotalMinor: FIXED_TOTAL_MINOR },
     maxSandboxOrders: 1, capture: c2, maxCaptures: c2 ? 1 : 0,
     sellerMerchantIdSha256: sha256Hex(p.sellerMerchantId),
-    kernelBrowsers: 1, maxMinutes: p.maxMinutes, maxKernelUsd: p.maxKernelUsd, expiresAt: new Date(p.expiresAt).toISOString(),
+    kernelBrowsers: 1, maxMinutes: p.maxMinutes, kernelUsdEstimateNotEnforced: p.kernelUsdEstimate,
+    merchantDataDir: dataDir, merchantInstances: 1, expiresAt: new Date(p.expiresAt).toISOString(),
   };
 }
 
-export const approvalDigest = (s: ApprovalStatement): string => sha256Hex(canonicalJson(s));
+export const approvalDigest = (s: ApprovalStatement | CaptureRetryStatement): string => sha256Hex(canonicalJson(s));
+
+/** The data dir is part of the approval, so a second instance with another data dir cannot reuse the digest. */
+export function parseDataDir(raw: string | undefined): string {
+  if (!raw || !isAbsolute(raw)) throw new ConfigRefusedError("DATA_DIR_REQUIRED", "MERCHANT_DATA_DIR must be an absolute path (it is part of the approval)");
+  const n = normalize(raw).replace(/[\\/]+$/, "");
+  if (!n || n.length > 300) throw new ConfigRefusedError("DATA_DIR_INVALID", "MERCHANT_DATA_DIR is not usable");
+  return n;
+}
+
+export function buildCaptureRetryStatement(p: { c2ApprovalDigest: string; cartRef: string; merchantOrderRef: string }): CaptureRetryStatement {
+  if (!/^([a-f0-9]{64}|MOCK)$/.test(p.c2ApprovalDigest)) throw new ConfigRefusedError("APPROVAL_INVALID", "c2ApprovalDigest must be the C2 digest");
+  if (!/^cart_[a-f0-9]{24}$/.test(p.cartRef) || !/^PHC-[A-F0-9]{12}$/.test(p.merchantOrderRef)) throw new ConfigRefusedError("APPROVAL_INVALID", "cartRef / merchantOrderRef malformed");
+  return { schema: "diaporia.phase-c.capture-retry.v1", gate: "C2_CAPTURE_RETRY", c2ApprovalDigest: p.c2ApprovalDigest, cartRef: p.cartRef,
+    merchantOrderRef: p.merchantOrderRef, maxRetries: 1, sameRequestId: true };
+}
 
 const FORBIDDEN_OVERRIDES = ["PAYPAL_API_BASE", "MERCHANT_PAYPAL_API_BASE", "MERCHANT_PAYPAL_SDK_URL", "PAYPAL_SDK_URL"];
 
@@ -170,7 +209,7 @@ export function loadMerchantConfig(env: NodeJS.ProcessEnv, now: number = Date.no
   const payeeMerchantId = env.MERCHANT_PAYPAL_SELLER_MERCHANT_ID ?? "";
   if (!clientId || !clientSecret) throw new ConfigRefusedError("CREDENTIALS_MISSING", "MERCHANT_PAYPAL_CLIENT_ID / MERCHANT_PAYPAL_CLIENT_SECRET (Sandbox app of the seller) are required");
   if (!/^[A-Z0-9]{8,20}$/.test(payeeMerchantId)) throw new ConfigRefusedError("SELLER_ID_INVALID", "MERCHANT_PAYPAL_SELLER_MERCHANT_ID must be the Sandbox BUSINESS account merchant id");
-  if (!env.MERCHANT_DATA_DIR) throw new ConfigRefusedError("DATA_DIR_REQUIRED", "MERCHANT_DATA_DIR is required so the order cap survives restarts");
+  const dataDir = parseDataDir(env.MERCHANT_DATA_DIR);
   if (!statusSecret) throw new ConfigRefusedError("STATUS_SECRET_REQUIRED", "MERCHANT_STATUS_SECRET is required so seller status can be authenticated");
   if (!env.PHASE_C_APPROVED_DIGEST) throw new ConfigRefusedError("APPROVAL_REQUIRED", `${mode} requires owner approval (PHASE_C_APPROVED_DIGEST for gate ${gate})`);
   const expiresAt = env.PHASE_C_APPROVAL_EXPIRES_AT ?? "";
@@ -178,10 +217,10 @@ export function loadMerchantConfig(env: NodeJS.ProcessEnv, now: number = Date.no
   if (Number.isNaN(expiresAtMs) || expiresAtMs <= now) throw new ConfigRefusedError("APPROVAL_EXPIRED", "PHASE_C_APPROVAL_EXPIRES_AT is missing or in the past");
   if (expiresAtMs - now > 24 * 3600_000) throw new ConfigRefusedError("APPROVAL_WINDOW_TOO_LONG", "approval windows are at most 24 hours");
   const statement = buildApprovalStatement({ gate, merchantOrigin: publicOrigin, allowlist, sellerMerchantId: payeeMerchantId,
-    maxMinutes: Number(env.PHASE_C_MAX_MINUTES ?? 10), maxKernelUsd: env.PHASE_C_MAX_KERNEL_USD ?? "0.50", expiresAt });
+    maxMinutes: Number(env.PHASE_C_MAX_MINUTES ?? 10), kernelUsdEstimate: env.PHASE_C_KERNEL_USD_ESTIMATE ?? "0.50", merchantDataDir: dataDir, expiresAt });
   const digest = approvalDigest(statement);
   if (env.PHASE_C_APPROVED_DIGEST.trim().toLowerCase() !== digest)
     throw new ConfigRefusedError("APPROVAL_DIGEST_MISMATCH", `PHASE_C_APPROVED_DIGEST does not match the ${gate} statement for this configuration`);
-  return { mode, listenHost, listenPort, publicOrigin, statusSecret, operatorKey, dataDir: env.MERCHANT_DATA_DIR, allowlist,
+  return { mode, listenHost, listenPort, publicOrigin, statusSecret, operatorKey, dataDir, allowlist,
     paypal: { clientId, clientSecret, payeeMerchantId }, approval: { statement, digest, expiresAtMs } };
 }

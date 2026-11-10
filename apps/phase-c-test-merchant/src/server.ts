@@ -4,7 +4,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { FIXED_TOTAL_MINOR, MERCHANT_DOMAIN, PRODUCT, formatUsd } from "./catalog.js";
-import { PAYPAL_V6_SANDBOX_SDK_URL, type MerchantConfig } from "./config.js";
+import { PAYPAL_V6_SANDBOX_SDK_URL, approvalDigest, buildCaptureRetryStatement, type MerchantConfig } from "./config.js";
+import { SpendLedger } from "./spendLedger.js";
 import { MOCK_SELLER_MERCHANT_ID, MerchantCheckout, MerchantError, type Cart, type CheckoutOptions, type MerchantOrderState } from "./orders.js";
 import { MockMerchantPayPal, PayPalSandboxOrdersClient, type MerchantPayPal, type MockKnobs } from "./paypal.js";
 
@@ -61,11 +62,14 @@ export async function startMerchantServer(o: MerchantServerOptions): Promise<Mer
   const now = o.now ?? Date.now;
   const mock = isMock ? new MockMerchantPayPal(o.mockKnobs) : null;
   const paypal: MerchantPayPal = mock ?? new PayPalSandboxOrdersClient({ clientId: cfg.paypal!.clientId, clientSecret: cfg.paypal!.clientSecret, ...(o.fetchImpl ? { fetchImpl: o.fetchImpl } : {}), now });
-  const checkout = new MerchantCheckout({
+  // Sandbox: bind the data dir to this approval and take the single-instance lease BEFORE anything can spend.
+  const ledger = isMock ? null : SpendLedger.open(cfg.dataDir!, cfg.approval!.digest);
+  let checkout: MerchantCheckout;
+  try { checkout = new MerchantCheckout({
     mode: cfg.mode, paypal, payeeMerchantId: isMock ? MOCK_SELLER_MERCHANT_ID : cfg.paypal!.payeeMerchantId,
     approval: cfg.approval ? { digest: cfg.approval.digest, expiresAtMs: cfg.approval.expiresAtMs, maxSandboxOrders: cfg.approval.statement.maxSandboxOrders, maxCaptures: cfg.approval.statement.maxCaptures } : null,
-    dataDir: cfg.dataDir, now, ...(o.storeKnobs ? { mockKnobs: o.storeKnobs } : {}),
-  });
+    dataDir: cfg.dataDir, ledger, now, ...(o.storeKnobs ? { mockKnobs: o.storeKnobs } : {}),
+  }); } catch (e) { ledger?.release(); throw e; }
   const diagnostics = { cspBlocked: {} as Record<string, number>, sdkEvents: {} as Record<string, number> };
   const bump = (m: Record<string, number>, k: string) => { if (Object.keys(m).length < 50 || k in m) m[k] = (m[k] ?? 0) + 1; };
   let origin = cfg.publicOrigin ?? "";
@@ -264,9 +268,21 @@ ${confirmed ? `<p data-order-confirmation>Order ${esc(s.orderRef ?? "")} confirm
         return json(res, 200, { mode: cfg.mode, origin, approvalDigest: cfg.approval?.digest ?? null, approvalExpiresAt: cfg.approval ? new Date(cfg.approval.expiresAtMs).toISOString() : null,
           counters: checkout.counters(), cspBlockedHosts: diagnostics.cspBlocked, sdkEvents: diagnostics.sdkEvents, allowlistSha256: cfg.allowlist.sha256, fixedTotalMinor: FIXED_TOTAL_MINOR });
       if (req.method === "GET" && p === "/operator/history") return json(res, 200, { cartRef: url.searchParams.get("cart"), history: checkout.history(url.searchParams.get("cart") ?? "") });
-      if (req.method === "POST" && p === "/operator/reconcile") {
-        const b = await apiBody(req, ["cartRef", "retryCapture"]);
-        const c = await checkout.reconcile(String(b.cartRef ?? ""), { retryCapture: b.retryCapture === true });
+      // C3: read-only. GET only; the handler can reach nothing but PayPal's GET order.
+      if (p === "/operator/reconcile") {
+        if (req.method !== "GET") return json(res, 405, { error: "RECONCILE_IS_GET_ONLY", message: "Use GET /operator/reconcile?cart=<cartRef>. Capture retries are POST /operator/c2/retry-capture with an owner-approved digest." }, { Allow: "GET" });
+        const c = await checkout.reconcile(url.searchParams.get("cart") ?? "");
+        return json(res, 200, checkout.publicStatus(c.cartRef));
+      }
+      // C2 mutation gate: one retry, owner-approved digest bound to the C2 approval and this cart.
+      if (req.method === "POST" && p === "/operator/c2/retry-capture") {
+        const b = await apiBody(req, ["cartRef", "retryApprovalDigest"]);
+        const cart = checkout.get(String(b.cartRef ?? ""));
+        if (!cart) return json(res, 404, { error: "CART_NOT_FOUND" });
+        const want = approvalDigest(buildCaptureRetryStatement({ c2ApprovalDigest: cfg.approval?.digest ?? "MOCK", cartRef: cart.cartRef, merchantOrderRef: cart.merchantOrderRef }));
+        if (typeof b.retryApprovalDigest !== "string" || b.retryApprovalDigest.toLowerCase() !== want)
+          return json(res, 403, { error: "RETRY_APPROVAL_DIGEST_MISMATCH", message: "Print the C2_CAPTURE_RETRY statement with npm run phase-c:approval and get the owner's approval of its digest." });
+        const c = await checkout.retryCaptureApproved(cart.cartRef);
         return json(res, 200, checkout.publicStatus(c.cartRef));
       }
     }
@@ -280,10 +296,10 @@ ${confirmed ? `<p data-order-confirmation>Order ${esc(s.orderRef ?? "")} confirm
       json(res, m.httpStatus, { error: m.code, message: m.message });
     });
   });
-  await new Promise<void>((r) => server.listen(cfg.listenPort, cfg.listenHost, r));
+  await new Promise<void>((r, j) => { server.once("error", (e) => { ledger?.release(); j(e); }); server.listen(cfg.listenPort, cfg.listenHost, r); });
   const port = (server.address() as AddressInfo).port;
   if (!origin) origin = `http://${cfg.listenHost === "::1" ? "[::1]" : cfg.listenHost}:${port}`;
   const localUrl = `http://${cfg.listenHost === "::1" ? "[::1]" : cfg.listenHost}:${port}`;
   return { server, origin, localUrl, checkout, paypal, mock, diagnostics,
-    close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(() => r()); }) };
+    close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(() => { ledger?.release(); r(); }); }) };
 }

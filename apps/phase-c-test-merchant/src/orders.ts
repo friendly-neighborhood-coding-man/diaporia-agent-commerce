@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { join } from "node:path";
 import { PRODUCT, computeTotals, toValue, type Totals } from "./catalog.js";
 import type { CheckoutMode } from "./config.js";
+import type { SpendLedger } from "./spendLedger.js";
 import { PayPalOutcomeUnknownError, PayPalRejectedError, type MerchantPayPal, type OrderView } from "./paypal.js";
 
 /**
@@ -70,6 +71,8 @@ export interface CheckoutOptions {
   /** Approval binding for Sandbox modes. */
   approval: { digest: string; expiresAtMs: number; maxSandboxOrders: number; maxCaptures: number } | null;
   dataDir: string | null;
+  /** Durable, cross-process slots + single-instance lease. Required in Sandbox modes; MOCK counts in memory. */
+  ledger?: SpendLedger | null;
   now?: () => number;
   /** MOCK-only test knobs for a drifting / hostile merchant. Refused outside MOCK. */
   mockKnobs?: {
@@ -100,7 +103,8 @@ export class MerchantCheckout {
     if (o.mode !== "MOCK" && o.mockKnobs && Object.keys(o.mockKnobs).length) throw new Error("mock knobs are refused outside MOCK mode");
     if (o.mode !== "MOCK" && o.paypal.kind !== "SANDBOX") throw new Error("Sandbox modes need the Sandbox client");
     if (o.mode === "MOCK" && o.paypal.kind !== "MOCK") throw new Error("MOCK mode must not hold a Sandbox client");
-    if (o.mode !== "MOCK" && (!o.approval || !o.dataDir)) throw new Error("Sandbox modes need an approval binding and a data dir");
+    if (o.mode !== "MOCK" && (!o.approval || !o.dataDir || !o.ledger)) throw new Error("Sandbox modes need an approval binding, a data dir and the spend ledger");
+    if (o.ledger && o.approval && o.ledger.runId !== o.approval.digest) throw new Error("spend ledger belongs to another approval");
     this.knobs = o.mockKnobs ?? {};
     this.load();
   }
@@ -109,7 +113,9 @@ export class MerchantCheckout {
   get captureAllowed() { return (this.o.mode === "MOCK" && !this.knobs.neverCapture) || this.o.mode === "SANDBOX_APPROVAL_TEST"; }
   counters() {
     const k = this.o.approval?.digest ?? "MOCK";
-    return { ordersCreated: this.ordersCreated[k] ?? 0, capturesAttempted: this.capturesAttempted[k] ?? 0,
+    const l = this.o.ledger;
+    return { ordersCreated: l ? l.used("order") : this.ordersCreated[k] ?? 0, capturesAttempted: l ? l.used("capture") : this.capturesAttempted[k] ?? 0,
+      captureRetries: l ? l.used("capture-retry") : this.capturesAttempted[`${k}:retry`] ?? 0, durableLedger: !!l,
       maxOrders: this.o.approval?.maxSandboxOrders ?? null, maxCaptures: this.o.approval?.maxCaptures ?? null };
   }
 
@@ -213,13 +219,14 @@ export class MerchantCheckout {
       const key = this.o.approval?.digest ?? "MOCK";
       if (this.o.approval) {
         if (this.now() >= this.o.approval.expiresAtMs) throw new MerchantError("APPROVAL_EXPIRED", 403, "The owner's approval window has ended.");
-        if ((this.ordersCreated[key] ?? 0) >= this.o.approval.maxSandboxOrders) throw new MerchantError("ORDER_CAP_REACHED", 403, "The approved number of Sandbox orders is used up.");
-      }
-      // Reserve the slot BEFORE calling PayPal: an unknown outcome still consumes it.
-      this.ordersCreated[key] = (this.ordersCreated[key] ?? 0) + 1;
+        if (!this.reserveSlot("order", this.o.approval.maxSandboxOrders, c)) throw new MerchantError("ORDER_CAP_REACHED", 403, "The approved number of Sandbox orders is used up.");
+      } else this.ordersCreated[key] = (this.ordersCreated[key] ?? 0) + 1;
       this.save();
+      // Sandbox: the request id is bound to the APPROVAL, not the cart, so any second instance that slipped past the lease
+      // gets PayPal's original order back, whose custom_id then fails verification (ORDER_UNKNOWN, never shown).
+      const requestId = this.o.approval ? `phc-create-run-${this.o.approval.digest}` : `phc-create-${c.cartRef}`;
       let v: OrderView;
-      try { v = await this.o.paypal.createOrder(orderBody(c, this.o.payeeMerchantId), `phc-create-${c.cartRef}`); }
+      try { v = await this.o.paypal.createOrder(orderBody(c, this.o.payeeMerchantId), requestId); }
       catch (e) {
         if (e instanceof PayPalRejectedError) { this.transition(c, "ORDER_UNKNOWN", "PAYPAL_CREATE_REJECTED", `CREATE_REJECTED_${e.httpStatus}`); throw new MerchantError("ORDER_CREATE_REJECTED", 502); }
         this.transition(c, "ORDER_UNKNOWN", "PAYPAL_CREATE_NO_RESPONSE", "CREATE_OUTCOME_UNKNOWN");
@@ -254,13 +261,22 @@ export class MerchantCheckout {
     });
   }
 
-  private async capture(c: Cart): Promise<void> {
+  /** Durable slot in Sandbox modes (exclusive file, never released); false = cap reached. */
+  private reserveSlot(kind: "order" | "capture" | "capture-retry", max: number, c: Cart): boolean {
+    return this.o.ledger!.reserve(kind, max, { cartRef: c.cartRef }) !== null;
+  }
+
+  private async capture(c: Cart, kind: "capture" | "capture-retry" = "capture"): Promise<void> {
     const key = this.o.approval?.digest ?? "MOCK";
+    const max = kind === "capture-retry" ? 1 : this.o.approval?.maxCaptures ?? Infinity;
     if (this.o.approval) {
       if (this.now() >= this.o.approval.expiresAtMs) { c.problem = "APPROVAL_EXPIRED_BEFORE_CAPTURE"; this.save(); return; }
-      if ((this.capturesAttempted[key] ?? 0) >= this.o.approval.maxCaptures) { c.problem = "CAPTURE_CAP_REACHED"; this.save(); return; }
+      if (max < 1 || !this.reserveSlot(kind, max, c)) { c.problem = kind === "capture" ? "CAPTURE_CAP_REACHED" : "CAPTURE_RETRY_USED"; this.save(); return; }
+    } else {
+      const k = kind === "capture" ? key : `${key}:retry`;
+      if (kind === "capture-retry" && (this.capturesAttempted[k] ?? 0) >= 1) { c.problem = "CAPTURE_RETRY_USED"; this.save(); return; }
+      this.capturesAttempted[k] = (this.capturesAttempted[k] ?? 0) + 1;
     }
-    this.capturesAttempted[key] = (this.capturesAttempted[key] ?? 0) + 1;
     this.save();
     let v: OrderView;
     try { v = await this.o.paypal.captureOrder(c.paypalOrderId!, `phc-capture-${c.paypalOrderId}`); }
@@ -300,13 +316,13 @@ export class MerchantCheckout {
     });
   }
 
-  // ------------------------------------------------------------------ operator reconciliation (read-first)
+  // ------------------------------------------------------------------ operator reconciliation (READ-ONLY)
   /**
-   * Re-reads the order from PayPal and moves to the state the evidence supports. A capture is re-sent ONLY when
-   * `retryCapture` is set, the mode allows capture, and the GET just proved the order is APPROVED with no capture;
-   * it reuses the same PayPal-Request-Id, so PayPal's idempotency also applies.
+   * C3 path. Re-reads the order from PayPal (one GET) and moves to the state the evidence supports. It cannot capture,
+   * create or void anything: the only PayPal call reachable from here is getOrder. A capture retry is a separate C2
+   * mutation (retryCaptureApproved) with its own owner-approved digest.
    */
-  async reconcile(cartRef: string, opts: { retryCapture?: boolean } = {}): Promise<Cart> {
+  async reconcile(cartRef: string): Promise<Cart> {
     const c0 = this.get(cartRef);
     if (!c0) throw new MerchantError("CART_NOT_FOUND", 404);
     return this.withLock(c0.cartRef, async () => {
@@ -324,12 +340,6 @@ export class MerchantCheckout {
       }
       if (v.status === "APPROVED") {
         if (c.state === "ORDER_UNKNOWN" || c.state === "ORDER_CREATED") this.transition(c, "BUYER_APPROVED", ev);
-        if (opts.retryCapture && this.captureAllowed && c.state === "BUYER_APPROVED") {
-          const key = this.o.approval?.digest ?? "MOCK";
-          // The capture slot was already consumed by the lost attempt; the retry reuses it (same request id).
-          if ((this.capturesAttempted[key] ?? 0) > 0) this.capturesAttempted[key]! -= 1;
-          await this.capture(c);
-        }
         return c;
       }
       if ((v.status === "CREATED" || v.status === "PAYER_ACTION_REQUIRED") && c.state === "ORDER_UNKNOWN") this.transition(c, "ORDER_CREATED", ev);
@@ -337,6 +347,30 @@ export class MerchantCheckout {
         if (c.state === "ORDER_UNKNOWN" || c.state === "ORDER_CREATED") this.transition(c, "ORDER_CANCELLED", ev, "ORDER_VOIDED");
         else this.transition(c, "ORDER_UNKNOWN", ev, "ORDER_VOIDED_AFTER_APPROVAL");
       }
+      return c;
+    });
+  }
+
+  // ------------------------------------------------------------------ C2 capture retry (separate mutation gate)
+  /**
+   * At most ONE capture retry per approval run, only in a capture-allowed mode, only for a cart the owner approved by
+   * digest (checked by the caller), and only when a fresh GET shows APPROVED with no capture and the cart is
+   * BUYER_APPROVED (i.e. a read-only reconcile already ran). Same PayPal-Request-Id as the original capture.
+   */
+  async retryCaptureApproved(cartRef: string): Promise<Cart> {
+    if (!this.captureAllowed) throw new MerchantError("CAPTURE_NOT_ALLOWED_IN_MODE", 403, "Capture retries exist only in SANDBOX_APPROVAL_TEST (C2).");
+    const c0 = this.get(cartRef);
+    if (!c0) throw new MerchantError("CART_NOT_FOUND", 404);
+    return this.withLock(c0.cartRef, async () => {
+      const c = this.get(cartRef)!;
+      if (c.state !== "BUYER_APPROVED" || !c.paypalOrderId) throw new MerchantError("RECONCILE_FIRST", 409, "Run GET /operator/reconcile first; a retry needs state BUYER_APPROVED.");
+      let v: OrderView;
+      try { v = await this.o.paypal.getOrder(c.paypalOrderId); } catch { throw new MerchantError("PAYPAL_UNREACHABLE", 502, "No retry without a fresh GET."); }
+      const bad = this.verifyAgainstCart(c, v);
+      if (bad) { this.transition(c, "ORDER_UNKNOWN", `${this.o.paypal.kind}_ORDERS_V2_GET_BEFORE_RETRY`, bad); return c; }
+      if (v.captures.length) { this.applyCaptureEvidence(c, v, `${this.o.paypal.kind}_ORDERS_V2_GET_BEFORE_RETRY`); return c; }
+      if (v.status !== "APPROVED") throw new MerchantError("NOT_RETRYABLE", 409, `PayPal shows ${v.status}; nothing to retry.`);
+      await this.capture(c, "capture-retry");
       return c;
     });
   }

@@ -48,6 +48,33 @@
   // ---------------- PayPal JS SDK v6, Sandbox ----------------
   var sdkUrl = cart.getAttribute("data-sdk-url");
   if (sdkUrl !== "https://www.sandbox.paypal.com/web-sdk/v6/core") { say("SDK_URL_REFUSED"); return; }
+  // Payment-surface evidence (review item 5). presentationMode "auto" may pick a popup, a modal/overlay or a redirect.
+  // These are browser-side OBSERVATIONS for the operator's evidence; the human still records what they saw.
+  // A popup PASS needs SURFACE_POPUP_OPENED here AND the human's note that PayPal opened in a separate window.
+  var surfaceSeen = {};
+  function surface(code) { if (surfaceSeen[code]) return; surfaceSeen[code] = true; report(code); }
+  var nativeOpen = window.open;
+  window.open = function () {
+    var w = nativeOpen.apply(window, arguments);
+    surface(w ? "SURFACE_POPUP_OPENED" : "SURFACE_POPUP_BLOCKED");
+    return w;
+  };
+  try {
+    new MutationObserver(function (records) {
+      records.forEach(function (r) {
+        Array.prototype.forEach.call(r.addedNodes, function (n) {
+          var frames = n.tagName === "IFRAME" ? [n] : n.querySelectorAll ? n.querySelectorAll("iframe") : [];
+          Array.prototype.forEach.call(frames, function () { surface("SURFACE_IFRAME_ADDED"); });
+        });
+      });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) { /* observation only */ }
+  var started = false;
+  window.addEventListener("pagehide", function () {
+    if (started) fetch("/api/checkout/sdk-event", { method: "POST", keepalive: true, credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cartRef: ref, csrf: csrf, code: "SURFACE_PAGE_LEFT" }) }).catch(function () {});
+  });
+
   function init() {
     fetch("/api/checkout/config", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (cfg) {
       return window.paypal.createInstance({ clientId: cfg.clientId, components: ["paypal-payments"], pageType: "checkout" });
@@ -64,6 +91,7 @@
         button.addEventListener("click", function () {
           // Do not await before start(): keeps the browser's transient user activation for the popup.
           var orderPromise = createOrder();
+          started = true; report("SESSION_START_CALLED");
           session.start({ presentationMode: "auto" }, orderPromise).catch(function () { say("PayPal button failure"); report("SESSION_START_FAILED"); });
         });
         say("PayPal Sandbox ready");
