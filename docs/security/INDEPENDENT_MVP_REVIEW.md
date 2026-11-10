@@ -9,6 +9,9 @@
 | External calls | None. No PayPal Sandbox, KERNEL, Cloudflare, Channel3 or Tavily call, no deployment, no production credentials. One web search covered PayPal's public documentation. |
 | Changes to the target | None. `integration/mvp-full-layer` is untouched. This report, `FINDINGS_REGISTER.md` and `tests/security-review/independent-probes.test.ts` are test/doc-only files on a separate review branch. |
 | Findings register | [`FINDINGS_REGISTER.md`](./FINDINGS_REGISTER.md) |
+| Remediation plan | [`REMEDIATION_WORK_PACKAGES.md`](./REMEDIATION_WORK_PACKAGES.md) (plan only; no fix is in this branch) |
+
+> **How to read the probes.** The 14 passing ATTACK probes show that the vulnerabilities are **reproduced**. They do **not** show that anything is mitigated. Each ATTACK probe asserts the current vulnerable behaviour. A correct fix makes its probe fail, and the finding moves to MITIGATED only after independent verification of that flip plus a green regression suite. The 5 CONTROL probes are the defences that held.
 
 ## 0. Answer to the final question
 
@@ -157,7 +160,7 @@ The register is authoritative and has the status of each item. Severity reflects
 | IR-14 | LOW | REPRODUCED | `semantic-fidelity/v1` misses paraphrased and non-English false claims | all |
 | IR-19 | LOW | UNVERIFIED | KERNEL evidence SSRF filter: no DNS-rebinding pinning; IPv6 6to4/Teredo allowed | R (if KERNEL on) |
 | IR-17 | INFO | CONFIRMED (code) | PayPal webhook and return routes exist only on loopback: no provider-push reconciliation in any supported config | C, P |
-| IR-18 | INFO | UNVERIFIED | PayPal-Request-Id retention (6 h documented for capture) and single-capture-per-order are not verified here | C, P |
+| IR-18 | INFO | UNVERIFIED (documentation partially verified 2026-11-10, see §9) | PayPal-Request-Id retention: the official docs give a 6 h default for both create and capture. Actual Sandbox behaviour and single-capture-per-order are not verified | C, P |
 | IR-20 | INFO | UNVERIFIED | KERNEL `network.allowed_hosts`, Live View URL secrecy and cleanup guarantees need the real service | C |
 | IR-21 | INFO | CONFIRMED (code) | `/healthz` discloses configuration | R |
 
@@ -468,7 +471,7 @@ No preserved Scenario I evidence was read for writing or modified. Every databas
 - IR-11: no provider write on expired or aged reconcile.
 - IR-09: owner review session bound to its checkout.
 - IR-10: reject ambiguous decimals and echo the parsed amount.
-- IR-18: confirm from the official PayPal reference, not a mirror:
+- IR-18 (retention for create and capture is now documented as a 6 h default, see §9 update; what remains open is listed below): confirm from the official PayPal reference, not a mirror:
   - PayPal-Request-Id retention for create and capture;
   - the behaviour of a repeated capture on a COMPLETED order;
   - order expiry.
@@ -508,6 +511,23 @@ Gate R or Gate C results do not imply any of these.
   - whether a capture replay after the window returns `ORDER_ALREADY_CAPTURED` (expected, since an order with intent CAPTURE captures once, but I did not confirm it from an official page in this session);
   - Sandbox-vs-live differences.
   Treat all of these as UNVERIFIED until checked against developer.paypal.com and recorded in `docs/RISK_REGISTER.md` R2.
+
+**Update 2026-11-10: partial documentation verification, supplied by the owner.**
+
+The owner checked the official PayPal Developer references. They report that both Orders v2 *Create Order* and *Capture Order* document a **default 6-hour `PayPal-Request-Id` retention**, which may be extended through a PayPal Account Manager.
+- This closes the "retention for *create order*" gap **at the documentation level only**.
+- **Still unverified:**
+  - actual Sandbox behaviour (replay inside and after the window);
+  - the capture-once guarantee, i.e. the response to a repeated capture on a COMPLETED order;
+  - whether any account-specific extension applies.
+- IR-18 therefore stays **UNVERIFIED** as a behavioural finding, now annotated as *documentation partially verified*.
+- The reviewer did not re-open these pages from this container. This evidence is owner-supplied and recorded as such.
+- Consequence: the IR-11 bound of "about 5 h" in the remediation stays correct with margin below the documented 6 h default.
+
+Owner-cited official sources:
+- [Orders v2: Create order](https://developer.paypal.com/api/orders/v2/orders-create)
+- [Server SDK: Capture order](https://developer.paypal.com/serversdk/php/api-endpoints/orders/capture-order)
+- [REST idempotency](https://developer.paypal.com/api/rest/reference/idempotency/)
 
 Sources:
 - [Capture payment for order (Orders v2 reference mirror)](https://docs.paypal.ai/reference/api/rest/orders/capture-payment-for-order.md)
