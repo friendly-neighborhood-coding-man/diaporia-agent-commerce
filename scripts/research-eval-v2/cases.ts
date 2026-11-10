@@ -34,7 +34,7 @@
 export type State = "RECOMMEND" | "INVESTIGATE" | "HOLD";
 export interface EvalCaseV2 {
   id: string;
-  split: "dev" | "holdout";
+  split: "dev" | "holdout" | "holdout2";
   tags: string[];
   lang: "en" | "ko";
   request: string;

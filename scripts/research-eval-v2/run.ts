@@ -15,16 +15,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEV_CASES, type EvalCaseV2, type State } from "./cases.js";
 import { HOLDOUT_CASES } from "./holdout.js";
+import { HOLDOUT2_CASES } from "./holdout2.js";
 import { WORLD, WORLD_SOURCES, newCounters, quoteRuleFor, worldFetch, worldProduct, type WorldCounters } from "./world.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const CHANNEL3_USD_PER_CREDIT = 0.007; // docs/research/PROVIDER_CONTRACTS.md (after the monthly free tier)
 export const TAVILY_USD_PER_CREDIT = 0.008; // pay-as-you-go, same source
 
-export function verifyHoldoutFreeze(): { sha256: string; frozen: string } {
-  const sha256 = createHash("sha256").update(readFileSync(join(HERE, "holdout.ts"))).digest("hex");
-  const frozen = JSON.parse(readFileSync(join(HERE, "HOLDOUT_FREEZE.json"), "utf8")).sha256 as string;
-  if (sha256 !== frozen) throw new Error(`holdout.ts changed after freezing (sha256 ${sha256} != frozen ${frozen}); add new cases in a new file instead`);
+export function verifyHoldoutFreeze(file = "holdout.ts", freeze = "HOLDOUT_FREEZE.json"): { sha256: string; frozen: string } {
+  const sha256 = createHash("sha256").update(readFileSync(join(HERE, file))).digest("hex");
+  const frozen = JSON.parse(readFileSync(join(HERE, freeze), "utf8")).sha256 as string;
+  if (sha256 !== frozen) throw new Error(`${file} changed after freezing (sha256 ${sha256} != frozen ${frozen}); add new cases in a new file instead`);
   return { sha256, frozen };
 }
 
@@ -205,12 +206,14 @@ export function summarize(rs: CaseOutcome[]) {
   };
 }
 
-export async function runSuite(root: string, opts: { splits?: Array<"dev" | "holdout"> } = {}) {
+export async function runSuite(root: string, opts: { splits?: Array<"dev" | "holdout" | "holdout2"> } = {}) {
   const freeze = verifyHoldoutFreeze();
+  const freeze2 = verifyHoldoutFreeze("holdout2.ts", "HOLDOUT2_FREEZE.json");
   const L = await load(root);
-  const cases = [...DEV_CASES, ...HOLDOUT_CASES].filter((c) => !opts.splits || opts.splits.includes(c.split));
+  const cases = [...DEV_CASES, ...HOLDOUT_CASES, ...HOLDOUT2_CASES].filter((c) => !opts.splits || opts.splits.includes(c.split));
   const results: CaseOutcome[] = [];
   for (const c of cases) results.push(await runCase(L, c));
-  return { holdoutSha256: freeze.sha256, results,
-    summary: { all: summarize(results), dev: summarize(results.filter((r) => r.split === "dev")), holdout: summarize(results.filter((r) => r.split === "holdout")) } };
+  return { holdoutSha256: freeze.sha256, holdout2Sha256: freeze2.sha256, results,
+    summary: { all: summarize(results), dev: summarize(results.filter((r) => r.split === "dev")), holdout: summarize(results.filter((r) => r.split === "holdout")),
+      holdout2: summarize(results.filter((r) => r.split === "holdout2")) } };
 }
