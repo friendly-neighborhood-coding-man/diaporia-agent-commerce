@@ -311,6 +311,7 @@ export class KernelSession extends PhasedSession implements BrowserSession {
     return out.result as T;
   }
   humanView(): HumanView {
+    if (this.phase === "CLOSED") throw new AutomationPausedError(this.phase);
     let origin: string[] = [];
     try { origin = [new URL(this.#live).origin]; } catch { /* keep empty */ }
     return { kind: "KERNEL_LIVE_VIEW", secretUrl: this.#live, frameOrigins: origin };
