@@ -117,7 +117,7 @@ function worldAdapter(inner: any, claims: Record<string, unknown>, now: () => nu
         discountMinor: 0, quotedAt: new Date(at).toISOString(), expiresAt: new Date(at + 900_000).toISOString(), source: "EVAL_WORLD_V2_QUOTE" };
     },
   };
-  for (const m of ["searchCandidates", "lookupUrl", "resolveVariant", "getVariantProduct"]) if (typeof inner[m] === "function") a[m] = inner[m].bind(inner);
+  for (const m of ["searchPage", "searchCandidates", "lookupUrl", "resolveVariant", "getVariantProduct"]) if (typeof inner[m] === "function") a[m] = inner[m].bind(inner);
   return a;
 }
 

@@ -26,6 +26,12 @@ import { UsageLimitError } from "../metering/UsageLedger.js";
 import { BillingUnavailableError, periodSummaryFrom } from "../billing/Billing.js";
 import { createHash as hashForKeys } from "node:crypto";
 import { parseWebhookEvent, type WebhookHeaders, type WebhookSignatureVerifier } from "../payment/PayPalWebhook.js";
+import { parseResearchIntent, type ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
+import type { RoutedIntent } from "../intent/PurchaseIntentRouter.js";
+import { canonicalVariant } from "../identity/ProductIdentityExtractor.js";
+import { runResearchV2, type PlannerLimits } from "../research/ResearchPlannerV2.js";
+import type { SearchPage, ProductSearchQuery } from "../research/CommerceResearchAdapter.js";
+import type { RankingWeights } from "../decision/weights.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -48,6 +54,15 @@ export interface GatewayConfig {
   service?: ServicePlane | null;
   /** Read-only provider retries during reconciliation (attempts, base backoff). */
   readRetry?: { attempts: number; baseDelayMs: number };
+  /**
+   * Research engine. "v2" (default): multi-category intent, variant-aware identity, V2 evidence routing when the
+   * router policy is "v2", versioned decision engine (RECOMMEND / INVESTIGATE / HOLD). "v1": the frozen V1 path.
+   * Neither engine can authorize payment.
+   */
+  researchEngine?: "v1" | "v2";
+  /** Research V2 planner limits (smaller than, and in addition to, the usage-ledger caps) and ranking weights. */
+  researchLimits?: Partial<PlannerLimits>;
+  rankingWeights?: RankingWeights | null;
 }
 
 export type ReconcileSource = "MANUAL" | "STARTUP" | "WEBHOOK" | "RETURN";
@@ -63,7 +78,7 @@ export function defaultMockMerchantIdentityVerifier(now: () => number = Date.now
     new MockPayPalRecipientAttestationProvider(ATTESTATIONS, now), now);
 }
 
-export type CapabilityStatus = "VERIFIED_TRUE" | "VERIFIED_FALSE" | "LISTING_CLAIM_ONLY" | "UNKNOWN";
+export type CapabilityStatus = "VERIFIED_TRUE" | "VERIFIED_FALSE" | "CONTRADICTED" | "LISTING_CLAIM_ONLY" | "UNKNOWN";
 const CHECKOUT_TTL_MS = 15 * 60_000;
 /** A CAPTURE_PENDING row without a capture id older than this cannot have a provider call in flight (timeout 20 s). */
 const STUCK_CAPTURE_MS = 5 * 60_000;
@@ -151,6 +166,7 @@ export class CommerceGateway {
     if (input.budgetMinor !== undefined && !isMinor(input.budgetMinor)) throw new CommerceError("INVALID_INPUT", "budgetMinor must be integer minor units");
     if (input.currency !== undefined && !isCurrency(input.currency)) throw new CommerceError("INVALID_INPUT", "unsupported currency");
     await this.assertServiceAuthorized(userId);
+    if ((this.config.researchEngine ?? "v2") === "v2") return this.researchPurchaseV2(userId, input, ctx);
     const intent = this.router.route(input);
     let ps = this.sessions.createPurchaseSession(userId, input.request, intent);
     ctx.requestId = ps.purchaseSessionId;
@@ -221,6 +237,111 @@ export class CommerceGateway {
       note: "Budgets here only filter research. Spending authority comes only from a user-created purchase mandate plus PayPal buyer approval.",
     };
   }
+
+  /** Research V2 (see ResearchPlannerV2 / DecisionEngine). Session, audit and output shape stay V1-compatible; `decision` is added. */
+  private async researchPurchaseV2(userId: string, input: PurchaseRequestInput, ctx: { requestId: string | null }) {
+    const iv = parseResearchIntent(input);
+    const intent = routedFromV2(iv);
+    let ps = this.sessions.createPurchaseSession(userId, input.request, intent);
+    ctx.requestId = ps.purchaseSessionId;
+    this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_STARTED", { mode: intent.mode, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource, engine: "v2" });
+    const requestId = ps.purchaseSessionId;
+    const research = this.research as CommerceResearchAdapter & { resolveVariant?: (id: string, sel: Record<string, string>, loc: { currency?: string | null }) => Promise<{ product: CatalogProduct | null; honored: boolean }> };
+    const plan = await runResearchV2(iv, {
+      research: this.research, router: this.config.service?.router ?? null, ctx: { userId, requestId }, now: () => this.now(), weights: this.config.rankingWeights ?? null, limits: this.config.researchLimits ?? {},
+      searchPage: (q, token, page) => this.meteredSearchPage(userId, requestId, input.request, q, token, page),
+      ...(typeof research.resolveVariant === "function" ? { resolveVariant: async (pid: string, sel: Record<string, string>, currency: string | null) => {
+        const r = await this.meteredCatalogCall(userId, requestId, "detail", `${pid}|${JSON.stringify(sel)}|${currency}`, () => research.resolveVariant!(pid, sel, { currency }));
+        return r.honored ? r.product : null;
+      } } : {}),
+    });
+    const res = plan.resolution;
+    const unknowns: string[] = [];
+    let identityResult: Record<string, unknown> = { status: "NOT_APPLICABLE" };
+    let locked: { identity: ProductIdentity; productId: string } | null = null;
+    if (res?.status === "LOCKED") { locked = { identity: res.identity, productId: res.productId }; identityResult = { status: "LOCKED", productId: res.productId, lockedIdentity: res.identity, assumptions: res.assumptions, conditionConfirmed: res.conditionConfirmed, alsoListedAs: res.duplicates, excluded: res.excluded.slice(0, 12) }; }
+    else if (res?.status === "AMBIGUOUS") { identityResult = { status: "AMBIGUOUS", question: res.question, options: res.options, differingAxes: res.differingAxes, excluded: res.excluded.slice(0, 12) }; unknowns.push(res.question); }
+    else if (res) { identityResult = { status: "NOT_FOUND", code: res.code, reason: res.reason, excluded: res.excluded.slice(0, 12) }; unknowns.push(res.reason); }
+    const byId = new Map(plan.products.map((p) => [p.productId, p]));
+    const order = plan.decision.ranking.map((r) => r.productId);
+    const shown = res?.status === "AMBIGUOUS" ? res.options.map((o) => o.productId) : res?.status === "NOT_FOUND" ? [] : order;
+    const candidates = shown.map((pid) => byId.get(pid)!).filter(Boolean).map((p) => {
+      const rk = plan.decision.ranking.find((r) => r.productId === p.productId);
+      const v = plan.verdicts.get(p.productId) ?? {};
+      const status = (cap: string) => {
+        const x = v[cap];
+        if (x && this.config.service?.router?.policy !== "v2") return x.status === "CONTRADICTED" ? { capability: cap, status: "CONTRADICTED" as CapabilityStatus, evidence: null } : capabilityStatus(p, cap);
+        if (x) return { capability: cap, status: (x.status === "UNVERIFIED" ? (x.evidence.length ? "LISTING_CLAIM_ONLY" : "UNKNOWN") : x.status) as CapabilityStatus,
+          evidence: x.evidence.find((e) => e.counts) ? { kind: x.evidence.find((e) => e.counts)!.sourceClass, url: x.evidence.find((e) => e.counts)!.url } : null };
+        return capabilityStatus(p, cap);
+      };
+      const must = intent.mustHave.map(status); const nice = intent.niceToHave.map(status);
+      // Capability suitability (V1 meaning: must-haves only). Purchase eligibility is reported separately in `eligibility`.
+      const suitability = must.some((m) => m.status === "VERIFIED_FALSE") ? "NOT_SUITABLE" : must.every((m) => m.status === "VERIFIED_TRUE") ? "SUITABLE" : "NEEDS_VERIFICATION";
+      const lowest = rk?.price.lowestListingMinor ?? null;
+      return {
+        productId: p.productId, title: p.title, identity: p.identity, suitability, mustHave: must, niceToHave: nice,
+        listingPrice: { lowestListingMinor: lowest, currency: intent.currency, note: "Search-time listing price, not a checkout total." },
+        budgetFit: lowest === null || intent.budgetMinor === null ? "UNKNOWN" : lowest <= intent.budgetMinor ? "LISTING_WITHIN_BUDGET" : "LISTING_OVER_BUDGET",
+        untrustedContent: [p.description, ...p.reviews].filter((x): x is NonNullable<typeof x> => !!x).map(inspectUntrusted),
+        evidenceRouting: (plan.legacyRouting.get(p.productId) ?? []).map((r) => ({ capability: r.capability, sufficiency: r.sufficiency, reason: r.reason, steps: r.steps,
+          claims: r.claims.filter((c) => c.source.kind !== "CATALOG_LISTING").map((c) => ({ value: c.value, kind: c.source.kind, url: c.source.url, statement: c.source.title.slice(0, 220) })) })),
+        eligibility: rk ? { eligible: rk.eligible, disqualifiers: rk.disqualifiers, blockers: rk.blockers, rank: rk.rank, utility: rk.utility } : null,
+        evidence: Object.values(v).map((x) => ({ capability: x.capability, status: x.status, basis: x.basis, independentGroups: x.independentGroups,
+          items: x.evidence.slice(0, 8).map((e) => ({ url: e.url, sourceClass: e.sourceClass, value: e.value, counts: e.counts, whyNotCounted: e.whyNotCounted, quote: e.quote.slice(0, 220), publishedDate: e.publishedDate, requestId: e.requestId })) })),
+        research: p.research ? { kind: p.research.kind, attributes: p.research.attributes, provenance: p.research.provenance, alsoListedAs: p.research.alsoListedAs } : null,
+      };
+    });
+    for (const c of candidates) for (const m of c.mustHave) if (m.status === "UNKNOWN" || m.status === "LISTING_CLAIM_ONLY" || m.status === "CONTRADICTED")
+      unknowns.push(`${c.title}: "${m.capability}" is ${m.status === "UNKNOWN" ? "not evidenced" : m.status === "CONTRADICTED" ? "contradicted by independent sources" : "only a listing claim"}`);
+    for (const [pid, rs] of plan.legacyRouting) for (const r of rs) if (r.sufficiency === "CONTRADICTED" || r.reason === "VERIFICATION_REQUIRED_BUT_LIMIT_REACHED")
+      unknowns.push(`${pid}: "${r.capability}" ${r.sufficiency === "CONTRADICTED" ? "has contradicting independent evidence" : "still needs independent verification (usage limit reached; verification was not skipped)"}`);
+    if (plan.trace.stops.some((x) => /limit/.test(x))) unknowns.push(`Research stopped at a limit (${plan.trace.stops.filter((x) => /limit/.test(x)).join("; ")}); unverified requirements stay unverified (verification was not skipped).`);
+    unknowns.push(...plan.decision.holdReasons.filter((h) => !unknowns.includes(h)));
+    if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
+    const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision };
+    const holdNeeded = intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0;
+    ps = this.sessions.updatePurchaseSession(ps, holdNeeded ? "HOLD" : "RESEARCHED", { research: researchOut, lockedIdentity: locked?.identity ?? null, productId: locked?.productId ?? null });
+    this.audit.append(ps.purchaseSessionId, userId, holdNeeded ? "RESEARCH_HOLD" : "RESEARCHED", { candidates: candidates.length, decision: plan.decision.state, engine: plan.decision.engine, weights: plan.decision.weights });
+    return {
+      purchaseSessionId: ps.purchaseSessionId, state: ps.state, mode: intent.mode,
+      intent: { currency: intent.currency, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource, mustHave: intent.mustHave, niceToHave: intent.niceToHave, objective: intent.objective, identityHints: intent.identityHints, assumptions: intent.assumptions,
+        v2: { version: iv.version, language: iv.language, category: iv.category, attributes: iv.attributes, condition: iv.condition, conditionStated: iv.conditionStated, excludeBundles: iv.excludeBundles, target: iv.target, queries: iv.queries } },
+      identity: identityResult, candidates, unknowns, decision: plan.decision,
+      researchTrace: { queries: plan.trace.queries, catalogCalls: plan.trace.catalogCalls, evidenceSearches: plan.trace.evidenceSearches, stops: plan.trace.stops, locale: plan.trace.locale,
+        evidenceSteps: plan.trace.evidenceSteps.slice(0, 40) },
+      dataSource: this.dataSource(), paymentEffect: "NONE" as const,
+      usage: this.config.service ? this.requestUsage(ps.purchaseSessionId, userId) : null,
+      note: "Budgets here only filter research. Spending authority comes only from a user-created purchase mandate plus PayPal buyer approval.",
+    };
+  }
+
+  /** One catalog page (V2), metered like discovery: ledger caps apply, identical recent pages are reused. */
+  private async meteredSearchPage(userId: string, requestId: string, requestText: string, q: ProductSearchQuery, token: string | null, page: number): Promise<SearchPage> {
+    const run = async (): Promise<SearchPage> => this.research.searchPage ? this.research.searchPage(q, token, page)
+      : { products: await this.research.searchProducts(q), nextPageToken: null, providerCalls: 1 };
+    // Reuse is per identical request (as in V1), so a managed monthly cap is never bypassed by a cache hit across requests.
+    const key = JSON.stringify([requestText.toLowerCase().trim(), q.query ?? q.text, q.brand, q.currency, q.maxPriceMinor, q.conditions, q.limit, token]);
+    return this.meteredCatalogCall(userId, requestId, "search", key, run);
+  }
+  private async meteredCatalogCall<T>(userId: string, requestId: string, operation: "search" | "detail", logical: string, fn: () => Promise<T>): Promise<T> {
+    const svc = this.config.service;
+    if (!svc) return fn();
+    const key = `channel3:${operation}:` + hashForKeys("sha256").update(logical.toLowerCase()).digest("hex").slice(0, 32);
+    const hit = this.catalogCache.get(`${userId}|${key}`);
+    if (hit && this.now() - hit.at < 10 * 60_000) return structuredClone(hit.value) as T;
+    let rec;
+    try { rec = svc.ledger.begin({ userId, requestId, provider: "CHANNEL3", operation, logicalKey: `${key}:${Math.floor(this.now() / 600_000)}`, quantity: operation === "detail" ? 0 : 1, unit: "search",
+      provenance: this.research.isMock ? "MOCK" : svc.mode === "managed" ? "MANAGED_LIVE" : "BYOK_LIVE", billable: svc.mode === "managed" && operation === "search" }); }
+    catch (e) { if (e instanceof UsageLimitError) throw new CommerceError("USAGE_LIMIT", e.message, { limit: e.code }); throw e; }
+    try {
+      const value = await fn();
+      svc.ledger.complete(rec.record.id, { success: true });
+      this.catalogCache.set(`${userId}|${key}`, { at: this.now(), value: structuredClone(value) });
+      return value;
+    } catch (e) { svc.ledger.complete(rec.record.id, { success: false, failureReason: errorText(e) }); throw e; }
+  }
+  private readonly catalogCache = new Map<string, { at: number; value: unknown }>();
 
   // ---------------------------------------------------------------- service plane (metering / billing)
   /** Managed mode: paid operations require ACTIVE service billing. Fails closed when billing is unavailable. */
@@ -1246,3 +1367,11 @@ function validateDestination(d: ShippingDestination): ShippingDestination {
 }
 
 function errorText(e: unknown): string { return e instanceof Error ? e.message.slice(0, 300) : "unknown error"; }
+
+/** V1-shaped session intent from the V2 parse (stored on the purchase session; compare/checkout read currency and budget). */
+function routedFromV2(v: ResearchIntentV2): RoutedIntent {
+  return { mode: v.mode, currency: v.currency, budgetMinor: v.budgetMinor, budgetSource: v.budgetSource,
+    identityHints: { brand: v.target?.brand ?? null, model: v.target?.model ?? null, variant: canonicalVariant(v.attributes, v.target?.kind ?? "STANDALONE", v.target?.accessoryNoun ?? null),
+      condition: v.conditionStated ? v.condition : null, sku: null },
+    category: v.category, mustHave: v.mustHave, niceToHave: v.niceToHave, objective: v.objective, assumptions: v.assumptions };
+}

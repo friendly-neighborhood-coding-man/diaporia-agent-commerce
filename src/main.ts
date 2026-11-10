@@ -58,7 +58,8 @@ const kernel = kernelEnabled ? new KernelPageInspector(env.KERNEL_API_KEY!, depl
 const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
   byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode) : new MockTavilySearch(),
   byok ? kernel : new MockKernelInspector(),
-  { billable: deploymentMode === "managed" });
+  // Research V2 evidence policy (source classes + V2 sufficiency rule) unless explicitly pinned to the frozen V1 rule.
+  { billable: deploymentMode === "managed", policy: env.DIAPORIA_RESEARCH_POLICY === "v1" ? "v1" : "v2" });
 const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
   billing: deploymentMode === "managed" ? createManagedBilling(env, serviceStore, ledger, baseUrl) : null, // MANAGED_BILLING=legacy-mock keeps MockPayPalBillingProvider
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
