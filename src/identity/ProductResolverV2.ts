@@ -64,8 +64,11 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
     for (const f of all) if (!bySku.includes(f)) excluded.push({ productId: f.product.productId, title: f.product.title, reason: f.product.identity.sku ? `SKU ${f.product.identity.sku}, requested ${t.sku}` : "listing has no SKU" });
     all = bySku;
   }
-  const family = !t!.model ? all : all.filter((f) => f.family === want || (!f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand));
-  for (const f of all) if (!family.includes(f)) excluded.push({ productId: f.product.productId, title: f.product.title, reason: `different model (${f.product.identity.brand} ${f.product.identity.model || "unknown"})` });
+  // A brandless listing can match only a request that names no brand (review R-06): "Sony WH-1000XM5" is never locked
+  // to an unbranded "WH-1000XM5 (compatible)" listing.
+  const family = !t!.model ? all : all.filter((f) => f.family === want || (!t!.brand && !f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand));
+  for (const f of all) if (!family.includes(f)) excluded.push({ productId: f.product.productId, title: f.product.title,
+    reason: t!.brand && !f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand ? `listing states no brand; requested ${t!.brand}` : `different model (${f.product.identity.brand} ${f.product.identity.model || "unknown"})` });
   if (!family.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing is the ${t!.brand ?? ""} ${t!.model ?? t!.sku} itself.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
 
   const kindOk = family.filter((f) => {

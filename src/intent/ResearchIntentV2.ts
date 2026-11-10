@@ -17,6 +17,8 @@ export interface ResearchIntentV2 {
   currencySource: "STRUCTURED_INPUT" | "PARSED_FROM_TEXT" | "DEFAULT_USD";
   budgetMinor: number | null;
   budgetSource: "STRUCTURED_INPUT" | "PARSED_FROM_TEXT" | "NONE";
+  /** A budget stated in the text in a different currency than the structured one (review R-07). Never converted silently. */
+  budgetConflict: string | null;
   /** Exact-product target (exact mode) or family hint (discovery with a named model). */
   target: { brand: string | null; model: string | null; modelBasis: "MODEL_NUMBER" | "NAMED_MODEL" | "NONE"; kind: ProductKind; accessoryNoun: string | null; sku?: string | null } | null;
   /** Variant attributes the user stated (colour, size, capacity, storage, memory, pack). */
@@ -45,30 +47,38 @@ const NOT_BRAND = new Set(`i buy purchase order get please need want looking fin
   over-ear over office waterproof water programmable cordless insulated money phone smartphone shoes boots hiking running coffee monitor 4k backpack daypack chair vacuum
   bottle system note ignore new used refurbished renewed replacement standalone under budget with and for in on of`.split(/\s+/).filter(Boolean));
 
-function parseMoney(text: string, structured: string | undefined): { currency: Currency; currencySource: ResearchIntentV2["currencySource"]; budget: number | null; } {
+function parseMoney(text: string, structured: string | undefined): { currency: Currency; currencySource: ResearchIntentV2["currencySource"]; budget: number | null; conflict: string | null } {
   const t = text.normalize("NFKC");
   let currency: Currency | null = isCurrency(structured) ? structured : null;
   const source: ResearchIntentV2["currencySource"] = currency ? "STRUCTURED_INPUT" : "PARSED_FROM_TEXT";
   let budget: number | null = null;
+  let conflict: string | null = null;
   // Korean won: "30만원", "20만 원", "150,000원", "₩150000". Korean dollars: "150달러".
   const man = /(\d+(?:\.\d+)?)\s*만\s*원/.exec(t);
   const won = /(?:₩\s*(\d[\d,]*)|(\d[\d,]*)\s*원)/.exec(t);
   const dollarsKo = /(\d[\d,]*(?:\.\d{1,2})?)\s*달러/.exec(t);
   const eurKo = /(\d[\d,]*(?:\.\d{1,2})?)\s*유로/.exec(t);
-  const BUDGET_EN = /(?:under|below|less than|at most|max(?:imum)?(?: of)?|no more than|never (?:go over|exceed)|not exceed|up to|budget(?: of| is)?|within|cheaper than)\s*(?:(\$|€|£|usd|eur|gbp)\s*)?(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|dollars?|eur|euros?|gbp|pounds?|€|\$)?/i;
-  const en = BUDGET_EN.exec(t);
-  if (man) { currency ??= "KRW"; if (currency === "KRW") budget = Math.round(Number(man[1]) * 10_000); }
-  else if (won && /원|₩/.test(won[0])) { currency ??= "KRW"; if (currency === "KRW") budget = Number((won[1] ?? won[2])!.replace(/,/g, "")); }
-  else if (dollarsKo) { currency ??= "USD"; if (currency === "USD") budget = parseDecimalToMinor(dollarsKo[1]!.replace(/,/g, ""), "USD"); }
-  else if (eurKo) { currency ??= "EUR"; if (currency === "EUR") budget = parseDecimalToMinor(eurKo[1]!.replace(/,/g, ""), "EUR"); }
-  else if (en) {
-    const sym = `${en[1] ?? ""}${en[3] ?? ""}`.toLowerCase();
+  // English budget (review R-04): every match is considered. A number followed by a unit (hours, cups, oz, weeks…) is a
+  // quantity, never money. "up to / max / within N" needs a currency marker; a match with a marker wins.
+  const BUDGET_EN = /\b(under|below|less than|at most|max(?:imum)?(?: of)?|no more than|never (?:go over|exceed)|not exceed|up to|budget(?: of| is)?|within|cheaper than)\s*(?:(\$|€|£|usd|eur|gbp)\s*)?(\d[\d,]*(?:\.\d{1,2})?)(?!\s*(?:\+|-?\s*(?:hours?|hrs?|h|cups?|oz|ounces?|weeks?|wks?|days?|months?|years?|yrs?|minutes?|mins?|watts?|w|gb|tb|mb|mah|inch(?:es)?|ft|feet|lbs?|pounds? of|kg|g|mm|cm|m|l|liters?|litres?|ml|%|x|pack|pcs|pieces|items?|people|persons?|devices?|ports?|db|hz|khz|mph|km|miles?|steps?)\b|\s*["”'%]|\d|\.\d))\s*(usd|dollars?|bucks|eur|euros?|gbp|pounds?|€|\$)?/gi;
+  const NEEDS_MARKER = /^(?:up to|max(?:imum)?(?: of)?|within)$/i;
+  const enAll = [...t.matchAll(BUDGET_EN)].filter((m) => m[2] || m[4] || !NEEDS_MARKER.test(m[1]!.trim()));
+  const en = enAll.find((m) => m[2] || m[4]) ?? enAll[0] ?? null;
+  const en1 = en ? [en[0], en[2], en[3], en[4]] as const : null;
+  const clash = (found: string, cur: Currency) => { conflict = `${found.trim()} is in ${cur}, but the requested currency is ${currency}`; };
+  if (man) { currency ??= "KRW"; if (currency === "KRW") budget = Math.round(Number(man[1]) * 10_000); else clash(man[0], "KRW"); }
+  else if (won && /원|₩/.test(won[0])) { currency ??= "KRW"; if (currency === "KRW") budget = Number((won[1] ?? won[2])!.replace(/,/g, "")); else clash(won[0], "KRW"); }
+  else if (dollarsKo) { currency ??= "USD"; if (currency === "USD") budget = parseDecimalToMinor(dollarsKo[1]!.replace(/,/g, ""), "USD"); else clash(dollarsKo[0], "USD"); }
+  else if (eurKo) { currency ??= "EUR"; if (currency === "EUR") budget = parseDecimalToMinor(eurKo[1]!.replace(/,/g, ""), "EUR"); else clash(eurKo[0], "EUR"); }
+  else if (en1) {
+    const sym = `${en1[1] ?? ""}${en1[3] ?? ""}`.toLowerCase();
     const cur: Currency = /€|eur/.test(sym) ? "EUR" : /£|gbp|pound/.test(sym) ? "GBP" : "USD";
     currency ??= cur;
-    if (currency === cur) budget = parseDecimalToMinor(en[2]!.replace(/,/g, ""), cur);
+    if (currency === cur) budget = parseDecimalToMinor(en1[2]!.replace(/,/g, ""), cur);
+    else conflict = `${en1[0].trim()} is in ${cur}, but the requested currency is ${currency}`;
   }
   if (!currency) currency = /€|\beur\b|euro/i.test(t) ? "EUR" : /£|\bgbp\b/i.test(t) ? "GBP" : /₩|만\s*원|\bkrw\b/i.test(t) ? "KRW" : "USD";
-  return { currency, currencySource: isCurrency(structured) ? "STRUCTURED_INPUT" : budget !== null || /€|£|₩|eur|gbp|krw|원|달러|유로/i.test(t) ? source : "DEFAULT_USD", budget };
+  return { currency, currencySource: isCurrency(structured) ? "STRUCTURED_INPUT" : budget !== null || /€|£|₩|eur|gbp|krw|원|달러|유로/i.test(t) ? source : "DEFAULT_USD", budget, conflict };
 }
 
 /** Brand = first capitalized Latin word (not a sentence word) that is followed by a model token or another capitalized word. */
@@ -98,6 +108,8 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (input.budgetMinor !== undefined) { budgetMinor = input.budgetMinor; budgetSource = "STRUCTURED_INPUT"; }
   else if (money.budget !== null) { budgetMinor = money.budget; budgetSource = "PARSED_FROM_TEXT"; }
   if (money.currencySource === "DEFAULT_USD") assumptions.push("Currency not given; using USD.");
+  const budgetConflict = budgetSource === "NONE" ? money.conflict : null;
+  if (budgetConflict) assumptions.push(`Budget not applied: ${budgetConflict}. Confirm the budget in ${money.currency}.`);
   if (/no object|no budget|any price|price doesn'?t matter|가격 상관/i.test(text)) assumptions.push("User stated no budget limit.");
 
   // Exact target: a buy verb plus a brand followed by a model (or an explicit exactProduct).
@@ -182,7 +194,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
-  return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, target,
+  return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, target,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }

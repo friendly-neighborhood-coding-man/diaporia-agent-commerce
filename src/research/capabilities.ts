@@ -45,7 +45,7 @@ const BY_ID = new Map(CAPABILITIES.map((c) => [c.id, c]));
 /** Numeric capability families. `<N>` is the user's threshold; a statement value ≥ N satisfies it. */
 export const NUMERIC_FAMILIES = [
   { family: "battery", idOf: (n: number) => `battery_${n}h`, phrase: "battery life hours",
-    request: [/(\d{1,3})\s*\+?\s*-?\s*(?:hours?|hrs?|h)\b(?:\s+(?:of\s+)?(?:battery|playback|playtime))/i, /battery(?:\s+life)?\s+(?:of\s+)?(?:at\s+least\s+|over\s+|more than\s+)?(\d{1,3})\s*\+?\s*(?:hours?|hrs?|h)\b/i,
+    request: [/(\d{1,3})\s*\+?\s*-?\s*(?:hours?|hrs?|h)\b(?:\s+(?:of\s+)?(?:battery|playback|playtime))/i, /battery(?:\s+life)?\s+(?:of\s+)?(?:at\s+least\s+|over\s+|more than\s+|up to\s+|of up to\s+)?(\d{1,3})\s*\+?\s*(?:hours?|hrs?|h)\b/i,
       /배터리\s*(\d{1,3})\s*시간/, /(\d{1,3})\s*시간\s*(?:이상\s*)?배터리/],
     statement: /\bbattery\b|\bplayback\b|\bplaytime\b/i, value: /(\d{1,3}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b/i },
   { family: "keeps_cold", idOf: (n: number) => `keeps_cold_${n}h`, phrase: "keeps cold hours",

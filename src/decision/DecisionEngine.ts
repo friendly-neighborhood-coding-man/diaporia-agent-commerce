@@ -85,14 +85,28 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
     a.r.utilityParts = Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, Math.round(v * 1000) / 1000]));
     a.r.utility = Math.round(Object.values(parts).reduce((s, v) => s + v, 0) * 1000) / 1000;
   }
-  const order = [...assessed].sort((x, y) => Number(y.r.eligible) - Number(x.r.eligible) || x.r.blockers.length - y.r.blockers.length || y.r.niceVerified - x.r.niceVerified
-    || (y.c.listingClaims ?? 0) - (x.c.listingClaims ?? 0) || (y.r.utility ?? -1) - (x.r.utility ?? -1) || (x.r.price.lowestListingMinor ?? Infinity) - (y.r.price.lowestListingMinor ?? Infinity) || x.r.disqualifiers.length - y.r.disqualifiers.length);
+  // Order (review R-03): eligible → fewer blockers → then
+  //   both recommendable (no unverified must-have): cheapest objective = price first; best objective = verified
+  //     nice-to-haves, then utility (versioned weights), then price. Listing text is never used here.
+  //   otherwise (INVESTIGATE candidates): verified nice-to-haves, then the listing-text prior (which unverified candidate
+  //     is most likely to pass verification; ordering only, never evidence), then utility, then price.
+  const unverifiedMust = (a: (typeof assessed)[number]) => a.r.blockers.some((b) => b.code === "MUST_HAVE_UNVERIFIED" || b.code === "VERIFICATION_LIMIT_REACHED" || b.code === "MUST_HAVE_CONTRADICTED");
+  const price = (a: (typeof assessed)[number]) => a.r.price.lowestListingMinor ?? Infinity;
+  const order = [...assessed].sort((x, y) => {
+    const head = Number(y.r.eligible) - Number(x.r.eligible) || x.r.blockers.length - y.r.blockers.length;
+    if (head) return head;
+    const tail = (y.r.utility ?? -1) - (x.r.utility ?? -1) || price(x) - price(y) || x.r.disqualifiers.length - y.r.disqualifiers.length;
+    if (!unverifiedMust(x) && !unverifiedMust(y))
+      return intent.objective === "LOWEST_VERIFIED_TOTAL" ? price(x) - price(y) || y.r.niceVerified - x.r.niceVerified || tail : y.r.niceVerified - x.r.niceVerified || tail;
+    return y.r.niceVerified - x.r.niceVerified || (y.c.listingClaims ?? 0) - (x.c.listingClaims ?? 0) || tail;
+  });
   order.forEach((a, i) => (a.r.rank = i + 1));
   const ranking = order.map((a) => a.r);
   const best = order[0];
   const holdReasons: string[] = [];
   let state: DecisionState;
-  if (o.exactFailure) { state = "HOLD"; holdReasons.push(o.exactFailure); }
+  if (intent.budgetConflict) { state = "HOLD"; holdReasons.push(`Budget currency conflict (${intent.budgetConflict}): confirm the budget in ${intent.currency} before research can rank by budget.`); }
+  else if (o.exactFailure) { state = "HOLD"; holdReasons.push(o.exactFailure); }
   else if (best && best.r.eligible && best.r.blockers.length === 0) state = "RECOMMEND";
   else if (best && best.r.eligible) state = "INVESTIGATE";
   else { state = "HOLD"; holdReasons.push(inputs.length ? "Every candidate has a known violation of the request." : "No candidate was found."); }

@@ -21,10 +21,11 @@ import type { RankingWeights } from "../decision/weights.js";
  * Research V2 orchestration with explicit cost control. Every provider call goes through the caller's metered
  * functions (usage ledger: per-request caps, supplier-cost ceiling, fail closed). On top of the ledger caps the
  * planner applies its own, smaller, per-task limits and stopping rules:
- *   - catalog: primary query; a broader fallback only when fewer than 3 candidates pass the free hard checks;
+ *   - catalog: primary query; a broader fallback only when fewer than 5 candidates pass the free hard checks;
  *     a second page only when the first was full and still too few passed; one free detail call to check a
  *     requested variant that search did not return. At most `maxCatalogCalls`.
- *   - evidence: only for candidates that pass every free hard check, cheapest first, at most
+ *   - evidence: only for candidates that pass every free hard check, ordered by fewest pre-evidence blockers, then
+ *     (lowest-price objective) price, or (best objective) the listing-text prior and then price; at most
  *     `maxEvidenceCandidates`; must-haves and nice-to-haves share one combined query; a candidate is skipped
  *     when it can no longer change the decision (a cheaper, fully verified candidate with at least as many
  *     verified nice-to-haves exists); stop when a blocker-free candidate has every nice-to-have verified.
@@ -161,12 +162,15 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
       verdicts.set(p.productId, out);
     }
   } else if (caps.length && pool.length) {
-    // Spending order: free hard checks first; then a catalog-text PRIOR (how many must-haves the listing itself claims;
-    // used only to decide where to spend, never as evidence); then price.
+    // Spending order (review R-09): free hard checks first; for the lowest-price objective, cheapest first (so a cheaper
+    // eligible candidate is never left unchecked behind a pricier one); otherwise a catalog-text PRIOR (how many
+    // must-haves the listing itself claims; used only to decide where to spend, never as evidence), then price.
     const prior = (p: CatalogProduct) => intent.mustHave.filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length;
     const pre = pool.map((p) => ({ p, pe: preEligible(intent, { product: p, offers: offers.get(p.productId) ?? [] }, lock), prior: prior(p) }))
       .filter((x) => x.pe.eligible)
-      .sort((a, b) => a.pe.blockersBeforeEvidence.length - b.pe.blockersBeforeEvidence.length || b.prior - a.prior || (a.pe.lowestListingMinor ?? Infinity) - (b.pe.lowestListingMinor ?? Infinity));
+      .sort((a, b) => a.pe.blockersBeforeEvidence.length - b.pe.blockersBeforeEvidence.length
+        || (intent.objective === "LOWEST_VERIFIED_TOTAL" ? (a.pe.lowestListingMinor ?? Infinity) - (b.pe.lowestListingMinor ?? Infinity) || b.prior - a.prior
+          : b.prior - a.prior || (a.pe.lowestListingMinor ?? Infinity) - (b.pe.lowestListingMinor ?? Infinity)));
     let best: { price: number; nice: number } | null = null;
     const verifiedFamilies = new Set<string>();
     let checked = 0;

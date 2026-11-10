@@ -298,7 +298,8 @@ export class CommerceGateway {
       unknowns.push(`${pid}: "${r.capability}" ${r.sufficiency === "CONTRADICTED" ? "has contradicting independent evidence" : "still needs independent verification (usage limit reached; verification was not skipped)"}`);
     if (plan.trace.stops.some((x) => /limit/.test(x))) unknowns.push(`Research stopped at a limit (${plan.trace.stops.filter((x) => /limit/.test(x)).join("; ")}); unverified requirements stay unverified (verification was not skipped).`);
     unknowns.push(...plan.decision.holdReasons.filter((h) => !unknowns.includes(h)));
-    if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
+    if (iv.budgetConflict) unknowns.push(`Budget not applied: ${iv.budgetConflict}. Confirm the budget in ${intent.currency}.`);
+    else if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
     const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision };
     const holdNeeded = intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0;
     ps = this.sessions.updatePurchaseSession(ps, holdNeeded ? "HOLD" : "RESEARCHED", { research: researchOut, lockedIdentity: locked?.identity ?? null, productId: locked?.productId ?? null });
