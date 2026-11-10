@@ -35,6 +35,7 @@ describe("owner authorization in a real browser (MOCK)", () => {
       await page.click("form:has(input[name=action][value=authorize]) button");
       await page.waitForURL(/\/mock-paypal\/checkout\//);
       expect(await page.textContent("body")).toContain("MOCK PayPal");
+      await page.fill("form[action$='/approve'] input[name=owner_key]", OWNER.alice);   // WP-1: MOCK buyer login
       await page.click("text=Approve (mock buyer)");
       await page.waitForURL(/\/paypal\/return/);
       expect(await page.textContent("body")).toContain("COMPLETED");

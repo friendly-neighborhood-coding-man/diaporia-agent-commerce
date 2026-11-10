@@ -63,6 +63,7 @@ describe("expired checkouts never start a capture (real Chromium)", () => {
       await page.goto(a.approvalUrl);
       expect(await page.textContent("body")).toContain("MOCK PayPal");
       h.clock.offsetMs = TTL + 60_000;                                   // the buyer is a minute late
+      await page.fill("form[action$='/approve'] input[name=owner_key]", OWNER.alice);   // WP-1: MOCK buyer login
       await page.click("text=Approve (mock buyer)");
       await page.waitForURL(/\/paypal\/return/);
       expect(await page.textContent(".state")).toBe("EXPIRED");
@@ -86,6 +87,7 @@ describe("expired checkouts never start a capture (real Chromium)", () => {
     try {
       const page = await ctx.newPage();
       await page.goto(a.approvalUrl);
+      await page.fill("form[action$='/approve'] input[name=owner_key]", OWNER.alice);   // WP-1: MOCK buyer login
       await page.click("text=Approve (mock buyer)");
       await page.waitForURL(/\/paypal\/return/);
       expect(await page.textContent(".state")).toBe("FAILED");

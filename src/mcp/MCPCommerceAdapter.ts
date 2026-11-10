@@ -150,7 +150,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
   if (opts.exposePaymentTools && can(SCOPES.PREPARE)) {
     server.registerTool("prepare_checkout", {
       title: "Prepare a checkout (no capture)",
-      description: "Create an immutable checkout summary for a verified offer. If the user has a matching spending mandate it is checked and reserved, and a payment order is created in the environment reported as paymentEnvironment (MOCK: simulated, no PayPal call; PAYPAL_SANDBOX: test money); the returned approvalUrl must be opened by the user. Never captures funds.",
+      description: "Create an immutable checkout summary for a verified offer. If the user has a matching spending mandate that the user allowed for automatic use, it is checked and reserved, and a payment order is created in the environment reported as paymentEnvironment (MOCK: simulated, no PayPal call; PAYPAL_SANDBOX: test money); the returned approvalUrl must be opened by the user. Never captures funds.",
       inputSchema: {
         purchaseSessionId: idString("ps"),
         offerId: z.string().min(1).max(80),
@@ -161,7 +161,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
       outputSchema: OUTPUTS.prepare_checkout,
       annotations: { title: "Prepare a checkout (no capture)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
       _meta: { "diaporia/effect": "STATE_MUTATING_PAYMENT_PREPARATION", "diaporia/capturesFunds": false },
-    }, async (args) => run(SCOPES.PREPARE, () => gateway.prepareCheckout(principal.userId, args))());
+    }, async (args) => run(SCOPES.PREPARE, () => gateway.prepareCheckout(principal.userId, args, `MCP_TOKEN:${principal.tokenFingerprint}`))());
   }
 
   if (can(SCOPES.READ)) server.registerTool("get_checkout_status", {

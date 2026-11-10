@@ -20,9 +20,15 @@
 
 Only the owner creates mandates: `POST /owner/mandates` (header `X-Owner-Key`) or the `/authorize/<checkoutSessionId>` page. MCP tokens cannot. `POST /owner/mandates/<id>/revoke` revokes.
 
+`POST /owner/mandates` body: `productIdentity`, `currency`, `maximumTotalMinor`, optional `maximumQuantity` (1), `maximumTransactions` (1), `ttlSeconds` (3600), `allowedMerchantIds` (null), and `autoUse` (boolean, default `false`; see below).
+
+Even with an auto-use mandate the MOCK buyer step is the human's: `POST /mock-paypal/checkout/<order>/(approve|cancel)` needs the checkout owner's key (stand-in for the buyer's PayPal login) on a strict same-origin browser POST (WP-1). In PayPal Sandbox the buyer's own PayPal login is that step.
+
+Every audit event on the way to a capture records an `actor`: `MCP_TOKEN:<12-hex token fingerprint>`, `OWNER_SESSION:<userId>`, `PROVIDER_RETURN` or `RECONCILE`. Raw tokens and keys are never recorded.
+
 ### Two kinds of mandate (DF-4)
 
-- **REUSABLE**, created on purpose through `POST /owner/mandates`. Automatic mandate selection at `prepare_checkout` only ever considers these.
+- **REUSABLE**, created on purpose through `POST /owner/mandates`. Automatic mandate selection at `prepare_checkout` only ever considers these, and only those the owner created with `"autoUse": true` (WP-1, IR-01). The default is `false`: such a mandate caps spending but `prepare_checkout` still returns `APPROVAL_REQUIRED` with a per-checkout owner authorization link (audit reason `REUSABLE_MANDATE_NOT_AUTO_USE`). `autoUse` must be a JSON boolean; it is refused on page-created mandates. Mandates stored before this flag existed read `autoUse=false` (additive migration, fail safe). `npm run mandate:create -- ... --auto-use` sets it.
 - **CHECKOUT_BOUND**, created by the `/authorize/<checkoutSessionId>` page. It may pay only that checkout (`BOUND_TO_OTHER_CHECKOUT` otherwise), is never selected for another checkout, and the database holds at most one non-revoked bound mandate per checkout (partial UNIQUE index). The page re-checks the checkout and creates the mandate in one `BEGIN IMMEDIATE` transaction. It creates nothing when the checkout has expired, completed, been cancelled or failed, already has a provider order, or already has a mandate (409). The page revokes the mandate if no payment starts, and `release` revokes a released bound mandate. A provider timeout keeps it reserved on the `UNKNOWN` checkout for reconciliation only. A legacy page mandate with no bound id is unusable.
 
 ## Evaluation order (`PurchasePolicyEngine.evaluate`)

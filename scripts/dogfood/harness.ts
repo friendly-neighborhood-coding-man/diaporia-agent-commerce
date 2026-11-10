@@ -69,12 +69,15 @@ async function must(c: Client, name: string, args: Record<string, unknown>): Pro
   return r.data;
 }
 async function mandate(url: string, ownerKey: string, body: Record<string, unknown>) {
-  const r = await fetch(`${url}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify(body) });
+  // WP-1 (IR-01): automatic use of a reusable mandate is an explicit owner opt-in; these scenarios exercise it.
+  const r = await fetch(`${url}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify({ autoUse: true, ...body }) });
   return { status: r.status, body: await r.json() as any };
 }
-async function buyerApprove(s: Stack, approvalUrl: string, action: "approve" | "cancel" = "approve") {
+async function buyerApprove(s: Stack, approvalUrl: string, action: "approve" | "cancel" = "approve", ownerKey: string = O.alice) {
   const orderId = new URL(approvalUrl).pathname.split("/").pop()!;
-  const r1 = await fetch(`${s.url}/mock-paypal/checkout/${orderId}/${action}`, { method: "POST", redirect: "manual" });
+  // WP-1 (IR-01): the MOCK buyer step is the human's, so it needs the owner key on a same-origin POST.
+  const r1 = await fetch(`${s.url}/mock-paypal/checkout/${orderId}/${action}`, { method: "POST", redirect: "manual",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: new URL(s.url).origin }, body: new URLSearchParams({ owner_key: ownerKey }).toString() });
   const loc = r1.headers.get("location")!;
   const r2 = await fetch(loc, { redirect: "manual" });
   return { returnUrl: loc, html: await r2.text() };
@@ -312,7 +315,7 @@ export const K = () => scenario("K", "Remote-style OAuth 2.1 client (official MC
     r.note(`scopes the SDK client requested (from the 401 challenge): ${offered.join(" ")}`);
     // The owner grants least privilege: research + read, not prepare.
     for (const sc of ["purchase.research", "purchase.read"]) form.append("scope", sc);
-    const consent = await fetch(`${url}/oauth/authorize`, { method: "POST", body: form, redirect: "manual" });
+    const consent = await fetch(`${url}/oauth/authorize`, { method: "POST", body: form, redirect: "manual", headers: { Origin: new URL(url).origin } });
     await t1.finishAuth(new URL(consent.headers.get("location")!).searchParams.get("code")!);
     const c = new Client({ name: "remote", version: "1" });
     await c.connect(new StreamableHTTPClientTransport(new URL(`${url}/mcp`), { authProvider: provider }));

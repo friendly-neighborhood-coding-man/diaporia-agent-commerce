@@ -371,7 +371,7 @@ describe("duplicates, cancellation, timeouts, pending", () => {
     const { research } = await researchAndCompare(second);
     const p2 = await call(second, "prepare_checkout", { purchaseSessionId: research.purchaseSessionId, offerId: "off_alpha", maximumApprovedTotalMinor: 6000, currency: "USD", quantity: 1 });
     h.mock.captureOutcomes = ["DECLINED"];
-    await buyer(h, p2.approvalUrl);
+    await buyer(h, p2.approvalUrl, "approve", OWNER.bob);
     const f = await call(second, "get_checkout_status", { checkoutSessionId: p2.checkoutSessionId });
     expect(f.state).toBe("FAILED");
     expect(f.failure.code).toBe("CAPTURE_DECLINED");

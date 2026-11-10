@@ -72,6 +72,9 @@ export class Store {
     // (non-revoked) bound mandate per checkout, enforced by the database across processes.
     const mcols = new Set((this.db.prepare("PRAGMA table_info(mandates)").all() as Array<{ name: string }>).map((c) => c.name));
     if (!mcols.has("bound_checkout_session_id")) this.db.exec("ALTER TABLE mandates ADD COLUMN bound_checkout_session_id TEXT");
+    // IR-01 (WP-1): automatic use of a REUSABLE mandate by prepare_checkout is an explicit owner opt-in.
+    // Existing rows get 0 (no automatic use): they fail safe to a per-checkout owner authorization.
+    if (!mcols.has("auto_use")) this.db.exec("ALTER TABLE mandates ADD COLUMN auto_use INTEGER NOT NULL DEFAULT 0");
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS mandates_one_live_per_bound_checkout ON mandates(bound_checkout_session_id)
       WHERE bound_checkout_session_id IS NOT NULL AND status <> 'REVOKED'`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS checkout_by_capture ON checkout_sessions(capture_id);

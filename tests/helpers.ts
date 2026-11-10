@@ -59,15 +59,24 @@ export async function callError(client: Client, name: string, args: Record<strin
   try { return JSON.parse(text).error; } catch { return { code: "PROTOCOL", message: text }; }
 }
 
+/**
+ * Creates an owner-API (REUSABLE) mandate. WP-1 (IR-01): automatic use by prepare_checkout is now an explicit
+ * owner opt-in (autoUse, default false on the server). The suites written before WP-1 exercise the automatic
+ * flow, so this helper opts in unless the body says otherwise; tests/security-fixes.test.ts covers the default.
+ */
 export async function createMandate(url: string, ownerKey: string, body: Record<string, unknown>) {
-  const r = await fetch(`${url}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify(body) });
+  const r = await fetch(`${url}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify({ autoUse: true, ...body }) });
   return { status: r.status, body: await r.json() as any };
 }
 
-/** Plays the buyer on the mock hosted page: approve (or cancel) then follow the return redirect. */
-export async function buyer(h: Harness, approvalUrl: string, action: "approve" | "cancel" = "approve") {
+/**
+ * Plays the human buyer on the mock hosted page: approve (or cancel) then follow the return redirect.
+ * WP-1 (IR-01): the mock buyer step needs the checkout owner's key on a same-origin browser POST.
+ */
+export async function buyer(h: Harness, approvalUrl: string, action: "approve" | "cancel" = "approve", ownerKey: string = OWNER.alice) {
   const orderId = new URL(approvalUrl).pathname.split("/").pop()!;
-  const r1 = await fetch(`${h.url}/mock-paypal/checkout/${orderId}/${action}`, { method: "POST", redirect: "manual" });
+  const r1 = await fetch(`${h.url}/mock-paypal/checkout/${orderId}/${action}`, { method: "POST", redirect: "manual",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: h.url }, body: new URLSearchParams({ owner_key: ownerKey }).toString() });
   const location = r1.headers.get("location")!;
   const r2 = await fetch(location, { redirect: "manual" });
   return { orderId, returnStatus: r2.status, returnHtml: await r2.text(), returnUrl: location };

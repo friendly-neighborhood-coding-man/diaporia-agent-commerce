@@ -90,7 +90,7 @@ export function createApp(cfg: AppConfig): App {
   const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
-    sameOrigin: (req) => sameOrigin(req, allowedOrigins), readText }) : null;
+    sameOrigin: (req) => sameOriginStrict(req, allowedOrigins), readText }) : null;
   const handoffTimer = handoff ? setInterval(() => { void handoff.tick(); }, 15_000) : null;
   handoffTimer?.unref();
 
@@ -147,7 +147,7 @@ export function createApp(cfg: AppConfig): App {
           return html(res, 200, consentPage(r.pending, paymentExecutionEnabled), formActionFor(r.pending.redirectUri));
         }
         if (p === "/oauth/authorize" && req.method === "POST") {
-          if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+          if (!sameOriginStrict(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
           const form = new URLSearchParams(await readText(req));
           const pend = oauth.getPending(form.get("request_id"));
           const out = oauth.completeAuthorization(form);
@@ -169,9 +169,10 @@ export function createApp(cfg: AppConfig): App {
         let m;
         try { m = gateway.mandates.create({ userId, productIdentity: b.productIdentity as never, currency: String(b.currency), maximumTotalMinor: Number(b.maximumTotalMinor),
           maximumQuantity: b.maximumQuantity === undefined ? 1 : Number(b.maximumQuantity), maximumTransactions: b.maximumTransactions === undefined ? 1 : Number(b.maximumTransactions),
-          ttlSeconds: b.ttlSeconds === undefined ? 3600 : Number(b.ttlSeconds), allowedMerchantIds: Array.isArray(b.allowedMerchantIds) ? b.allowedMerchantIds.map(String) : null, createdVia: "OWNER_API" }); }
+          ttlSeconds: b.ttlSeconds === undefined ? 3600 : Number(b.ttlSeconds), allowedMerchantIds: Array.isArray(b.allowedMerchantIds) ? b.allowedMerchantIds.map(String) : null, createdVia: "OWNER_API",
+          autoUse: b.autoUse === undefined ? false : (b.autoUse as boolean) }); }
         catch (e) { return send(res, 400, { error: e instanceof Error ? e.message : "Invalid mandate" }); }
-        gateway.audit.append(m.mandateId, userId, "MANDATE_CREATED_BY_OWNER_API", { maximumTotalMinor: m.maximumTotalMinor });
+        gateway.audit.append(m.mandateId, userId, "MANDATE_CREATED_BY_OWNER_API", { maximumTotalMinor: m.maximumTotalMinor, autoUse: m.autoUse, actor: `OWNER_SESSION:${userId}` });
         return send(res, 201, m);
       }
       const revoke = /^\/owner\/mandates\/(mdt_[0-9a-f-]{36})\/revoke$/.exec(url.pathname);
@@ -209,7 +210,7 @@ export function createApp(cfg: AppConfig): App {
         if (req.method === "GET") return html(res, 200, envPage("Authorize a DIAPORIA checkout", `<p>An AI assistant prepared checkout <code>${esc(csId)}</code>. Enter your owner key to review it.
           The AI client cannot do this step: its token cannot create spending authority.</p>
           <form method="post"><input type="hidden" name="action" value="review"><label>Owner key<input name="ownerKey" type="password" autocomplete="off" required></label><p><button>Review checkout</button></p></form>`));
-        if (req.method !== "POST" || !sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Forbidden" });
+        if (req.method !== "POST" || !sameOriginForm(req, allowedOrigins)) return send(res, 403, { error: "Forbidden" });
         const form = new URLSearchParams(await readText(req));
         if (form.get("action") === "review") {
           const userId = cfg.auth.verifyOwnerKey(form.get("ownerKey") ?? undefined);
@@ -292,15 +293,28 @@ export function createApp(cfg: AppConfig): App {
       }
 
       // ---- Mock PayPal hosted page (only when the mock provider is active) ----
+      // IR-01 (WP-1). The mock buyer step stands in for PayPal's own buyer login, so it needs a human credential:
+      // the owner key of the checkout's user, on a strict same-origin browser POST. An AI client holding only its
+      // MCP token cannot approve. The PayPal Sandbox path is unchanged (PayPal's buyer login is the human step).
       const mock = /^\/mock-paypal\/checkout\/(MOCK[A-F0-9]{16})(?:\/(approve|cancel))?$/.exec(url.pathname);
       if (mock && mockPayPal) {
         const orderId = mock[1]!; const order = mockPayPal.describe(orderId);
         if (!order) return html(res, 404, page("Unknown order", "<p>No such mock order.</p>", "MOCK PayPal"));
+        const ownerField = '<label>Owner key (MOCK buyer login)<input name="owner_key" type="password" autocomplete="off" required></label>';
         if (!mock[2] && req.method === "GET") return html(res, 200, page("MOCK PayPal checkout", `<p>This is a local <b>mock</b> of PayPal's hosted approval page. No PayPal API is called.</p>
           <table><tr><td>Order</td><td>${esc(orderId)}</td></tr><tr><td>Amount</td><td>${esc(order.amount ? money(order.amount.amountMinor, order.amount.currency) : "?")}</td></tr></table>
-          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/approve" style="display:inline"><button>Approve (mock buyer)</button></form>
-          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/cancel" style="display:inline"><button class="secondary">Cancel</button></form>`, "MOCK PayPal — not real, not Sandbox"));
-        if (mock[2] && req.method === "POST" && sameOrigin(req, allowedOrigins)) {
+          <p class="muted">MOCK only: the owner key stands in for the buyer's own PayPal login. The AI assistant cannot do this step.</p>
+          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/approve">${ownerField}<p><button>Approve (mock buyer)</button></p></form>
+          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/cancel">${ownerField}<p><button class="secondary">Cancel</button></p></form>`, "MOCK PayPal — not real, not Sandbox"));
+        if (mock[2] && req.method === "POST") {
+          if (!sameOriginStrict(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+          const ownerUserId = cfg.auth.verifyOwnerKey(new URLSearchParams(await readText(req)).get("owner_key") ?? undefined);
+          if (!ownerUserId) return html(res, 401, page("Not authorized", "<p>Owner key required (MOCK buyer login). Nothing was approved.</p>", "MOCK PayPal — not real, not Sandbox"));
+          // The mock order carries its checkout id (PayPal custom_id); the owner must be that checkout's user.
+          const row = store.db.prepare("SELECT user_id FROM checkout_sessions WHERE id = ?").get(String(order.customId)) as { user_id: string } | undefined;
+          const checkoutUserId = row ? String(row.user_id) : null;
+          if (checkoutUserId !== ownerUserId) return html(res, 403, page("Not authorized", "<p>This order does not belong to that owner. Nothing was approved.</p>", "MOCK PayPal — not real, not Sandbox"));
+          gateway.audit.append(String(order.customId), ownerUserId, mock[2] === "approve" ? "MOCK_BUYER_APPROVED" : "MOCK_BUYER_CANCELLED", { orderId, actor: `OWNER_SESSION:${ownerUserId}` });
           res.statusCode = 303;
           res.setHeader("Location", mock[2] === "approve" ? mockPayPal.buyerApprove(orderId) : mockPayPal.buyerCancel(orderId));
           return res.end();
@@ -347,7 +361,36 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(t); } catch { throw new BadJson(); }
 }
 function header(req: IncomingMessage, name: string): string | undefined { const v = req.headers[name]; return Array.isArray(v) ? v[0] : v; }
+/**
+ * Lenient origin check for header-authenticated API routes (X-Owner-Key / bearer). Non-browser clients
+ * (curl, scripts, the owner CLI) send no Origin; a present Origin must be allowed.
+ */
 function sameOrigin(req: IncomingMessage, allowed: string[]): boolean { const o = req.headers.origin; return o === undefined || allowed.includes(o); }
+/**
+ * IR-01 (WP-1). Strict check for state-changing BROWSER form routes: a missing Origin is NOT same-origin. Origin
+ * must be present and allowed ("null" never is), or, when a browser omits Origin, Sec-Fetch-Site must say
+ * same-origin. A cross-site Sec-Fetch-Site always refuses, even next to an allowed Origin.
+ */
+export function sameOriginStrict(req: IncomingMessage, allowed: string[]): boolean {
+  const site = header(req, "sec-fetch-site");
+  if (site !== undefined && site !== "same-origin") return false;
+  const o = header(req, "origin");
+  if (o !== undefined) return o !== "null" && allowed.includes(o);
+  return site === "same-origin";
+}
+/**
+ * Browser-form check for the owner review page (/authorize). Refuses any request a browser marks as cross-site
+ * (an Origin that is not allowed, or Sec-Fetch-Site other than same-origin). A request with neither header is not
+ * a browser request, so an origin check cannot stop it anyway (Origin is forgeable outside a browser); that route
+ * is authenticated by the owner key (review) or by the checkout-bound SameSite=Strict session cookie plus CSRF
+ * token (authorize, cancel).
+ */
+export function sameOriginForm(req: IncomingMessage, allowed: string[]): boolean {
+  const site = header(req, "sec-fetch-site");
+  if (site !== undefined && site !== "same-origin") return false;
+  const o = header(req, "origin");
+  return o === undefined || (o !== "null" && allowed.includes(o));
+}
 function securityHeaders(res: ServerResponse) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");

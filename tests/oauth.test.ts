@@ -27,7 +27,8 @@ async function consent(url: string, authorizeUrl: string, opts: { ownerKey?: str
   const offered = [...html.matchAll(/name="scope" value="([^"]+)"/g)].map((m) => m[1]!);
   const form = new URLSearchParams({ request_id: requestId, csrf, decision: opts.decision ?? "approve", owner_key: opts.ownerKey ?? OWNER.alice });
   for (const s of opts.keepScopes ?? offered) form.append("scope", s);
-  const r = await fetch(`${url}/oauth/authorize`, { method: "POST", body: form, redirect: "manual", headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+  // A browser consent submit carries its Origin; WP-1 (IR-01) refuses one without Origin or Sec-Fetch-Site.
+  const r = await fetch(`${url}/oauth/authorize`, { method: "POST", body: form, redirect: "manual", headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: new URL(url).origin } });
   return { status: r.status, location: r.headers.get("location"), html: r.status === 303 ? "" : await r.text(), offered };
 }
 
@@ -143,7 +144,7 @@ describe("OAuth 2.1 for remote MCP clients", () => {
     expect(new URL(denied.location!).searchParams.get("error")).toBe("access_denied");
     expect(new URL(denied.location!).searchParams.get("code")).toBeNull();
     expect((await consent(h.url, await authorizeUrl(h.url, reg.body.client_id, challenge), { keepScopes: [] })).status).toBe(400);
-    const r = await fetch(`${h.url}/oauth/authorize`, { method: "POST", redirect: "manual", body: new URLSearchParams({ request_id: "x", csrf: "y", decision: "approve", owner_key: OWNER.alice }) });
+    const r = await fetch(`${h.url}/oauth/authorize`, { method: "POST", redirect: "manual", headers: { Origin: h.url }, body: new URLSearchParams({ request_id: "x", csrf: "y", decision: "approve", owner_key: OWNER.alice }) });
     expect(r.status).toBe(400);
   });
 

@@ -34,9 +34,9 @@ Input: `purchaseSessionId`, `offerId`, `maximumApprovedTotalMinor`, `currency`, 
 Server steps: session must be `OFFER_VERIFIED`; offer must have been eligible; a **fresh** quote is fetched and re-verified; total must be ≤ `maximumApprovedTotalMinor`; repeated identical calls return the same checkout (`deduplicated: true`). Then:
 - external merchant → `checkoutSessionId: null`, `checkoutPath: EXTERNAL_MERCHANT_CHECKOUT`, `externalCheckoutUrl`;
 - payment disabled → `HOLD` / `PUBLIC_PAYMENT_DISABLED`;
-- no mandate → `APPROVAL_REQUIRED` + `userAuthorizationUrl` (owner page), requirements `OWNER_MANDATE_REQUIRED`, `PAYPAL_BUYER_APPROVAL_REQUIRED`;
+- no mandate the owner allowed for automatic use (`autoUse: true`, default `false`) → `APPROVAL_REQUIRED` + `userAuthorizationUrl` (owner page), requirements `OWNER_MANDATE_REQUIRED`, `PAYPAL_BUYER_APPROVAL_REQUIRED`;
 - mandate rejects → `HOLD` + `policy.code` (e.g. `AMOUNT_EXCEEDED`), no PayPal call;
-- mandate allows → reservation + PayPal order → `APPROVAL_REQUIRED` + `approvalUrl` (PayPal hosted page).
+- mandate allows → reservation + PayPal order → `APPROVAL_REQUIRED` + `approvalUrl` (PayPal hosted page). In MOCK the hosted page needs the checkout owner's key (stand-in for the buyer's PayPal login); the AI client cannot approve.
 
 Output also includes the immutable `purchaseSummary`, its `summaryHash`, `expiresAt`, `paymentEffect: "NO_FUNDS_CAPTURED"`.
 

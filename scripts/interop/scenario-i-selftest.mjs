@@ -64,7 +64,8 @@ try {
     if (!html.includes("MOCK") || /Sandbox/.test(html)) throw new Error("review page environment label wrong");
     const a = await fetch(prep.userAuthorizationUrl, { method: "POST", redirect: "manual", headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie }, body: new URLSearchParams({ action: "authorize", csrf, maximum: "60.00" }) });
     const orderId = new URL(a.headers.get("location")).pathname.split("/").pop();
-    const ap = await fetch(`${S}/mock-paypal/checkout/${orderId}/approve`, { method: "POST", redirect: "manual" });
+    const ap = await fetch(`${S}/mock-paypal/checkout/${orderId}/approve`, { method: "POST", redirect: "manual",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: new URL(S).origin }, body: new URLSearchParams({ owner_key: owners[host] }) });
     await (await fetch(ap.headers.get("location"), { redirect: "manual" })).text();
     await wait(5); // the builder checks that the human step happened before phase 2
 

@@ -59,10 +59,11 @@ export class PurchasePolicyEngine {
    * Newest usable mandate of this user for exactly this product. If only an expired one
    * matches, it is returned so the caller gets an explicit MANDATE_EXPIRED rejection.
    */
-  findApplicable(userId: string, identity: ProductIdentity): PurchaseMandate | null {
+  findApplicable(userId: string, identity: ProductIdentity, opts: { autoUseOnly?: boolean } = {}): PurchaseMandate | null {
     // Only explicitly created reusable mandates are ever selected automatically. A checkout-bound
     // authorization from the owner page never carries over to a new checkout (DF-4).
-    const matches = this.mandates.listActive(userId).filter((m) => m.scope === "REUSABLE" && identityEquals(m.productIdentity, identity));
+    // IR-01 (WP-1): for automatic use by prepare_checkout (autoUseOnly), the owner must also have opted in (autoUse).
+    const matches = this.mandates.listActive(userId).filter((m) => m.scope === "REUSABLE" && (!opts.autoUseOnly || m.autoUse) && identityEquals(m.productIdentity, identity));
     return matches.find((m) => m.authorizationStatus === "ACTIVE") ?? matches[0] ?? null;
   }
 
