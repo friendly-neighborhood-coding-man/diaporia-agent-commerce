@@ -311,6 +311,9 @@ export class CommerceGateway {
     const inFlight = this.sessions.findPaymentInFlightOrDone(userId, ps.purchaseSessionId);
     if (inFlight && !(inFlight.offerId === input.offerId && inFlight.quantity === input.quantity))
       throw new CommerceError("INVALID_STATE", `A payment for this purchase session is ${inFlight.state}; a new payment attempt is prohibited until it is final.`, { checkoutSessionId: inFlight.checkoutSessionId });
+    // A repeated identical prepare after the payment completed returns that checkout: one purchase
+    // session buys at most once. A new purchase needs a new research session (and new authorization).
+    if (inFlight && inFlight.state === "COMPLETED") { this.audit.append(inFlight.checkoutSessionId, userId, "PREPARE_DEDUPLICATED", { after: "COMPLETED" }); return this.prepareResult(inFlight, null, true); }
     const dup = this.sessions.findActiveDuplicate(userId, ps.purchaseSessionId, input.offerId, input.quantity);
     if (dup) { this.audit.append(dup.checkoutSessionId, userId, "PREPARE_DEDUPLICATED", {}); return this.prepareResult(this.expireIfNeeded(dup), null, true); }
 
@@ -694,6 +697,27 @@ export class CommerceGateway {
     for (const cs of this.sessions.listAwaitingProviderSettlement()) {
       const r = await this.reconcileCapture(cs, source);
       results.push({ checkoutSessionId: cs.checkoutSessionId, outcome: r.outcome, state: r.checkout.state });
+    }
+    // UNKNOWN with no local capture id (e.g. the capture call timed out after PayPal may have captured):
+    // read the order and adopt a capture only if the provider shows one. Never captures here; if the
+    // order is merely APPROVED the checkout stays UNKNOWN for the owner's explicit reconcile.
+    for (const cs of this.sessions.listUnknownWithoutCapture()) {
+      let outcome: ReconcileOutcome = "NO_CHANGE"; let state: string = cs.state;
+      try {
+        const order = await this.readWithRetry(() => this.payments.getOrder(cs.providerOrderId!));
+        const cap = order.captures[0];
+        this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILED_READ_ONLY", { source, providerStatus: order.status, captures: order.captures.length });
+        if (cap) {
+          const fresh = await this.readWithRetry(() => this.payments.getCapture(cap.captureId));
+          const after = await this.applyCapture(cs, fresh);
+          state = after.state;
+          outcome = after.state === "COMPLETED" ? "SETTLED_COMPLETED" : after.state === "FAILED" ? "SETTLED_FAILED" : after.state === "CAPTURE_PENDING" ? "STILL_PENDING" : "NO_CHANGE";
+        }
+      } catch (e) {
+        this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_PROVIDER_UNAVAILABLE", { source, reason: errorText(e) });
+        outcome = "PROVIDER_UNAVAILABLE";
+      }
+      results.push({ checkoutSessionId: cs.checkoutSessionId, outcome, state });
     }
     return results;
   }

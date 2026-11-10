@@ -31,6 +31,11 @@ export interface OAuthConfig {
   refreshTokenTtlSec?: number;
   codeTtlSec?: number;
   maxClients?: number;
+  /**
+   * Scopes this deployment actually offers (advertised in metadata and the 401 challenge, and the
+   * only ones a client may request). A public deployment without payment tools omits purchase.prepare.
+   */
+  offeredScopes?: string[];
 }
 
 export const SUPPORTED_SCOPES = [...ALL_CLIENT_SCOPES];
@@ -79,16 +84,16 @@ export function redirectMatches(registered: string, presented: string): boolean 
   } catch { return false; }
 }
 
-function parseScopes(raw: string | null | undefined): string[] {
+function parseScopes(raw: string | null | undefined, offered: readonly string[] = SUPPORTED_SCOPES): string[] {
   if (raw === null || raw === undefined || raw.trim() === "") return [...DEFAULT_SCOPES];
   const asked = [...new Set(raw.trim().split(/\s+/))];
-  const unknown = asked.filter((s) => !SUPPORTED_SCOPES.includes(s as never));
+  const unknown = asked.filter((s) => !offered.includes(s));
   if (unknown.length) throw new OAuthError("invalid_scope", `Unsupported scope(s): ${unknown.join(" ").slice(0, 200)}`);
   return asked;
 }
 
 export class OAuthAuthority {
-  readonly accessTtl: number; readonly refreshTtl: number; readonly codeTtl: number; readonly maxClients: number;
+  readonly accessTtl: number; readonly refreshTtl: number; readonly codeTtl: number; readonly maxClients: number; readonly offered: string[];
   private readonly pending = new Map<string, PendingAuthorization>();
 
   constructor(private readonly store: Store, private readonly owners: DevAuth, readonly cfg: OAuthConfig, private readonly now: () => number = Date.now) {
@@ -96,6 +101,7 @@ export class OAuthAuthority {
     this.refreshTtl = cfg.refreshTokenTtlSec ?? 30 * 86400;
     this.codeTtl = cfg.codeTtlSec ?? 60;
     this.maxClients = cfg.maxClients ?? 1000;
+    this.offered = (cfg.offeredScopes ?? SUPPORTED_SCOPES).filter((x) => SUPPORTED_SCOPES.includes(x as never));
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS oauth_clients (
         client_id TEXT PRIMARY KEY, client_name TEXT NOT NULL, redirect_uris_json TEXT NOT NULL,
@@ -113,7 +119,7 @@ export class OAuthAuthority {
 
   // ---------------- metadata ----------------
   protectedResourceMetadata() {
-    return { resource: this.cfg.resource, authorization_servers: [this.cfg.issuer], scopes_supported: SUPPORTED_SCOPES,
+    return { resource: this.cfg.resource, authorization_servers: [this.cfg.issuer], scopes_supported: this.offered,
       bearer_methods_supported: ["header"], resource_name: "DIAPORIA Agent Commerce MCP" };
   }
   get resourceMetadataUrl(): string { return `${this.cfg.issuer}/.well-known/oauth-protected-resource`; }
@@ -124,10 +130,10 @@ export class OAuthAuthority {
       response_types_supported: ["code"], response_modes_supported: ["query"], grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
       revocation_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
-      scopes_supported: SUPPORTED_SCOPES, authorization_response_iss_parameter_supported: true };
+      scopes_supported: this.offered, authorization_response_iss_parameter_supported: true };
   }
   /** Value for `WWW-Authenticate` on a 401/403 from /mcp. */
-  challenge(error?: "invalid_token" | "insufficient_scope", scope?: string): string {
+  challenge(error?: "invalid_token" | "insufficient_scope", scope: string = this.offered.join(" ")): string {
     return `Bearer resource_metadata="${this.resourceMetadataUrl}"${error ? `, error="${error}"` : ""}${scope ? `, scope="${scope}"` : ""}`;
   }
 
@@ -145,7 +151,7 @@ export class OAuthAuthority {
       if (grants.some((g) => !["authorization_code", "refresh_token"].includes(g))) throw new OAuthError("invalid_client_metadata", "Only authorization_code and refresh_token grants are supported");
       const responseTypes = Array.isArray(b.response_types) ? b.response_types.map(String) : ["code"];
       if (responseTypes.some((r) => r !== "code")) throw new OAuthError("invalid_client_metadata", "Only response_type code is supported");
-      if (b.scope !== undefined) parseScopes(String(b.scope));
+      if (b.scope !== undefined) parseScopes(String(b.scope), this.offered);
       const name = typeof b.client_name === "string" && b.client_name.trim() ? b.client_name.trim().slice(0, 80) : "Unnamed MCP client";
       const count = Number((this.store.db.prepare("SELECT COUNT(*) AS n FROM oauth_clients").get() as Row).n);
       if (count >= this.maxClients) throw new OAuthError("temporarily_unavailable", "Client registration limit reached", 503);
@@ -186,7 +192,7 @@ export class OAuthAuthority {
     const resource = q.get("resource") ?? this.cfg.resource;
     if (resource !== this.cfg.resource) return fail(new OAuthError("invalid_target", "resource must be this server's MCP endpoint"));
     let scopes: string[];
-    try { scopes = parseScopes(q.get("scope")); } catch (e) { return fail(e as OAuthError); }
+    try { scopes = parseScopes(q.get("scope"), this.offered); } catch (e) { return fail(e as OAuthError); }
     this.gc();
     const pending: PendingAuthorization = { id: randomBytes(18).toString("base64url"), csrf: randomBytes(18).toString("base64url"), clientId: client.clientId,
       clientName: client.name, redirectUri, state, scopes, codeChallenge: challenge, resource, expiresAt: this.now() + 10 * 60_000 };
@@ -294,7 +300,7 @@ export class OAuthAuthority {
     if (resource !== null && resource !== r.resource) throw new OAuthError("invalid_target", "resource does not match the grant");
     const had = String(r.scope).split(" ");
     const asked = form.get("scope");
-    const scope = asked === null ? had : parseScopes(asked);
+    const scope = asked === null ? had : parseScopes(asked, this.offered);
     if (scope.some((s) => !had.includes(s))) throw new OAuthError("invalid_scope", "A refresh cannot widen the granted scope");
     return this.store.transaction(() => {
       const upd = this.store.db.prepare("UPDATE oauth_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND revoked_at IS NULL").run(this.now(), sha(rt));

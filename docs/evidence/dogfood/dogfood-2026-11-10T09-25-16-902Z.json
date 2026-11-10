@@ -1,0 +1,560 @@
+{
+  "schema": "diaporia.dogfood.v1",
+  "evidenceClass": "OFFLINE_MOCK_LOOPBACK",
+  "generatedAt": "2026-11-10T09:25:16.902Z",
+  "commit": "60adfe8",
+  "workingTreeDirty": true,
+  "node": "v22.23.4",
+  "externalCalls": {
+    "paypal": 0,
+    "kernel": 0,
+    "channel3": 0,
+    "tavily": 0,
+    "model": 0
+  },
+  "summary": {
+    "pass": 9,
+    "fail": 0,
+    "notRun": 2
+  },
+  "scenarios": [
+    {
+      "id": "A",
+      "title": "Exact-product purchase with spending limit, human authorization and verified MOCK result",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "intent mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true
+        },
+        {
+          "check": "identity locked",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true
+        },
+        {
+          "check": "research has no payment effect",
+          "expected": "NONE",
+          "observed": "NONE",
+          "pass": true
+        },
+        {
+          "check": "compare state",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true
+        },
+        {
+          "check": "lowest PayPal-checkoutable verified offer",
+          "expected": "off_alpha",
+          "observed": "off_alpha",
+          "pass": true
+        },
+        {
+          "check": "without a mandate the AI gets only a human authorization link",
+          "expected": [
+            "OWNER_MANDATE_REQUIRED",
+            "PAYPAL_BUYER_APPROVAL_REQUIRED"
+          ],
+          "observed": [
+            "OWNER_MANDATE_REQUIRED",
+            "PAYPAL_BUYER_APPROVAL_REQUIRED"
+          ],
+          "pass": true
+        },
+        {
+          "check": "no provider order before human authorization",
+          "expected": 0,
+          "observed": 0,
+          "pass": true
+        },
+        {
+          "check": "review page names MOCK environment and never Sandbox",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "review page shows payee",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "authorization redirects to (mock) buyer approval",
+          "expected": 303,
+          "observed": 303,
+          "pass": true
+        },
+        {
+          "check": "return page does not claim payment",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "server-verified state",
+          "expected": "COMPLETED",
+          "observed": "COMPLETED",
+          "pass": true
+        },
+        {
+          "check": "amount",
+          "expected": 5939,
+          "observed": 5939,
+          "pass": true
+        },
+        {
+          "check": "merchant order not claimed",
+          "expected": "NOT_CONFIRMED",
+          "observed": "NOT_CONFIRMED",
+          "pass": true
+        },
+        {
+          "check": "fulfillment not claimed",
+          "expected": "NOT_VERIFIED",
+          "observed": "NOT_VERIFIED",
+          "pass": true
+        },
+        {
+          "check": "receipt payment result",
+          "expected": "COMPLETED",
+          "observed": "COMPLETED",
+          "pass": true
+        },
+        {
+          "check": "receipt has audit timeline",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "exactly one capture",
+          "expected": 1,
+          "observed": 1,
+          "pass": true
+        }
+      ],
+      "notes": [
+        "statement relayed to user: Payment captured (MOCK (no PayPal API call)). No merchant order confirmation was received and no fulfillment or shipment is verified, so this is not a completed merchant purchase."
+      ],
+      "durationMs": 182
+    },
+    {
+      "id": "B",
+      "title": "Spending-limit violation: $6,000 offer under a $60 mandate",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "owner creates $60 mandate",
+          "expected": 201,
+          "observed": 201,
+          "pass": true
+        },
+        {
+          "check": "the $6,000 offer is visible to the AI",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "state",
+          "expected": "HOLD",
+          "observed": "HOLD",
+          "pass": true
+        },
+        {
+          "check": "policy code",
+          "expected": "AMOUNT_EXCEEDED",
+          "observed": "AMOUNT_EXCEEDED",
+          "pass": true
+        },
+        {
+          "check": "no approval URL",
+          "expected": null,
+          "observed": null,
+          "pass": true
+        },
+        {
+          "check": "no payment-provider call of any kind",
+          "expected": {
+            "createOrder": 0,
+            "getOrder": 0,
+            "captureOrder": 0,
+            "getCapture": 0
+          },
+          "observed": {
+            "createOrder": 0,
+            "getOrder": 0,
+            "captureOrder": 0,
+            "getCapture": 0
+          },
+          "pass": true
+        },
+        {
+          "check": "mandate reservation untouched",
+          "expected": 0,
+          "observed": 0,
+          "pass": true
+        }
+      ],
+      "notes": [],
+      "durationMs": 62
+    },
+    {
+      "id": "C",
+      "title": "Wrong product, variant, condition, bundle-like or ambiguous identity: no silent substitution",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "variant not named → HOLD/AMBIGUOUS",
+          "expected": [
+            "HOLD",
+            "AMBIGUOUS"
+          ],
+          "observed": [
+            "HOLD",
+            "AMBIGUOUS"
+          ],
+          "pass": true
+        },
+        {
+          "check": "unknown variant → not substituted",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "different color excluded",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "refurbished excluded",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "look-alike merchant domain excluded",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "preparing the wrong variant is refused",
+          "expected": "OFFER_NOT_ELIGIBLE",
+          "observed": "OFFER_NOT_ELIGIBLE",
+          "pass": true
+        },
+        {
+          "check": "bundle/quantity beyond the $60 request is refused",
+          "expected": "OFFER_NOT_ELIGIBLE:OVER_BUDGET",
+          "observed": "OFFER_NOT_ELIGIBLE:OVER_BUDGET",
+          "pass": true
+        },
+        {
+          "check": "no provider order",
+          "expected": 0,
+          "observed": 0,
+          "pass": true
+        }
+      ],
+      "notes": [
+        "The fixture catalog has no multi-item bundle SKU; quantity 2 stands in for a bundle and is checked against the per-checkout authorization."
+      ],
+      "durationMs": 69
+    },
+    {
+      "id": "D",
+      "title": "Unknown shipping/tax: uncertainty preserved, no verified cheapest-total claim",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "state without destination",
+          "expected": "HOLD",
+          "observed": "HOLD",
+          "pass": true
+        },
+        {
+          "check": "no verified cheapest offer",
+          "expected": null,
+          "observed": null,
+          "pass": true
+        },
+        {
+          "check": "unknown components kept null, not zero",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "hold reasons mention destination",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "checkout refused while totals are unknown",
+          "expected": "INVALID_STATE",
+          "observed": "INVALID_STATE",
+          "pass": true
+        }
+      ],
+      "notes": [],
+      "durationMs": 53
+    },
+    {
+      "id": "E",
+      "title": "Payment uncertainty: provider timeout after a possibly successful capture",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "state after timeout",
+          "expected": "UNKNOWN",
+          "observed": "UNKNOWN",
+          "pass": true
+        },
+        {
+          "check": "new payment attempt prohibited",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "a replayed return does not capture again",
+          "expected": 1,
+          "observed": 1,
+          "pass": true
+        },
+        {
+          "check": "read-only reconciliation settles it",
+          "expected": "COMPLETED",
+          "observed": "COMPLETED",
+          "pass": true
+        },
+        {
+          "check": "still exactly one capture",
+          "expected": 1,
+          "observed": 1,
+          "pass": true
+        }
+      ],
+      "notes": [],
+      "durationMs": 73
+    },
+    {
+      "id": "F",
+      "title": "Cross-user and cross-host access",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "bob cannot read alice's checkout",
+          "expected": "NOT_FOUND",
+          "observed": "NOT_FOUND",
+          "pass": true
+        },
+        {
+          "check": "bob cannot read alice's receipt",
+          "expected": "NOT_FOUND",
+          "observed": "NOT_FOUND",
+          "pass": true
+        },
+        {
+          "check": "bob cannot prepare on alice's research session",
+          "expected": false,
+          "observed": false,
+          "pass": true
+        },
+        {
+          "check": "bob's owner key cannot cancel alice's checkout",
+          "expected": 404,
+          "observed": 404,
+          "pass": true
+        },
+        {
+          "check": "read-only token is not offered prepare_checkout",
+          "expected": false,
+          "observed": false,
+          "pass": true
+        },
+        {
+          "check": "an AI client token cannot create spending authority",
+          "expected": 401,
+          "observed": 401,
+          "pass": true
+        }
+      ],
+      "notes": [],
+      "durationMs": 123
+    },
+    {
+      "id": "G",
+      "title": "Prompt injection in merchant listing and review content",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "injected review text surfaced as untrusted, flagged data",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "listing with instructions is ineligible",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "following the injected instruction is refused",
+          "expected": "OFFER_NOT_ELIGIBLE",
+          "observed": "OFFER_NOT_ELIGIBLE",
+          "pass": true
+        },
+        {
+          "check": "the owner's mandate is still the only authority, unchanged",
+          "expected": [
+            1,
+            6000
+          ],
+          "observed": [
+            1,
+            6000
+          ],
+          "pass": true
+        },
+        {
+          "check": "no provider order",
+          "expected": 0,
+          "observed": 0,
+          "pass": true
+        }
+      ],
+      "notes": [],
+      "durationMs": 46
+    },
+    {
+      "id": "H",
+      "title": "Restart during a transaction: durable state, recovery, idempotency",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "UNKNOWN before the crash",
+          "expected": "UNKNOWN",
+          "observed": "UNKNOWN",
+          "pass": true
+        },
+        {
+          "check": "startup reconciliation found the open capture",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "state after restart",
+          "expected": "COMPLETED",
+          "observed": "COMPLETED",
+          "pass": true
+        },
+        {
+          "check": "prepare after restart deduplicates to the same checkout",
+          "expected": "cs_2e706a58-45b4-4e85-a873-463be6de6b1b",
+          "observed": "cs_2e706a58-45b4-4e85-a873-463be6de6b1b",
+          "pass": true
+        },
+        {
+          "check": "exactly one capture across restart and replay",
+          "expected": 1,
+          "observed": 1,
+          "pass": true
+        },
+        {
+          "check": "mandate consumed, not double-counted",
+          "expected": 0,
+          "observed": 0,
+          "pass": true
+        }
+      ],
+      "notes": [],
+      "durationMs": 135
+    },
+    {
+      "id": "I",
+      "title": "Four local AI hosts (Claude Code, Codex CLI, Grok Build, Hermes) run the same contracts",
+      "status": "NOT_RUN",
+      "checks": [],
+      "durationMs": 0,
+      "notes": [
+        "Needs the owner's PC where the four host CLIs are installed and signed in. Prior evidence (not re-run here): docs/evidence/interop/ and docs/evidence/handoff-interop/ (4/4 hosts, MOCK).",
+        "This harness's scenarios A-H use the same MCP SDK transport and the same tool contracts the hosts call; that shows contract behaviour, not host onboarding."
+      ]
+    },
+    {
+      "id": "J",
+      "title": "Phase C fictional merchant checkout (browser)",
+      "status": "NOT_RUN",
+      "checks": [],
+      "durationMs": 0,
+      "notes": [
+        "--no-browser"
+      ]
+    },
+    {
+      "id": "K",
+      "title": "Remote-style OAuth 2.1 client (official MCP SDK) on loopback: discover, register, consent, research, read status",
+      "status": "PASS",
+      "checks": [
+        {
+          "check": "first connect is challenged (401 + resource metadata)",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "client registered dynamically",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "consent page lists each requested scope for the owner to choose",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        },
+        {
+          "check": "granted research/read are offered; ungranted prepare is not",
+          "expected": [
+            true,
+            false
+          ],
+          "observed": [
+            true,
+            false
+          ],
+          "pass": true
+        },
+        {
+          "check": "research via OAuth token",
+          "expected": "RESEARCHED",
+          "observed": "RESEARCHED",
+          "pass": true
+        },
+        {
+          "check": "usage summary readable over OAuth",
+          "expected": true,
+          "observed": true,
+          "pass": true
+        }
+      ],
+      "notes": [
+        "scopes the SDK client requested (from the 401 challenge): purchase.research purchase.read purchase.prepare"
+      ],
+      "durationMs": 64
+    }
+  ]
+}

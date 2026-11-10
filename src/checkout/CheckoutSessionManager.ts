@@ -203,6 +203,12 @@ export class CheckoutSessionManager {
       .map((r) => this.toCheckout(r));
   }
 
+  /** UNKNOWN checkouts with a provider order but no known capture id (capture call outcome unknown). */
+  listUnknownWithoutCapture(): CheckoutSession[] {
+    return (this.store.db.prepare("SELECT * FROM checkout_sessions WHERE state = 'UNKNOWN' AND capture_id IS NULL AND provider_order_id IS NOT NULL ORDER BY created_at").all() as Row[])
+      .map((r) => this.toCheckout(r));
+  }
+
   /** Records an authoritative provider read that did not change the state (compare-and-set on version). */
   recordProviderVerification(cs: CheckoutSession, captureStatus: string, pendingReason: string | null): CheckoutSession {
     const r = this.store.db.prepare(`UPDATE checkout_sessions SET provider_verified_at=?, capture_status=?, provider_pending_reason=?, version=version+1, updated_at=?

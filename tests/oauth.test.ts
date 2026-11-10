@@ -102,7 +102,7 @@ describe("OAuth 2.1 for remote MCP clients", () => {
     expect(asm.grant_types_supported).not.toContain("password");
     const r = await fetch(`${h.url}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
     expect(r.status).toBe(401);
-    expect(r.headers.get("www-authenticate")).toBe(`Bearer resource_metadata="${h.url}/.well-known/oauth-protected-resource"`);
+    expect(r.headers.get("www-authenticate")).toBe(`Bearer resource_metadata="${h.url}/.well-known/oauth-protected-resource", scope="purchase.research purchase.read purchase.prepare"`);
     // Dev tokens are not accepted in oauth mode.
     const dev = await fetch(`${h.url}/mcp`, { method: "POST", headers: { Authorization: "Bearer dct_alice_test_token_000000000000", "Content-Type": "application/json" }, body: "{}" });
     expect(dev.status).toBe(401);
@@ -254,7 +254,11 @@ describe("OAuth 2.1 for remote MCP clients", () => {
     // Drive the authority directly (the test cannot resolve the public host name).
     const reg = oa.register({ client_name: "Remote host", redirect_uris: ["https://client.example/cb"] });
     const { verifier, challenge } = pkce();
-    const begin = oa.beginAuthorization(new URLSearchParams({ response_type: "code", client_id: String(reg.body.client_id), redirect_uri: "https://client.example/cb", code_challenge: challenge, code_challenge_method: "S256", scope: "purchase.research purchase.read purchase.prepare", resource: "https://mcp.diaporia.example/mcp" }));
+    expect(oa.protectedResourceMetadata().scopes_supported).toEqual(["purchase.research", "purchase.read"]);
+    expect(oa.challenge()).toContain('scope="purchase.research purchase.read"');
+    const askPrepare = oa.beginAuthorization(new URLSearchParams({ response_type: "code", client_id: String(reg.body.client_id), redirect_uri: "https://client.example/cb", code_challenge: challenge, code_challenge_method: "S256", scope: "purchase.research purchase.prepare" }));
+    expect(askPrepare.ok ? null : askPrepare.error.error).toBe("invalid_scope");
+    const begin = oa.beginAuthorization(new URLSearchParams({ response_type: "code", client_id: String(reg.body.client_id), redirect_uri: "https://client.example/cb", code_challenge: challenge, code_challenge_method: "S256", scope: "purchase.research purchase.read", resource: "https://mcp.diaporia.example/mcp" }));
     if (!begin.ok) throw new Error("authorization refused");
     const done = oa.completeAuthorization(new URLSearchParams([["request_id", begin.pending.id], ["csrf", begin.pending.csrf], ["decision", "approve"], ["owner_key", OWNER.alice], ["scope", "purchase.research"], ["scope", "purchase.read"], ["scope", "purchase.prepare"]]));
     if (!("redirect" in done)) throw new Error("consent failed");

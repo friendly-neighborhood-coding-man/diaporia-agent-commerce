@@ -80,7 +80,8 @@ export function createApp(cfg: AppConfig): App {
   const envBanner = payments.name === "PAYPAL_SANDBOX" ? "PayPal Sandbox: test accounts and test money only. No real money moves."
     : "MOCK environment: simulated payment, no PayPal call, no money moves.";
   const envPage = (title: string, body: string) => page(title, body, envBanner);
-  const oauth = cfg.authMode === "oauth" ? new OAuthAuthority(store, cfg.auth, { issuer: base.origin, resource: `${base.origin}/mcp`, ...(cfg.oauth ?? {}) }, now) : null;
+  const oauth = cfg.authMode === "oauth" ? new OAuthAuthority(store, cfg.auth, { issuer: base.origin, resource: `${base.origin}/mcp`,
+    offeredScopes: paymentExecutionEnabled ? [SCOPES.RESEARCH, SCOPES.READ, SCOPES.PREPARE] : [SCOPES.RESEARCH, SCOPES.READ], ...(cfg.oauth ?? {}) }, now) : null;
   if (oauth && base.protocol !== "https:" && !isLoopbackUrl(cfg.baseUrl)) throw new Error("OAuth mode requires an https PUBLIC_BASE_URL unless it is loopback");
   const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
