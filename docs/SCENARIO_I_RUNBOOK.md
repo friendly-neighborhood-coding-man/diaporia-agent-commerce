@@ -130,7 +130,7 @@ For each host, in this order:
    - total: **$59.39**;
    - requested maximum: $60.00;
    - there is no existing spending limit.
-3. Enter **60.00** and press Authorize. The browser goes to the MOCK PayPal page. Check that it says "MOCK PayPal — not real, not Sandbox" and shows $59.39.
+3. Enter **60.00** (digits and a dot only; since WP-5 a comma or space is refused) and press **Check amount**. The next page must say "You are authorizing up to USD 60.00 for this checkout". Press **Confirm and continue to payment approval**. The browser goes to the MOCK PayPal page. Since WP-1 the MOCK page asks for the host's owner key (stand-in for the buyer's PayPal login) before Approve. Check that it says "MOCK PayPal — not real, not Sandbox" and shows $59.39.
 4. Press **Approve (mock buyer)**. The return page should show `COMPLETED` and say it does not itself prove payment.
 
 The host takes no part in this step. Its token cannot create spending authority.

@@ -32,6 +32,8 @@ describe("owner authorization in a real browser (MOCK)", () => {
       await page.click("button");
       expect(await page.textContent("body")).toContain("Review and set your spending limit");
       await page.fill("input[name=maximum]", "60.00");
+      await page.click("form:has(input[name=action][value=preview]) button");       // WP-5: echo before commit
+      expect(await page.textContent("[data-field=confirm-limit]")).toContain("You are authorizing up to USD 60.00 for this checkout");
       await page.click("form:has(input[name=action][value=authorize]) button");
       await page.waitForURL(/\/mock-paypal\/checkout\//);
       expect(await page.textContent("body")).toContain("MOCK PayPal");
@@ -40,7 +42,7 @@ describe("owner authorization in a real browser (MOCK)", () => {
       await page.waitForURL(/\/paypal\/return/);
       expect(await page.textContent("body")).toContain("COMPLETED");
 
-      expect(origins.length).toBe(3);
+      expect(origins.length).toBe(4);                                                // review, preview, authorize, MOCK approve
       expect(origins.every((o) => o === new URL(h.url).origin)).toBe(true);
       const st = await call(c, "get_checkout_status", { checkoutSessionId: prep.checkoutSessionId });
       expect(st.state).toBe("COMPLETED");

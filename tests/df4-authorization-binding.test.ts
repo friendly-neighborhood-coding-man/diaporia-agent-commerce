@@ -55,6 +55,8 @@ describe("DF-4: owner-page authorization is bound to one checkout", () => {
       // The review page may still render (the checkout exists); the authorize submit must be refused.
       if (await page.locator("input[name=maximum]").count()) {
         await page.fill("input[name=maximum]", "60.00");
+        await page.click("form:has(input[name=action][value=preview]) button");     // WP-5: the confirm step echoes the limit first
+        expect(await page.textContent("[data-field=confirm-limit]")).toContain("USD 60.00");
         const [resp] = await Promise.all([page.waitForResponse((r) => r.request().method() === "POST"), page.click("form:has(input[name=action][value=authorize]) button")]);
         expect(resp.status()).toBe(409);
         expect(await page.textContent("body")).toContain("No new spending limit was created");

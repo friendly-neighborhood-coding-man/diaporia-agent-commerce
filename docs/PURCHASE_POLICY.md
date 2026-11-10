@@ -24,6 +24,8 @@ Only the owner creates mandates: `POST /owner/mandates` (header `X-Owner-Key`) o
 
 Even with an auto-use mandate the MOCK buyer step is the human's: `POST /mock-paypal/checkout/<order>/(approve|cancel)` needs the checkout owner's key (stand-in for the buyer's PayPal login) on a strict same-origin browser POST (WP-1). In PayPal Sandbox the buyer's own PayPal login is that step.
 
+Spending limits typed by a human (the `/authorize` page and the handoff maximum) use the strict `parseOwnerAmountToMinor` (WP-5, IR-10): ASCII digits, an optional dot, at most the currency's decimals. Commas, spaces, full-width or other non-ASCII digits, signs and exponents are refused with a message to use a dot as the decimal separator, so `60,00` can never become 6,000.00. The `/authorize` page then shows "You are authorizing up to USD 60.00 for this checkout" and creates the mandate only when the owner confirms that page. Machine-read prices (provider, merchant cart and recipe parsing) keep the shared `parseDecimalToMinor`, unchanged.
+
 Every audit event on the way to a capture records an `actor`: `MCP_TOKEN:<12-hex token fingerprint>`, `OWNER_SESSION:<userId>`, `PROVIDER_RETURN` or `RECONCILE`. Raw tokens and keys are never recorded.
 
 ### Two kinds of mandate (DF-4)

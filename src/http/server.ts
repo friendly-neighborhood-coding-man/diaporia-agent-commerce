@@ -10,7 +10,7 @@ import type { PaymentProvider } from "../payment/PaymentProvider.js";
 import { DevAuth, SCOPES, type Principal } from "../auth/devAuth.js";
 import { createCommerceMcpServer } from "../mcp/MCPCommerceAdapter.js";
 import { handleSubscriptionRoutes } from "../billing/subscriptions/http.js";
-import { parseDecimalToMinor } from "../domain/money.js";
+import { formatMinor, MoneyError, parseOwnerAmountToMinor } from "../domain/money.js";
 import { NotFoundError } from "../checkout/CheckoutSessionManager.js";
 import { esc, money, page } from "./html.js";
 import { RateLimiter } from "./rateLimit.js";
@@ -88,7 +88,8 @@ export function createApp(cfg: AppConfig): App {
   const mcpLimiter = new RateLimiter(120, 60_000);
   const webLimiter = new RateLimiter(30, 60_000);
   // IR-09 (WP-4): an owner review session is bound to the checkout it reviewed (csId) and to the summary shown.
-  const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number; csId: string; summaryHash: string }>();
+  // WP-5 (IR-10): previewMinor is the strictly parsed limit the owner was shown on the confirm step.
+  const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number; csId: string; summaryHash: string; previewMinor?: number }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
     sameOrigin: (req) => sameOriginStrict(req, allowedOrigins), readText }) : null;
@@ -237,6 +238,21 @@ export function createApp(cfg: AppConfig): App {
             ? "<p>Nothing was paid. Any reserved spending limit was released. You can return to your AI assistant.</p>"
             : `<p class="state">${esc(out.reason)}</p><p>The checkout was left unchanged because cancelling now could race a payment. Ask your AI assistant to check the checkout status.</p>`));
         }
+        if (form.get("action") === "preview") {
+          // WP-5 (IR-10): echo before commit. Parse the typed limit strictly and show it back; nothing is created here.
+          const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
+          const sess = sid ? ownerSessions.get(sid) : undefined;
+          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          if (sess.csId !== csId) return html(res, 403, envPage("Different checkout", "<p>You reviewed a different checkout. Open this checkout's own link and review it first. Nothing was changed.</p>"));
+          let cs;
+          try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
+          let maximum: number;
+          try { maximum = parseOwnerAmountToMinor(form.get("maximum") ?? "", cs.currency); }
+          catch (e) { return html(res, 400, envPage("Invalid amount", `<p>${esc(e instanceof MoneyError ? e.message : "Invalid amount.")}</p><p>No spending limit was created. Go back and enter it again.</p>`)); }
+          if (maximum <= 0) return html(res, 400, envPage("Invalid amount", "<p>The limit must be more than zero. No spending limit was created.</p>"));
+          sess.previewMinor = maximum;
+          return html(res, 200, envPage("Confirm your spending limit", confirmBody(cs, sess.csrf, maximum)));
+        }
         if (form.get("action") === "authorize") {
           const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
           const sess = sid ? ownerSessions.get(sid) : undefined;
@@ -249,7 +265,12 @@ export function createApp(cfg: AppConfig): App {
           // The human must have seen exactly this summary.
           if (cs.summaryHash !== sess.summaryHash) return html(res, 409, envPage("Checkout changed", "<p>The checkout changed since you reviewed it. Review it again. No spending limit was created.</p>"));
           let maximum: number;
-          try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, envPage("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
+          try { maximum = parseOwnerAmountToMinor(form.get("maximum") ?? "", cs.currency); }
+          catch (e) { return html(res, 400, envPage("Invalid amount", `<p>${esc(e instanceof MoneyError ? e.message : "Invalid amount.")}</p><p>No spending limit was created.</p>`)); }
+          // The confirm form carries the minor value it showed; it must match both the typed text and what this session previewed.
+          const shown = form.get("maximum_minor");
+          if (shown !== null && (shown !== String(maximum) || sess.previewMinor !== maximum))
+            return html(res, 409, envPage("Amount not confirmed", "<p>The amount differs from the one you confirmed. Review the checkout again. No spending limit was created.</p>"));
           let out;
           try { out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum); }
           catch (e) {
@@ -440,13 +461,30 @@ export function reviewBody(cs: CheckoutView, csrf: string, provider: string, man
     <tr><td>Your current spending limit</td><td data-field="spending-limit">${limit}</td></tr>
     <tr><td>Quote expires</td><td>${esc(new Date(cs.expiresAt).toISOString())}</td></tr>
     <tr><td>State</td><td class="state">${esc(cs.state)}</td></tr></table>
-    <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
-    <label>Maximum you authorize (${esc(cur)})<input name="maximum" inputmode="decimal" required placeholder="60.00"></label>
-    <p class="muted">This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve. Approving moves no money by itself.</p>
-    <p><button>Authorize and continue to payment approval</button></p></form>
+    <form method="post"><input type="hidden" name="action" value="preview"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <label>Maximum you authorize (${esc(cur)})<input name="maximum" inputmode="decimal" required placeholder="${esc(CURRENCY_PLACEHOLDER(cur))}"></label>
+    <p class="muted">Use digits and a dot as the decimal separator (no commas or spaces). You confirm the amount on the next page.
+    This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve. Approving moves no money by itself.</p>
+    <p><button>Check amount</button></p></form>
     <form method="post"><input type="hidden" name="action" value="cancel"><input type="hidden" name="csrf" value="${esc(csrf)}">
     <p><button class="secondary">Cancel this checkout</button></p></form>
     <p class="muted">Afterwards, return to your AI assistant and ask it for the checkout status. A browser redirect is never proof of payment.</p>`;
+}
+const CURRENCY_PLACEHOLDER = (cur: CheckoutView["currency"]) => (cur === "JPY" || cur === "KRW" ? "6000" : "60.00");
+/** WP-5 (IR-10): the confirm step. The human sees the parsed limit before any spending authority exists. */
+export function confirmBody(cs: CheckoutView, csrf: string, maximumMinor: number): string {
+  const cur = cs.currency;
+  return `<p data-field="confirm-limit">You are authorizing up to <b>${esc(cur)} ${esc(formatMinor(maximumMinor, cur))}</b> for this checkout.</p>
+    <table><tr><td>Checkout</td><td><code>${esc(cs.checkoutSessionId)}</code></td></tr>
+    <tr><td>Product</td><td>${esc(`${cs.identity.brand} ${cs.identity.model} · ${cs.identity.variant ?? "—"}`)}</td></tr>
+    <tr><td><b>Total payable</b></td><td><b>${esc(money(cs.totalMinor, cur))}</b></td></tr></table>
+    ${maximumMinor < cs.totalMinor ? `<p class="state">This limit is below the total payable, so payment will not start.</p>` : ""}
+    <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <input type="hidden" name="maximum" value="${esc(formatMinor(maximumMinor, cur))}"><input type="hidden" name="maximum_minor" value="${maximumMinor}">
+    <p><button>Confirm and continue to payment approval</button></p></form>
+    <form method="post"><input type="hidden" name="action" value="cancel"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <p><button class="secondary">Cancel this checkout</button></p></form>
+    <p class="muted">Wrong amount? Go back and enter it again. Nothing has been authorized yet.</p>`;
 }
 /** Metadata documents may be fetched cross-origin by browser-based MCP clients. */
 function sendPublic(res: ServerResponse, status: number, body: unknown) {

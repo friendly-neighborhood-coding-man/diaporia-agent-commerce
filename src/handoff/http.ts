@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import type { DevAuth } from "../auth/devAuth.js";
 import { CommerceError } from "../engine/errors.js";
-import { parseDecimalToMinor } from "../domain/money.js";
+import { MoneyError, parseOwnerAmountToMinor } from "../domain/money.js";
 import { esc, money, page } from "../http/html.js";
 import type { BrowserCheckoutHandoff, Handoff } from "./BrowserCheckoutHandoff.js";
 import type { HumanView } from "./drivers.js";
@@ -144,7 +144,9 @@ export function createHandoffRoutes(deps: HandoffHttpDeps) {
       if (action === "maximum") {
         let h = deps.handoff.get(hid, s.userId);
         let max: number;
-        try { max = parseDecimalToMinor(form.get("maximum") ?? "", h.currency); } catch { send(res, 400, page("Invalid amount", "<p>Enter an amount like 60.00.</p>")); return true; }
+        // WP-5 (IR-10): strict human-input parser; the re-rendered review page shows the effective maximum before takeover.
+        try { max = parseOwnerAmountToMinor(form.get("maximum") ?? "", h.currency); }
+        catch (e) { send(res, 400, page("Invalid amount", `<p>${esc(e instanceof MoneyError ? e.message : "Invalid amount.")}</p>`)); return true; }
         h = deps.handoff.setOwnerMaximum(s.userId, hid, max);
         send(res, 200, reviewPage(h, s));
         return true;

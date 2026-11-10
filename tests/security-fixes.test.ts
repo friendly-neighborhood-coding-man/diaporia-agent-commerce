@@ -6,12 +6,13 @@
  * These are the implementer's own tests. The reviewer's ATTACK/CONTROL probes live in
  * tests/security-review/independent-probes.test.ts and are not edited here.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OWNER, SONY_BLACK, TOKENS, buyer, call, mcpClient, researchAndCompare, startHarness, type Harness } from "./helpers.js";
-import { startHandoffHarness } from "./handoff-helpers.js";
+import { OwnerBrowser, closeSharedBrowser, prepareBravo, startHandoffHarness } from "./handoff-helpers.js";
+import { parseDecimalToMinor, parseOwnerAmountToMinor } from "../src/domain/money.js";
 import { Store } from "../src/store/Database.js";
 import { MandateRepository } from "../src/policy/PurchaseMandate.js";
 import { MockCommerceResearchAdapter } from "../src/research/CommerceResearchAdapter.js";
@@ -24,6 +25,7 @@ class SlowQuotes extends MockCommerceResearchAdapter {
 vi.setConfig({ testTimeout: 60_000 });
 const open: Array<{ close(): Promise<void> }> = [];
 const tmp: string[] = [];
+afterAll(async () => { await closeSharedBrowser(); });
 afterEach(async () => { for (const h of open.splice(0)) await h.close().catch(() => {}); for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true }); });
 async function harness(o: Parameters<typeof startHarness>[0] = {}) { const h = await startHarness(o); open.push(h); return h; }
 function tempDb() { const d = mkdtempSync(join(tmpdir(), "diaporia-fix-")); tmp.push(d); return join(d, "fix.sqlite"); }
@@ -425,5 +427,92 @@ describe("WP-4 (IR-09): the owner review session is bound to the checkout it rev
     expect([x1.status, x2.status].sort()).toEqual([303, 409]);
     expect(mandatesFor(h1, p.checkoutSessionId)).toBe(1);
     await ai.close();
+  });
+});
+
+describe("WP-5 (IR-10): human-typed spending limits are never silently rescaled", () => {
+  it("the owner-input parser accepts only digits with an optional dot and at most the currency's decimals", () => {
+    for (const bad of ["60,00", "1,000", "1.000,00", "\uFF16\uFF10.\uFF10\uFF10", " 60 ", "60 ", " 60", "6 0", "60.001", "+60", "-60", "60.", ".50", "6e1", "0x3C", "", "60.00\n", "\u0666\u0660", "1000000000"])
+      expect(() => parseOwnerAmountToMinor(bad, "USD"), JSON.stringify(bad)).toThrow(/dot as the decimal separator/);
+    expect(parseOwnerAmountToMinor("60", "USD")).toBe(6000);
+    expect(parseOwnerAmountToMinor("60.0", "USD")).toBe(6000);
+    expect(parseOwnerAmountToMinor("60.00", "USD")).toBe(6000);
+    expect(parseOwnerAmountToMinor("0.5", "USD")).toBe(50);
+    expect(parseOwnerAmountToMinor("6000", "JPY")).toBe(6000);
+    for (const bad of ["60.5", "6,000", "60.0"]) expect(() => parseOwnerAmountToMinor(bad, "JPY"), bad).toThrow(/whole number/);
+  });
+
+  it("the shared machine parser is unchanged (merchant and provider prices keep their thousands separators)", () => {
+    expect(parseDecimalToMinor("1,299.00", "USD")).toBe(129_900);
+    expect(parseDecimalToMinor("60.00", "USD")).toBe(6000);
+    expect(parseDecimalToMinor("60,00", "USD")).toBe(600_000);   // still the machine meaning; it is no longer used for human input
+  });
+
+  async function reviewed(h: Harness) {
+    const ai = await mcpClient(h.url, TOKENS.alice);
+    const { research } = await researchAndCompare(ai);
+    const p = await call(ai, "prepare_checkout", prepareArgs(research.purchaseSessionId));
+    const rv = await fetch(p.userAuthorizationUrl, formPost({ action: "review", ownerKey: OWNER.alice }, { Origin: h.url }));
+    const html = await rv.text();
+    const s = { cookie: rv.headers.get("set-cookie")!.split(";")[0]!, csrf: /name="csrf" value="([^"]+)"/.exec(html)![1]! };
+    const post = (body: Record<string, string>) => fetch(p.userAuthorizationUrl, formPost({ csrf: s.csrf, ...body }, { Origin: h.url, Cookie: s.cookie }));
+    return { ai, p, html, post };
+  }
+  const mandatesFor = (h: Harness, cs: string) => h.app.store.db.prepare("SELECT max_total_minor FROM mandates WHERE bound_checkout_session_id = ?").all(cs) as Array<{ max_total_minor: number }>;
+
+  it("the owner page previews the parsed limit, and authority is created only on the confirm", async () => {
+    const h = await harness();
+    const { ai, p, html, post } = await reviewed(h);
+    expect(html).toContain('name="action" value="preview"');
+    expect(html).toContain("dot as the decimal separator");
+    const prev = await post({ action: "preview", maximum: "60.00" });
+    expect(prev.status).toBe(200);
+    const page = await prev.text();
+    expect(page).toContain("You are authorizing up to <b>USD 60.00</b> for this checkout.");
+    expect(mandatesFor(h, p.checkoutSessionId)).toEqual([]);                 // nothing yet
+    expect(h.mock.calls.createOrder).toBe(0);
+    const fields = Object.fromEntries([...page.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, m[2]!]));
+    expect(fields.maximum).toBe("60.00"); expect(fields.maximum_minor).toBe("6000");
+    const ok = await post({ action: "authorize", maximum: fields.maximum!, maximum_minor: fields.maximum_minor! });
+    expect(ok.status).toBe(303);
+    expect(mandatesFor(h, p.checkoutSessionId)).toEqual([{ max_total_minor: 6000 }]);
+    await ai.close();
+  });
+
+  it("'60,00' and other ambiguous inputs are refused at preview and at authorize; no authority is created", async () => {
+    const h = await harness();
+    const { ai, p, post } = await reviewed(h);
+    for (const maximum of ["60,00", "1.000,00", " 60 ", "\uFF16\uFF10.\uFF10\uFF10", "60.001"]) {
+      const r = await post({ action: "preview", maximum });
+      expect(r.status, maximum).toBe(400);
+      expect(await r.text()).toContain("dot as the decimal separator");
+    }
+    const r = await post({ action: "authorize", maximum: "60,00" });
+    expect(r.status).toBe(400);
+    expect(mandatesFor(h, p.checkoutSessionId)).toEqual([]);
+    expect(h.mock.calls.createOrder).toBe(0);
+    await ai.close();
+  });
+
+  it("a confirm whose amount differs from the previewed one is refused", async () => {
+    const h = await harness();
+    const { ai, p, post } = await reviewed(h);
+    expect((await post({ action: "preview", maximum: "60.00" })).status).toBe(200);
+    expect((await post({ action: "authorize", maximum: "6000.00", maximum_minor: "600000" })).status).toBe(409);
+    expect(mandatesFor(h, p.checkoutSessionId)).toEqual([]);
+    await ai.close();
+  });
+
+  it("the handoff maximum uses the strict parser too", async () => {
+    const h = await startHandoffHarness(); open.push(h);
+    const { prepared } = await prepareBravo(h);
+    const owner = new OwnerBrowser(h, prepared.handoffId);
+    expect((await owner.review(OWNER.alice)).status).toBe(200);
+    for (const bad of ["60,00", "1,000", " 60 "]) {
+      const r = await owner.maximum(bad);
+      expect(r.status, bad).toBe(400); expect(r.html).toContain("dot as the decimal separator");
+    }
+    const ok = await owner.maximum("100.00");
+    expect(ok.status).toBe(200); expect(ok.html).toContain("Effective maximum");
   });
 });
