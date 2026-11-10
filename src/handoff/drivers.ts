@@ -136,6 +136,8 @@ export interface KernelDriverOptions {
   allowLive: boolean;
   /** Absolute wall-clock bound, independent of the provider idle timeout. Maximum 10 minutes. */
   maxWallMs?: number;
+  /** Inject an isolated journal for offline crash/restart tests; otherwise fake HTTP writes no journal. */
+  journalDir?: string;
   /** Offline tests can replace the detached process with a spy. */
   watchdog?: (sessionId: string, hardWallMs: number) => Promise<void>;
 }
@@ -160,18 +162,19 @@ export class KernelDriver implements BrowserDriver {
     if (!apiKey || apiKey.length < 10) throw new Error("KERNEL API key missing");
     this.#key = apiKey;
     this.o = { fetchImpl: opts.fetchImpl ?? fetch, baseUrl: (opts.baseUrl ?? "https://api.onkernel.com").replace(/\/$/, ""), maxSessions: opts.maxSessions ?? 3,
-      maxWallMs: Math.min(600_000, Math.max(1_000, Math.floor(opts.maxWallMs ?? 600_000))), watchdog: opts.watchdog ?? (async () => undefined) };
+      maxWallMs: Math.min(600_000, Math.max(1_000, Math.floor(opts.maxWallMs ?? 600_000))), watchdog: opts.watchdog ?? (async () => undefined),
+      journalDir: opts.journalDir ?? (opts.fetchImpl ? "" : resolve(process.cwd(), ".data/kernel-watchdogs")) };
     // Never send a real key to a configurable endpoint outside the official KERNEL API.
     if (!opts.fetchImpl && this.o.baseUrl !== "https://api.onkernel.com") throw new Error("Live KERNEL endpoint must be the official API host");
   }
   get sessionsCreated() { return this.#created; }
 
-  private watchdogDir(): string { return resolve(process.cwd(), ".data/kernel-watchdogs"); }
+  private watchdogDir(): string { return this.o.journalDir; }
   private watchdogFile(id: string): string { return join(this.watchdogDir(), `handoff-${id}.json`); }
 
   /** Only session ids and lifecycle timestamps go on disk; never tokens or Live View URLs. */
   private markWatchdog(id: string, deadline: number, status: "PENDING" | "VERIFIED_DELETED") {
-    if (this.o.fetchImpl !== fetch) return;
+    if (!this.watchdogDir()) return;
     mkdirSync(this.watchdogDir(), { recursive: true, mode: 0o700 });
     writeFileSync(this.watchdogFile(id), JSON.stringify({
       sessionId: id, deadline, status, checkedAt: Date.now(),
@@ -184,7 +187,7 @@ export class KernelDriver implements BrowserDriver {
    * If provider cleanup cannot be VERIFIED, refuse to bring up live handoff.
    */
   async recoverOrphanedBrowsers(): Promise<number> {
-    if (this.o.fetchImpl !== fetch || !existsSync(this.watchdogDir())) return 0;
+    if (!this.watchdogDir() || !existsSync(this.watchdogDir())) return 0;
     let recovered = 0;
     for (const name of readdirSync(this.watchdogDir())) {
       if (!/^handoff-[A-Za-z0-9_-]{3,128}\.json$/.test(name)) continue;
@@ -208,7 +211,7 @@ export class KernelDriver implements BrowserDriver {
 
   /** Mark a session deleted only after the provider confirms it is absent. */
   journalVerifiedDeletion(id: string): void {
-    if (this.o.fetchImpl !== fetch || !existsSync(this.watchdogFile(id))) return;
+    if (!this.watchdogDir() || !existsSync(this.watchdogFile(id))) return;
     let deadline: number;
     try { deadline = JSON.parse(readFileSync(this.watchdogFile(id), "utf8")).deadline; }
     catch { throw new Error("KERNEL watchdog journal corrupted"); }
@@ -218,11 +221,11 @@ export class KernelDriver implements BrowserDriver {
 
   /** Detached hard-wall-clock deletion, independent of the MCP server lifetime. */
   private async armWatchdog(id: string): Promise<void> {
+    const until = Date.now() + this.o.maxWallMs;
+    this.markWatchdog(id, until, "PENDING");
     if (this.o.fetchImpl !== fetch) { await this.o.watchdog(id, this.o.maxWallMs); return; } // fake HTTP, no paid backend
     const file = resolve(process.cwd(), "scripts/kernel-handoff-watchdog.mjs");
     if (!existsSync(file)) throw new Error("KERNEL watchdog missing; refusing live handoff");
-    const until = Date.now() + this.o.maxWallMs;
-    this.markWatchdog(id, until, "PENDING");
     const child = spawn(process.execPath, [file], {
       detached: true, stdio: "ignore", windowsHide: true,
       env: { DIAPORIA_KERNEL_WATCHDOG_SESSION: id, DIAPORIA_KERNEL_WATCHDOG_KEY: this.#key,
@@ -238,7 +241,7 @@ export class KernelDriver implements BrowserDriver {
 
   /** The provider's list is paginated. A successful DELETE without verification is not sufficient. */
   async verifyDeleted(id: string): Promise<void> {
-    if (this.o.fetchImpl !== fetch) return; // injectable fake used by offline tests
+    if (this.o.fetchImpl !== fetch && !this.watchdogDir()) return; // injectable fake w/o a journal
     for (let offset = 0; offset <= 1000; offset += 100) {
       const res = await this.api("GET", `/browsers?limit=100&offset=${offset}`, undefined, 10_000);
       const rows = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : null;
