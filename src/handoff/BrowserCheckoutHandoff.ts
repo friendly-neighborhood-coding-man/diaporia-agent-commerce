@@ -187,8 +187,19 @@ export class BrowserCheckoutHandoff {
 
   private async closeSession(handoffId: string): Promise<void> {
     const s = this.sessions.get(handoffId);
-    this.sessions.delete(handoffId);
-    if (s) await s.close().catch(() => undefined);
+    if (!s) return;
+    try {
+      await s.close();
+      this.sessions.delete(handoffId);
+    } catch {
+      // Remote DELETE failure must never be silently considered cleanup.
+      const owner = this.store.db.prepare("SELECT user_id FROM browser_handoffs WHERE handoff_id=?")
+        .get(handoffId) as { user_id: string } | undefined;
+      if (owner) this.gateway.audit.append(handoffId, owner.user_id,
+        "HANDOFF_CLEANUP_UNVERIFIED", { browserProvider: s.provider });
+      // Keep the session so a later tick, finish, or shutdown can retry.
+      throw new CommerceError("PROVIDER_ERROR", "Browser cleanup not verified; retry or investigate the KERNEL session");
+    }
   }
 
   // ------------------------------------------------------------------ prepare (AI-initiated, PREPARE scope)
