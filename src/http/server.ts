@@ -87,7 +87,8 @@ export function createApp(cfg: AppConfig): App {
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
   const mcpLimiter = new RateLimiter(120, 60_000);
   const webLimiter = new RateLimiter(30, 60_000);
-  const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number }>();
+  // IR-09 (WP-4): an owner review session is bound to the checkout it reviewed (csId) and to the summary shown.
+  const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number; csId: string; summaryHash: string }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
     sameOrigin: (req) => sameOriginStrict(req, allowedOrigins), readText }) : null;
@@ -218,7 +219,8 @@ export function createApp(cfg: AppConfig): App {
           let cs;
           try { cs = gateway.sessions.getCheckout(csId, userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
           const sid = randomBytes(24).toString("base64url"); const csrf = randomBytes(24).toString("base64url");
-          ownerSessions.set(sid, { userId, csrf, expiresAt: now() + 10 * 60_000 });
+          ownerSessions.set(sid, { userId, csrf, expiresAt: now() + 10 * 60_000, csId, summaryHash: cs.summaryHash });
+          for (const [k, v] of ownerSessions) if (v.expiresAt <= now()) ownerSessions.delete(k);
           res.setHeader("Set-Cookie", `dac_owner=${sid}; HttpOnly; SameSite=Strict; Path=/authorize; Max-Age=600${base.protocol === "https:" ? "; Secure" : ""}`);
           return html(res, 200, envPage("Review and set your spending limit", reviewBody(cs, csrf, payments.name, cs.mandateId ? gateway.mandates.get(cs.mandateId, userId) : null)));
         }
@@ -226,6 +228,8 @@ export function createApp(cfg: AppConfig): App {
           const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
           const sess = sid ? ownerSessions.get(sid) : undefined;
           if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          // IR-09 (WP-4): a session opened for another checkout is refused and NOT consumed.
+          if (sess.csId !== csId) return html(res, 403, envPage("Different checkout", "<p>You reviewed a different checkout. Open this checkout's own link and review it first. Nothing was changed.</p>"));
           ownerSessions.delete(sid!);
           let out;
           try { out = await gateway.cancelCheckoutAsOwner(sess.userId, csId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
@@ -237,9 +241,13 @@ export function createApp(cfg: AppConfig): App {
           const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
           const sess = sid ? ownerSessions.get(sid) : undefined;
           if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          // IR-09 (WP-4): a session opened for another checkout is refused and NOT consumed; no authority is created.
+          if (sess.csId !== csId) return html(res, 403, envPage("Different checkout", "<p>You reviewed a different checkout. Open this checkout's own link and review it first. No spending limit was created.</p>"));
           ownerSessions.delete(sid!);
           let cs;
           try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
+          // The human must have seen exactly this summary.
+          if (cs.summaryHash !== sess.summaryHash) return html(res, 409, envPage("Checkout changed", "<p>The checkout changed since you reviewed it. Review it again. No spending limit was created.</p>"));
           let maximum: number;
           try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, envPage("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
           let out;

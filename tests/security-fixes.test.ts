@@ -360,3 +360,70 @@ describe("WP-3 (IR-11): reconcile never replays create-order after expiry or out
     expect(h.mock.calls.createOrder).toBe(before);
   });
 });
+
+describe("WP-4 (IR-09): the owner review session is bound to the checkout it reviewed", () => {
+  async function review(url: string, ownerKey = OWNER.alice) {
+    const r = await fetch(url, formPost({ action: "review", ownerKey }, { Origin: new URL(url).origin }));
+    const html = await r.text();
+    return { status: r.status, cookie: r.headers.get("set-cookie")?.split(";")[0] ?? "", csrf: /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? "" };
+  }
+  const post = (url: string, s: { cookie: string; csrf: string }, body: Record<string, string>) =>
+    fetch(url, formPost({ csrf: s.csrf, ...body }, { Origin: new URL(url).origin, Cookie: s.cookie }));
+  const mandatesFor = (h: Harness, cs: string) => (h.app.store.db.prepare("SELECT count(*) n FROM mandates WHERE bound_checkout_session_id = ?").get(cs) as any).n as number;
+  async function twoCheckouts(h: Harness) {
+    const ai = await mcpClient(h.url, TOKENS.alice);
+    const r1 = await researchAndCompare(ai); const a = await call(ai, "prepare_checkout", prepareArgs(r1.research.purchaseSessionId));
+    const r2 = await researchAndCompare(ai); const b = await call(ai, "prepare_checkout", prepareArgs(r2.research.purchaseSessionId));
+    return { ai, a, b };
+  }
+
+  it("review A, then authorize B with A's session: refused, no mandate; the session is not consumed and A still authorizes", async () => {
+    const h = await harness();
+    const { ai, a, b } = await twoCheckouts(h);
+    const s = await review(a.userAuthorizationUrl);
+    expect(s.status).toBe(200);
+    expect((await post(b.userAuthorizationUrl, s, { action: "authorize", maximum: "60.00" })).status).toBe(403);
+    expect(mandatesFor(h, b.checkoutSessionId)).toBe(0);
+    expect((await call(ai, "get_checkout_status", { checkoutSessionId: b.checkoutSessionId })).state).toBe("APPROVAL_REQUIRED");
+    const ok = await post(a.userAuthorizationUrl, s, { action: "authorize", maximum: "60.00" });
+    expect(ok.status).toBe(303);
+    expect(mandatesFor(h, a.checkoutSessionId)).toBe(1);
+    expect(h.mock.calls.createOrder).toBe(1);
+    await ai.close();
+  });
+
+  it("review A, then cancel B with A's session: refused and B is unchanged", async () => {
+    const h = await harness();
+    const { ai, a, b } = await twoCheckouts(h);
+    const s = await review(a.userAuthorizationUrl);
+    expect((await post(b.userAuthorizationUrl, s, { action: "cancel" })).status).toBe(403);
+    expect((await call(ai, "get_checkout_status", { checkoutSessionId: b.checkoutSessionId })).state).toBe("APPROVAL_REQUIRED");
+    expect((await post(a.userAuthorizationUrl, s, { action: "cancel" })).status).toBe(200);
+    expect((await call(ai, "get_checkout_status", { checkoutSessionId: a.checkoutSessionId })).state).toBe("CANCELLED");
+    await ai.close();
+  });
+
+  it("a checkout whose summary changed since review is refused; the human must re-review", async () => {
+    const h = await harness();
+    const { ai, a } = await twoCheckouts(h);
+    const s = await review(a.userAuthorizationUrl);
+    h.app.store.db.prepare("UPDATE checkout_sessions SET summary_hash = ? WHERE id = ?").run("0".repeat(64), a.checkoutSessionId);
+    expect((await post(a.userAuthorizationUrl, s, { action: "authorize", maximum: "60.00" })).status).toBe(409);
+    expect(mandatesFor(h, a.checkoutSessionId)).toBe(0);
+    await ai.close();
+  });
+
+  it("two processes on one SQLite file: concurrent owner authorization of one checkout still creates exactly one mandate", async () => {
+    const dbPath = tempDb();
+    const h1 = await harness({ dbPath }); const h2 = await harness({ dbPath });
+    const ai = await mcpClient(h1.url, TOKENS.alice);
+    const { research } = await researchAndCompare(ai);
+    const p = await call(ai, "prepare_checkout", prepareArgs(research.purchaseSessionId));
+    const u1 = p.userAuthorizationUrl as string; const u2 = u1.replace(h1.url, h2.url);
+    const [s1, s2] = await Promise.all([review(u1), review(u2)]);
+    const [x1, x2] = await Promise.all([post(u1, s1, { action: "authorize", maximum: "60.00" }), post(u2, s2, { action: "authorize", maximum: "60.00" })]);
+    expect([x1.status, x2.status].sort()).toEqual([303, 409]);
+    expect(mandatesFor(h1, p.checkoutSessionId)).toBe(1);
+    await ai.close();
+  });
+});
