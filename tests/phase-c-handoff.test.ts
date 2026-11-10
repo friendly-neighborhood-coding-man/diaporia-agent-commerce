@@ -70,7 +70,7 @@ async function humanUsesMerchantButton(hh: PhaseCHarness, id: string, action: "a
   const [popup] = await Promise.all([context.waitForEvent("page"), page.click("#paypal-button")]);
   await popup.waitForURL(/\/mock-paypal\/checkout/, { timeout: 15_000 }).catch(() => undefined);
   if (action === "approve") await Promise.all([page.waitForURL(/\/order\/return/, { timeout: 15_000 }), popup.click("#approve")]);
-  else if (action === "cancel") { await Promise.all([popup.waitForEvent("close"), popup.click("#cancel")]); await page.waitForFunction(() => /cancelled/i.test(document.getElementById("pay-status")?.textContent ?? "")); }
+  else if (action === "cancel") { await Promise.all([popup.waitForEvent("close"), popup.click("#cancel").catch((e: unknown) => { if (!popup.isClosed()) throw e; })]); await page.waitForFunction(() => /cancelled/i.test(document.getElementById("pay-status")?.textContent ?? "")); }
   return { page, popup };
 }
 

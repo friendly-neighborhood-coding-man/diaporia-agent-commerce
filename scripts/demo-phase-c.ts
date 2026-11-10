@@ -73,7 +73,7 @@ try {
     const { page, context } = (app.handoff!.fixtureSession(p.handoffId) as LocalFixtureSession).humanPage();
     const [popup] = await Promise.all([context.waitForEvent("page"), page.click("#paypal-button")]);
     await popup.waitForURL(/mock-paypal\/checkout/);
-    if (cancel) { await Promise.all([popup.waitForEvent("close"), popup.click("#cancel")]); await page.waitForFunction(() => /cancelled/i.test(document.getElementById("pay-status")?.textContent ?? "")); }
+    if (cancel) { await Promise.all([popup.waitForEvent("close"), popup.click("#cancel").catch((e: unknown) => { if (!popup.isClosed()) throw e; })]); await page.waitForFunction(() => /cancelled/i.test(document.getElementById("pay-status")?.textContent ?? "")); }
     else await Promise.all([page.waitForURL(/order\/return/), popup.click("#approve")]);
     say(6, "Human clicks “I'm done” → read-only observation → HMAC-signed, nonce-bound seller status");
     await post({ action: "finish", csrf }, rv.cookie);

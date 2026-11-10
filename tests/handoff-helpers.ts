@@ -60,6 +60,10 @@ export function humanPage(h: HandoffHarness, handoffId: string) {
   return (h.app.handoff!.fixtureSession(handoffId) as LocalFixtureSession).humanPage();
 }
 
+// The button closes the popup itself; Playwright may report "Target closed" for that click. Only a still-open popup is a failure.
+const clickThatClosesPopup = (popup: { click(s: string): Promise<void>; isClosed(): boolean }, sel: string) =>
+  popup.click(sel).catch((e: unknown) => { if (!popup.isClosed()) throw e; });
+
 /** The human presses the merchant's own PayPal button and approves (or cancels) in the popup. */
 export async function humanPaysInPopup(h: HandoffHarness, handoffId: string, action: "approve" | "cancel") {
   const { page, context } = humanPage(h, handoffId);
@@ -68,7 +72,7 @@ export async function humanPaysInPopup(h: HandoffHarness, handoffId: string, act
   if (action === "approve") {
     await Promise.all([page.waitForURL(/\/order\/confirmation/), popup.click("#approve")]);
   } else {
-    await Promise.all([popup.waitForEvent("close"), popup.click("#cancel")]);
+    await Promise.all([popup.waitForEvent("close"), clickThatClosesPopup(popup, "#cancel")]);
   }
   return { page };
 }
