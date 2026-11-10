@@ -74,3 +74,9 @@ Scope `purchase.read`, read-only. The same contract, plus `observation` (read-on
 ## Payment status fields (lifecycle round)
 
 `get_checkout_status` and `get_purchase_receipt` also return `paymentStatus`, `payment { paymentEnvironment, providerOrderId, captureId, providerCaptureStatus, pendingReason, lastAuthoritativeVerificationAt, recommendedNextAction, newPaymentAttemptProhibited }` and `merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED"`. The receipt adds `isFinalPaymentReceipt` and `refund`. A `CAPTURE_PENDING` payment is never a completed receipt. See PAYMENT_LIFECYCLE.md.
+
+## Owner-only HTTP routes added in the MVP integration branch
+
+- `POST /owner/checkouts/{cs_id}/cancel` (header `X-Owner-Key`): cancels a checkout only while no capture can exist (`PREPARED`, `HOLD`, or `APPROVAL_REQUIRED` when the provider still reports the order unapproved). Returns `200 {cancelled: true}` and releases the mandate reservation, or `409 {cancelled: false, reason}` with `BUYER_ALREADY_APPROVED_AT_PROVIDER`, `PROVIDER_STATE_UNKNOWN` or `NOT_CANCELLABLE_IN_<STATE>`. The owner review page has the same Cancel button.
+- `prepare_checkout` repeated with identical arguments after the checkout reached `COMPLETED` returns that checkout with `deduplicated: true`; one purchase session buys at most once.
+- With `DIAPORIA_AUTH_MODE=oauth`, `/mcp` accepts OAuth access tokens only. See [REMOTE_MCP_AUTH.md](REMOTE_MCP_AUTH.md).

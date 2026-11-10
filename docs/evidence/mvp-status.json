@@ -1,0 +1,313 @@
+{
+  "schema": "diaporia.mvp-status.v1",
+  "updatedAt": "2026-11-10",
+  "branch": "integration/mvp-full-layer",
+  "pushed": false,
+  "base": {
+    "main": "280e869",
+    "pr5": "a64f5c4",
+    "pr6": "221fda9",
+    "pr7": "f6860d3",
+    "pr8": "8520cdb"
+  },
+  "headNote": "HEAD is the commit containing this file; see git log 221fda9..HEAD",
+  "tests": {
+    "total": 347,
+    "passed": 347,
+    "files": 24,
+    "node": "22.23.4"
+  },
+  "layers": [
+    {
+      "id": 0,
+      "name": "Integration and security foundation",
+      "status": "MOCK_VERIFIED",
+      "tests": "347/347 local",
+      "mockEvidence": [
+        "docs/MERGE_READINESS.md"
+      ],
+      "liveEvidence": [],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "branch not pushed; CI not run",
+        "Phase C C0 independent security review outstanding",
+        "KERNEL network isolation unverified in real KERNEL environment"
+      ],
+      "securityBlockers": [
+        "Phase C C0 independent review"
+      ],
+      "nextTask": "Owner review; push as draft PR",
+      "approvalRequired": [
+        "push",
+        "merge"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "Research and product intelligence",
+      "status": "MOCK_VERIFIED",
+      "tests": "research-eval 18/18, 0 critical (run 1: 13/18)",
+      "mockEvidence": [
+        "docs/evidence/research-eval/"
+      ],
+      "liveEvidence": [
+        "earlier: 2 Channel3 + 2 Tavily calls (README live evidence table)"
+      ],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "same author wrote eval world and system",
+        "rule-based router with closed brand/color lists"
+      ],
+      "securityBlockers": [],
+      "nextTask": "Extend eval with real provider responses",
+      "approvalRequired": [
+        "paid provider calls"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Purchase authorization and policy",
+      "status": "MOCK_VERIFIED",
+      "tests": "core, mcp-e2e; dogfood B,F,G",
+      "mockEvidence": [
+        "docs/evidence/dogfood/"
+      ],
+      "liveEvidence": [],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "single-node SQLite"
+      ],
+      "securityBlockers": [],
+      "nextTask": null,
+      "approvalRequired": []
+    },
+    {
+      "id": 3,
+      "name": "Checkout execution and PayPal",
+      "status": "MOCK_VERIFIED",
+      "tests": "payment-lifecycle, phase-c-*, dogfood A,E,H,J",
+      "mockEvidence": [
+        "docs/evidence/dogfood/",
+        "docs/evidence/phase-c-c0-2026-11-10.json"
+      ],
+      "liveEvidence": [
+        "PayPal Sandbox run 2: capture 92U85747JU359434A PENDING/PENDING_REVIEW at last read, not COMPLETED"
+      ],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "Phase C C1/C2/C3 not run",
+        "no real webhook delivery"
+      ],
+      "securityBlockers": [
+        "Phase C C1 hold: security review, HTTPS host, new signed approval"
+      ],
+      "nextTask": "Regenerate Phase C approval statement from this branch when C1 is approved",
+      "approvalRequired": [
+        "C1",
+        "C2",
+        "C3",
+        "any Sandbox mutation"
+      ],
+      "subGates": {
+        "phaseC_C0": "MOCK_VERIFIED",
+        "phaseC_C1": "BLOCKED",
+        "phaseC_C2": "BLOCKED",
+        "phaseC_C3": "BLOCKED"
+      }
+    },
+    {
+      "id": 4,
+      "name": "Host-neutral MCP/API service",
+      "status": "MOCK_VERIFIED",
+      "tests": "oauth.test.ts 12; dogfood K",
+      "mockEvidence": [
+        "tests/oauth.test.ts",
+        "docs/REMOTE_MCP_AUTH.md"
+      ],
+      "liveEvidence": [],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "no remote host connected",
+        "no public HTTPS deployment",
+        "owner-key login stands in for an IdP"
+      ],
+      "securityBlockers": [],
+      "nextTask": "Research/read-only OAuth deployment + one remote host",
+      "approvalRequired": [
+        "public deployment",
+        "Cloudflare route"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "User approval and trust interface",
+      "status": "MOCK_VERIFIED",
+      "tests": "approval-ui.test.ts 6; phase-c-merchant label test",
+      "mockEvidence": [
+        "tests/approval-ui.test.ts"
+      ],
+      "liveEvidence": [
+        "owner-observed public MOCK confirmation page (before label fix)"
+      ],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "no accessibility review"
+      ],
+      "securityBlockers": [],
+      "nextTask": null,
+      "approvalRequired": []
+    },
+    {
+      "id": 6,
+      "name": "Service plane and managed billing",
+      "status": "MOCK_VERIFIED",
+      "tests": "service-plane, subscription-billing",
+      "mockEvidence": [
+        "docs/MANAGED_BILLING.md"
+      ],
+      "liveEvidence": [],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "plan price UNKNOWN",
+        "merchant country eligibility unchecked",
+        "managed mode only as loopback simulation"
+      ],
+      "securityBlockers": [],
+      "nextTask": "Owner decisions on PR #4",
+      "approvalRequired": [
+        "price",
+        "country eligibility",
+        "each Sandbox step"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Purchase outcomes, recovery, accountability",
+      "status": "MOCK_VERIFIED",
+      "tests": "dogfood E,H; dogfood-findings 4",
+      "mockEvidence": [
+        "docs/evidence/dogfood/"
+      ],
+      "liveEvidence": [],
+      "remoteHostEvidence": [],
+      "limitations": [
+        "fulfillment, shipping, third-party refunds NOT_INTEGRATED (out of scope)"
+      ],
+      "securityBlockers": [],
+      "nextTask": null,
+      "approvalRequired": []
+    },
+    {
+      "id": 8,
+      "name": "Dogfooding and evaluation harness",
+      "status": "MOCK_VERIFIED",
+      "tests": "dogfood A-H,J,K PASS; I NOT_RUN",
+      "mockEvidence": [
+        "docs/evidence/dogfood/"
+      ],
+      "liveEvidence": [],
+      "remoteHostEvidence": [
+        "earlier four-host MOCK runs: docs/INTEROP.md, docs/HANDOFF_HOST_MATRIX.md"
+      ],
+      "limitations": [
+        "scenario I needs owner PC",
+        "scenario J public HTTPS smoke not run"
+      ],
+      "securityBlockers": [],
+      "nextTask": "Run scenario I on owner PC",
+      "approvalRequired": [
+        "use of owner PC"
+      ]
+    }
+  ],
+  "dogfood": {
+    "A": "PASS",
+    "B": "PASS",
+    "C": "PASS",
+    "D": "PASS",
+    "E": "PASS",
+    "F": "PASS",
+    "G": "PASS",
+    "H": "PASS",
+    "I": "NOT_RUN",
+    "J": "PASS_OFFLINE_LOOPBACK",
+    "K": "PASS"
+  },
+  "acceptance": [
+    {
+      "criterion": "build/typecheck/tests/secret scan",
+      "status": "MET_LOCAL"
+    },
+    {
+      "criterion": "core policies intact",
+      "status": "MET"
+    },
+    {
+      "criterion": "layers connected",
+      "status": "MET_MOCK"
+    },
+    {
+      "criterion": "critical MOCK scenarios",
+      "status": "MET_MOCK"
+    },
+    {
+      "criterion": "four local hosts full workflow incl. status",
+      "status": "BLOCKED"
+    },
+    {
+      "criterion": "remote host on authenticated HTTPS",
+      "status": "BLOCKED"
+    },
+    {
+      "criterion": "Phase C Sandbox via C1/C2/C3",
+      "status": "BLOCKED"
+    },
+    {
+      "criterion": "no payment exceeds mandate",
+      "status": "MET_MOCK"
+    },
+    {
+      "criterion": "no duplicate capture on UNKNOWN",
+      "status": "MET_MOCK"
+    },
+    {
+      "criterion": "truthful receipt/merchant order",
+      "status": "MET_MOCK"
+    },
+    {
+      "criterion": "usage/cost limits fail closed",
+      "status": "MET_MOCK"
+    },
+    {
+      "criterion": "failures observable/recoverable",
+      "status": "MET_MOCK"
+    },
+    {
+      "criterion": "UI distinguishes MOCK/Sandbox",
+      "status": "MET"
+    },
+    {
+      "criterion": "docs real vs simulated",
+      "status": "MET"
+    },
+    {
+      "criterion": "reproducible demo",
+      "status": "MET"
+    }
+  ],
+  "mvpTechnicallyComplete": false,
+  "defectsFoundByDogfooding": [
+    "DF-1 startup recovery skipped UNKNOWN without capture id (fixed)",
+    "DF-2 repeat prepare after COMPLETED created a new checkout (fixed)",
+    "research eval: dropped color word (fixed)"
+  ],
+  "statusVocabulary": [
+    "NOT_STARTED",
+    "SCAFFOLDED",
+    "IMPLEMENTED",
+    "MOCK_VERIFIED",
+    "LIVE_VERIFIED",
+    "BLOCKED",
+    "FAILED"
+  ]
+}

@@ -4,6 +4,8 @@
 
 A cross-platform AI purchasing engine with evidence-based product research, bounded checkout authorization, and PayPal Sandbox integration. Built for MCP-enabled assistants.
 
+> **MVP integration status (2026-11-10):** see [docs/MVP_IMPLEMENTATION_STATUS.md](docs/MVP_IMPLEMENTATION_STATUS.md) for what is implemented, MOCK-verified, live-verified and blocked, and run `npm run dogfood` for the end-to-end scenarios. Mission and invariants: [docs/MISSION.md](docs/MISSION.md).
+
 ## In 30 seconds
 
 Any MCP client (Claude, ChatGPT, Grok, others) calls five tools on this server:
@@ -35,8 +37,8 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 | PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`; **live Sandbox use: 2 owner-approved runs** (see the Sandbox checkout row above and docs/TEST_REPORT.md) |
 | Real MCP host: Claude Code CLI → localhost | **Tested** (discovery, research → compare → prepare → status, $6,000 refusal, cross-user and scope boundaries; mock payments). See docs/HOST_TEST_EVIDENCE.md |
 | Local MCP hosts: Claude Code, OpenAI Codex CLI, xAI Grok Build, Nous Hermes Agent | **Tested, 4/4 PASS** on localhost with MOCK data (see docs/INTEROP.md) |
-| Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** Need a public HTTPS endpoint; only research-only public mode is available without OAuth |
-| Production user authentication (OAuth 2.1 for MCP) | **Not implemented.** Dev-only per-user tokens on loopback; public deployments run research-only and payment is disabled |
+| Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** OAuth now exists (row below), but no public HTTPS endpoint is deployed. A public OAuth deployment offers research and read tools only |
+| Remote MCP authentication (OAuth 2.1) | **Implemented, offline-verified** (`DIAPORIA_AUTH_MODE=oauth`): RFC 9728/8414 discovery, dynamic registration, PKCE S256, audience-bound tokens, refresh rotation, revocation. The official MCP SDK client completes the flow in tests. Owner-key login stands in for a real identity provider. Not deployed; no remote host connected. See [docs/REMOTE_MCP_AUTH.md](docs/REMOTE_MCP_AUTH.md) |
 | Live product research (catalog search, independent evidence) | **BYOK adapters for Channel3 (catalog) and Tavily (independent evidence)**, off by default. Bounded live smoke only (see Live evidence status below). Listing prices are never treated as checkout quotes. Without keys, all research is MOCK |
 | Merchant identity verification (registry + recipient attestation) | **MOCK providers only**: workflow implemented and mock-tested; no official registry or PayPal attestation integrated (see below) |
 | Merchant order confirmation / fulfillment / shipping | Not provided and never claimed. A completed capture is reported as payment only (`purchaseOutcome.merchantPurchaseComplete: false`). Sandbox payments go to DIAPORIA's own Sandbox test account; the demo merchants are fictional |
@@ -125,7 +127,7 @@ Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`
 | Tavily independent search | ✓ (2 calls total, 2026-11-09) | First run: a false contradiction from an over-broad negation rule. After the fix, a corrective run found Sony WH-CH720N ANC `SUFFICIENT_TRUE` from independent review sites; a comparative "isn't the very best" sentence was read correctly. A retailer page (amazon.com) was counted as independent, so retailer and marketplace domains are now excluded (fixed offline) |
 | KERNEL page inspection | — | BYOK adapter implemented and fake-HTTP tested; **no live call made** (paid; needs owner approval) |
 | Shopify Storefront Cart | — | Fixtures only |
-| Production OAuth, managed billing, merchant orders | — | Not implemented |
+| Production OAuth deployment, managed billing, merchant orders | — | OAuth implemented offline only; billing MOCK only; merchant orders not integrated |
 
 Raw evidence (sanitized) is in `docs/evidence/`. Setup is in [docs/SETUP.md](docs/SETUP.md), and the judge walkthrough is in [docs/HACKATHON_DEMO.md](docs/HACKATHON_DEMO.md).
 
