@@ -1,6 +1,6 @@
 # Phase C — PayPal Sandbox in the KERNEL same-session merchant checkout
 
-**Status:** PREPARATION ONLY; no Phase C PayPal or KERNEL call has been executed. This runbook does not grant authorization. A separate owner decision is required for each network/paid stage.
+**Status:** C0 (offline) implemented and tested on `feature/phase-c-sandbox-merchant`: the controlled test merchant is `apps/phase-c-test-merchant/` ([design and deployment guide](PHASE_C_TEST_MERCHANT.md)), and the exact per-gate commands are in [PHASE_C_OPERATOR_CHECKLIST.md](PHASE_C_OPERATOR_CHECKLIST.md). No Phase C PayPal or KERNEL call has been executed. This runbook does not grant authorization. A separate owner decision is required for each network/paid stage.
 
 ## What this proves (and does not)
 

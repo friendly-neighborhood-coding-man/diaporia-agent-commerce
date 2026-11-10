@@ -1,0 +1,25 @@
+{
+  "schema": "diaporia.phase-c.network-allowlist.v1",
+  "reviewStatus": "PENDING_OPERATOR_REVIEW",
+  "note": "Exact hostnames only. No wildcards, IP literals, ports or private names. The merchant's own host is added at runtime from MERCHANT_PUBLIC_ORIGIN and is not listed here. Every change to this file changes the C1/C2 approval digest.",
+  "browserHosts": [
+    {
+      "host": "www.sandbox.paypal.com",
+      "purpose": "PayPal JavaScript SDK v6 Sandbox script (https://www.sandbox.paypal.com/web-sdk/v6/core) and the Sandbox checkout popup",
+      "evidence": "paypal-examples/v6-web-sdk-sample-integration commit c4333b44 client/components/paypalPayments/oneTimePayment/html/src/recommended/index.html loads this exact script URL"
+    }
+  ],
+  "serverHosts": [
+    {
+      "host": "api-m.sandbox.paypal.com",
+      "purpose": "Merchant server only: OAuth client-credentials, Orders v2 create/get/capture. Never contacted by the browser and never part of the KERNEL egress list."
+    }
+  ],
+  "unverifiedCandidates": [
+    {
+      "host": "www.paypalobjects.com",
+      "status": "NOT_ADDED",
+      "reason": "Commonly serves PayPal static assets, but no official v6 page reached from this environment documents it as required. Add only after C1 records NETWORK_POLICY_BLOCKED naming this host, with a new approval digest."
+    }
+  ]
+}

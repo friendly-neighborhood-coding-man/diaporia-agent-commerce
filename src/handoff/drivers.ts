@@ -10,6 +10,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { KernelCreationLedger } from "./kernelLedger.js";
 
 export type DriverPhase = "AUTOMATION" | "HUMAN_TAKEOVER" | "OBSERVATION" | "CLOSED";
 
@@ -130,8 +131,10 @@ export async function launchLocalChromium(opts: { headless?: boolean } = {}): Pr
 export interface KernelDriverOptions {
   fetchImpl?: typeof fetch;
   baseUrl?: string;
-  /** Hard cap on browsers this process may create. Default 3. */
+  /** Hard cap on browsers this process may create. Default 3. Resets on restart: see creationLedger. */
   maxSessions?: number;
+  /** Durable per-approval creation cap that survives restarts and is shared by processes on this host. */
+  creationLedger?: KernelCreationLedger;
   /** Live backend refuses unrestricted browser sessions. Fake HTTP may opt in for testing. */
   enforceEgressAllowlist?: boolean;
   /** Must be true to construct: KERNEL browsers are billed. Tests use a fake fetch. */
@@ -158,11 +161,13 @@ export class KernelDriver implements BrowserDriver {
   readonly live = true;
   #key: string;
   #created = 0;
-  private readonly o: Required<Omit<KernelDriverOptions, "allowLive">>;
+  readonly #ledger: KernelCreationLedger | null;
+  private readonly o: Required<Omit<KernelDriverOptions, "allowLive" | "creationLedger">>;
   constructor(apiKey: string, opts: KernelDriverOptions) {
     if (!opts.allowLive) throw new Error("KernelDriver needs allowLive: true (billed browser sessions)");
     if (!apiKey || apiKey.length < 10) throw new Error("KERNEL API key missing");
     this.#key = apiKey;
+    this.#ledger = opts.creationLedger ?? null;
     this.o = { fetchImpl: opts.fetchImpl ?? fetch, baseUrl: (opts.baseUrl ?? "https://api.onkernel.com").replace(/\/$/, ""), maxSessions: opts.maxSessions ?? 3,
       maxWallMs: Math.min(600_000, Math.max(1_000, Math.floor(opts.maxWallMs ?? 600_000))), watchdog: opts.watchdog ?? (async () => undefined),
       journalDir: opts.journalDir ?? (opts.fetchImpl ? "" : resolve(process.cwd(), ".data/kernel-watchdogs")),
@@ -273,6 +278,8 @@ export class KernelDriver implements BrowserDriver {
          !opts.allowedHosts.includes(opts.merchantHost)))
       throw new Error("Live KERNEL handoff requires a reviewed merchant/network egress allowlist");
     if (this.#created >= this.o.maxSessions) throw new KernelBudgetExceeded();
+    // Durable slot BEFORE the billed request; an unanswered create still consumes it (throws KernelLedgerExhausted).
+    this.#ledger?.reserve(opts.label);
     this.#created++;
     const created = await this.api("POST", "/browsers", {
       headless: false, stealth: false, kiosk_mode: false,

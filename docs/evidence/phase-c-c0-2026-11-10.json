@@ -1,0 +1,78 @@
+{
+  "schema": "diaporia.phase-c.evidence.v1",
+  "gate": "C0",
+  "date": "2026-11-10",
+  "evidenceClass": "C0_OFFLINE_MOCK",
+  "statement": "Offline only. MOCK PayPal inside the test merchant, local Chromium, loopback. No PayPal Sandbox order, no KERNEL browser, no deployment.",
+  "runs": {
+    "demo_phase_c_approve": {
+      "evidenceClass": "C0_OFFLINE_MOCK",
+      "diaporiaState": "ORDER_CONFIRMED",
+      "sellerConfirmation": {
+        "status": "CONFIRMED",
+        "source": "PHASE_C_MERCHANT_SIGNED_STATUS_MOCK_ALLOWED",
+        "orderRef": "PHC-48E3537F3667",
+        "totalMinor": 10760,
+        "problem": null
+      },
+      "merchantState": "ORDER_CONFIRMED",
+      "merchantHistory": [
+        "NO_ORDER->ORDER_CREATED:MOCK_ORDERS_V2_CREATE",
+        "ORDER_CREATED->BUYER_APPROVED:MOCK_ORDERS_V2_GET",
+        "BUYER_APPROVED->PAYMENT_COMPLETED:MOCK_ORDERS_V2_CAPTURE",
+        "PAYMENT_COMPLETED->ORDER_CONFIRMED:MERCHANT_VERIFICATION"
+      ],
+      "fulfillment": "NOT_VERIFIED",
+      "capturedTotalMinor": 10760,
+      "merchantPayPalCalls": {
+        "create": 1,
+        "get": 2,
+        "capture": 1
+      },
+      "diaporiaPayPalOrders": 0,
+      "diaporiaCreatedPaymentOrder": false,
+      "paypalNetworkCalls": 0,
+      "kernelCalls": 0
+    },
+    "demo_phase_c_cancel": {
+      "evidenceClass": "C0_OFFLINE_MOCK",
+      "diaporiaState": "CANCELLED",
+      "sellerConfirmation": {
+        "status": "NO_ORDER",
+        "source": "PHASE_C_MERCHANT_SIGNED_STATUS_MOCK_ALLOWED",
+        "orderRef": "PHC-DC9D8669971E",
+        "totalMinor": 10760,
+        "problem": null
+      },
+      "merchantState": "ORDER_CANCELLED",
+      "merchantHistory": [
+        "NO_ORDER->ORDER_CREATED:MOCK_ORDERS_V2_CREATE",
+        "ORDER_CREATED->ORDER_CANCELLED:MOCK_ORDERS_V2_GET"
+      ],
+      "fulfillment": "NOT_VERIFIED",
+      "capturedTotalMinor": 10760,
+      "merchantPayPalCalls": {
+        "create": 1,
+        "get": 2,
+        "capture": 0
+      },
+      "diaporiaPayPalOrders": 0,
+      "diaporiaCreatedPaymentOrder": false,
+      "paypalNetworkCalls": 0,
+      "kernelCalls": 0
+    }
+  },
+  "tests": {
+    "total": 297,
+    "newPhaseC": 80,
+    "files": [
+      "tests/phase-c-merchant.test.ts",
+      "tests/phase-c-handoff.test.ts"
+    ]
+  },
+  "liveNotTested": [
+    "C1 real Sandbox popup in KERNEL",
+    "C2 Sandbox buyer approval + seller capture",
+    "C3 seller-side read-only verification"
+  ]
+}

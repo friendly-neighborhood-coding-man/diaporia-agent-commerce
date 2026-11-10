@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "tsx src/main.ts",
     "start": "node dist/src/main.js",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p apps/phase-c-test-merchant/tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "demo:e2e": "tsx scripts/demo-e2e.ts",
@@ -26,7 +26,15 @@
     "demo:service": "tsx scripts/demo-service.ts",
     "live:smoke": "tsx scripts/live-smoke.ts",
     "live:evidence": "tsx scripts/live-evidence-check.ts",
-    "demo:handoff": "tsx scripts/demo-handoff.ts"
+    "demo:handoff": "tsx scripts/demo-handoff.ts",
+    "merchant:start": "tsx apps/phase-c-test-merchant/src/main.ts",
+    "merchant:start:built": "node dist-merchant/apps/phase-c-test-merchant/src/main.js",
+    "phase-c:approval": "tsx scripts/phase-c-approval.ts",
+    "phase-c:recipe": "tsx scripts/phase-c-recipe.ts",
+    "phase-c:sign": "tsx scripts/phase-c-sign.ts",
+    "demo:phase-c": "tsx scripts/demo-phase-c.ts",
+    "phase-c:c3-compare": "tsx scripts/phase-c-c3-compare.ts",
+    "phase-c:kernel-check": "tsx scripts/phase-c-kernel-check.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
