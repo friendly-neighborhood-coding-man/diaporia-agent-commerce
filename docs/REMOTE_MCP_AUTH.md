@@ -32,6 +32,8 @@ An OAuth access token is an AI-client credential. It cannot create a mandate, re
 
 A public deployment stays research/read only until an independent security review approves payment-capable routes. No flag in this code turns them on.
 
+The deployable public profile is `src/remote/main.ts` (`deploy/remote-mcp/`): it fixes this configuration, refuses insecure environments at startup, and adds a redirect allowlist, a registration limit, an absolute grant age and proxy-aware rate limits. See [REMOTE_MCP_SECURITY_GATES.md](REMOTE_MCP_SECURITY_GATES.md).
+
 ## Verified (offline, `tests/oauth.test.ts`)
 
 - The official MCP TypeScript SDK client (`@modelcontextprotocol/sdk` 1.32.2, `StreamableHTTPClientTransport` + `OAuthClientProvider`) completes discovery, dynamic registration, PKCE authorization and token exchange against this server, then lists tools and runs research/compare.

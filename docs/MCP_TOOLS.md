@@ -10,6 +10,7 @@ All money is **integer minor units** (cents for USD). Every tool returns `struct
 | `prepare_checkout` | **State-mutating, payment-related.** Creates a checkout; may reserve mandate budget and create a PayPal order. Never captures. | readOnlyHint ✗, destructiveHint ✗, idempotentHint ✓, `_meta["diaporia/capturesFunds"]=false` | `purchase.prepare` (hidden from tokens without it and in public mode) |
 | `get_checkout_status` | Read-only | readOnlyHint ✓ | `purchase.read` |
 | `get_purchase_receipt` | Read-only | readOnlyHint ✓ | `purchase.read` |
+| `get_usage_summary` | Read-only; the caller's metered provider usage (and simulated service billing in managed mode); never charges | readOnlyHint ✓, idempotentHint ✓ | `purchase.read` |
 
 There is deliberately no `buy_now` / capture tool.
 

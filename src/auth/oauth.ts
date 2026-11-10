@@ -36,6 +36,16 @@ export interface OAuthConfig {
    * only ones a client may request). A public deployment without payment tools omits purchase.prepare.
    */
   offeredScopes?: string[];
+  /**
+   * Remote deployments: redirect URIs a dynamically registered client may use. Entries are exact URIs,
+   * prefixes ending in "*", or the word "loopback" (http on 127.0.0.1/localhost/[::1], any port).
+   * Absent = any valid redirect (local default).
+   */
+  allowedRedirectUris?: string[];
+  /** Absolute lifetime of a grant (refresh family) in seconds; refresh rotation never extends it. Absent = unlimited. */
+  grantMaxAgeSec?: number;
+  /** Maximum pending consent requests kept in memory; the oldest are evicted first. Default 5000. */
+  maxPending?: number;
 }
 
 export const SUPPORTED_SCOPES = [...ALL_CLIENT_SCOPES];
@@ -75,6 +85,12 @@ export function validateRedirectUri(raw: unknown): string {
 }
 
 /** Exact match, except loopback http redirects may differ only in port (RFC 8252 §7.3). */
+export function redirectAllowed(allow: readonly string[], uri: string): boolean {
+  let u: URL; try { u = new URL(uri); } catch { return false; }
+  return allow.some((a) => a === "loopback" ? (u.protocol === "http:" && LOOPBACK_HOSTS.has(u.hostname))
+    : a.endsWith("*") ? uri.startsWith(a.slice(0, -1)) : a === uri);
+}
+
 export function redirectMatches(registered: string, presented: string): boolean {
   if (registered === presented) return true;
   try {
@@ -145,6 +161,8 @@ export class OAuthAuthority {
       if (!Array.isArray(b.redirect_uris) || b.redirect_uris.length < 1 || b.redirect_uris.length > 5)
         throw new OAuthError("invalid_redirect_uri", "redirect_uris must list 1 to 5 URIs");
       const uris = b.redirect_uris.map(validateRedirectUri);
+      if (this.cfg.allowedRedirectUris && !uris.every((u) => redirectAllowed(this.cfg.allowedRedirectUris!, u)))
+        throw new OAuthError("invalid_redirect_uri", "redirect_uri is not on this deployment's allowlist of AI host callbacks");
       const method = b.token_endpoint_auth_method === undefined ? "none" : String(b.token_endpoint_auth_method);
       if (!["none", "client_secret_post", "client_secret_basic"].includes(method)) throw new OAuthError("invalid_client_metadata", "Unsupported token_endpoint_auth_method");
       const grants = Array.isArray(b.grant_types) ? b.grant_types.map(String) : ["authorization_code", "refresh_token"];
@@ -296,6 +314,10 @@ export class OAuthAuthority {
     if (r.revoked_at !== null) throw new OAuthError("invalid_grant", "Refresh token revoked");
     if (r.used_at !== null) { this.revokeFamily(String(r.family_id)); throw new OAuthError("invalid_grant", "Refresh token reuse detected; grant revoked"); }
     if (Number(r.expires_at) <= this.now()) throw new OAuthError("invalid_grant", "Refresh token expired");
+    if (this.cfg.grantMaxAgeSec !== undefined) {
+      const first = this.store.db.prepare("SELECT MIN(created_at) AS t FROM oauth_tokens WHERE family_id = ?").get(String(r.family_id)) as Row;
+      if (Number(first.t) + this.cfg.grantMaxAgeSec * 1000 <= this.now()) { this.revokeFamily(String(r.family_id)); throw new OAuthError("invalid_grant", "Grant reached its maximum age; authorize again"); }
+    }
     const resource = form.get("resource");
     if (resource !== null && resource !== r.resource) throw new OAuthError("invalid_target", "resource does not match the grant");
     const had = String(r.scope).split(" ");
@@ -345,8 +367,37 @@ export class OAuthAuthority {
   private gc() {
     const t = this.now();
     for (const [k, v] of this.pending) if (v.expiresAt <= t) this.pending.delete(k);
-    if (this.pending.size > 5000) this.pending.clear();
+    // Map iteration order is insertion order, i.e. oldest first: evict by age, never wipe live requests.
+    const max = this.cfg.maxPending ?? 5000;
+    for (const k of this.pending.keys()) { if (this.pending.size <= max) break; this.pending.delete(k); }
   }
+
+  /**
+   * Housekeeping for long-running deployments: deletes expired codes, grants dead for over a day, and clients older than `unusedClientAgeSec` that never obtained a token. Returns row counts.
+   */
+  prune(unusedClientAgeSec = 3600): { codes: number; tokens: number; clients: number } {
+    const t = this.now(); const day = 86_400_000;
+    return this.store.transaction(() => {
+      const codes = this.store.db.prepare("DELETE FROM oauth_codes WHERE expires_at <= ?").run(t).changes;
+      // Whole grants only (a grant's first token dates it for grantMaxAgeSec): delete a family once none of its
+      // tokens has been usable for a day.
+      const tokens = this.store.db.prepare(`DELETE FROM oauth_tokens WHERE family_id IN (SELECT family_id FROM oauth_tokens GROUP BY family_id
+        HAVING MAX(CASE WHEN revoked_at IS NULL AND expires_at > ? THEN 1 ELSE 0 END) = 0 AND MAX(COALESCE(revoked_at, expires_at)) <= ?)`).run(t - day, t - day).changes;
+      const clients = this.store.db.prepare(`DELETE FROM oauth_clients WHERE created_at <= ?
+        AND client_id NOT IN (SELECT client_id FROM oauth_tokens) AND client_id NOT IN (SELECT client_id FROM oauth_codes)`).run(t - unusedClientAgeSec * 1000).changes;
+      return { codes: Number(codes), tokens: Number(tokens), clients: Number(clients) };
+    });
+  }
+
+  /** Revokes every grant of users that no longer hold an owner key (run at startup after a key change). */
+  revokeGrantsExceptUsers(userIds: string[]): number {
+    const marks = userIds.map(() => "?").join(",");
+    const sql = `UPDATE oauth_tokens SET revoked_at = ? WHERE revoked_at IS NULL${userIds.length ? ` AND user_id NOT IN (${marks})` : ""}`;
+    return Number(this.store.db.prepare(sql).run(this.now(), ...userIds).changes);
+  }
+
+  /** Revokes every grant (owner-key rotation). */
+  revokeAllGrants(): number { return Number(this.store.db.prepare("UPDATE oauth_tokens SET revoked_at = ? WHERE revoked_at IS NULL").run(this.now()).changes); }
 
   private errorResponse(e: unknown): { status: number; body: Record<string, unknown> } {
     if (e instanceof OAuthError) return { status: e.status, body: e.body() };

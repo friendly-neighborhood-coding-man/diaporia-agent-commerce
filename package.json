@@ -38,7 +38,12 @@
     "dogfood": "tsx scripts/dogfood.ts",
     "eval:research": "tsx scripts/research-eval.ts",
     "scenario-i:selftest": "node scripts/interop/scenario-i-selftest.mjs",
-    "eval:semantic-fidelity": "node scripts/interop/semantic-fidelity.mjs"
+    "eval:semantic-fidelity": "node scripts/interop/semantic-fidelity.mjs",
+    "remote:start": "node dist/src/remote/main.js",
+    "remote:dev": "tsx src/remote/main.ts",
+    "remote:owner-key": "node scripts/remote/owner-key.mjs",
+    "remote:validate": "tsx scripts/remote/validate.ts",
+    "remote:validate:https": "bash deploy/remote-mcp/local-https-check.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

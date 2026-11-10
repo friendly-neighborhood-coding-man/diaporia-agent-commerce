@@ -1,0 +1,60 @@
+# DIAPORIA remote research/read-only MCP: TLS termination and path allowlist.
+# Only the MCP endpoint, OAuth endpoints and OAuth metadata are forwarded. /healthz stays internal
+# (container health check; IR-21). Every other path
+# (owner, authorize, paypal, mock-paypal, billing, handoff, operator, ...) gets 404 here, before the app,
+# which independently answers 403 for them. Cloudflare is not assumed to provide authentication.
+# A Host other than MCP_HOSTNAME matches no site: Caddy returns an empty 200 and proxies nothing
+# (verified by scripts/remote/validate.ts); the app itself answers 421 for any foreign Host.
+{
+	admin off
+	# CADDY_EMAIL: ACME account contact for Let's Encrypt (production). Ignored with tls internal.
+	email {$CADDY_EMAIL:admin@invalid}
+	servers {
+		strict_sni_host on
+	}
+}
+
+{$MCP_HOSTNAME} {
+	# CADDY_TLS: empty value is not allowed; use one of
+	#   "{$CADDY_EMAIL}"                          Let's Encrypt via ACME (DNS-only record, ports 80/443 open)
+	#   "/certs/origin.pem /certs/origin.key"     Cloudflare Origin CA (proxied record, Full (strict))
+	#   "internal"                                local HTTPS emulation only (Caddy's own CA)
+	tls {$CADDY_TLS}
+
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	@allowed path /mcp /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server /oauth/register /oauth/authorize /oauth/token /oauth/revoke
+	handle @allowed {
+		# X-Forwarded-For is replaced with the peer address (untrusted clients cannot forge it);
+		# the app trusts it only from this container's fixed address.
+		reverse_proxy app:8080 {
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 30s
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				# Headers are dropped wholesale (Authorization, X-Owner-Key, Cookie, Location with codes, ...).
+				request>uri regexp "\?.*$" "?<query removed>"
+				request>headers delete
+				resp_headers delete
+			}
+		}
+	}
+}
