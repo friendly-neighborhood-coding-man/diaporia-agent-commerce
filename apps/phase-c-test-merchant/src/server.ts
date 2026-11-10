@@ -167,7 +167,7 @@ ${button}
 <h2>Browser returned from checkout</h2>
 <p>This page only shows that your browser came back. It is <b>not</b> proof of payment.</p>
 <p>Server-side order state: <b data-field="order-state">${esc(s.state)}</b> (evidence: ${esc(s.evidenceSource)}). Fulfillment: NOT_VERIFIED; nothing ships.</p>
-${confirmed ? `<p data-order-confirmation>Order ${esc(s.orderRef ?? "")} confirmed by the merchant server for ${formatUsd(s.totalMinor ?? 0)} USD (Sandbox).</p>` : `<p>No confirmed order yet.</p>`}
+${confirmed ? `<p data-order-confirmation>Order ${esc(s.orderRef ?? "")} confirmed by the merchant server for ${formatUsd(s.totalMinor ?? 0)} USD (<span data-field="payment-environment">${isMock ? "MOCK: simulated, no PayPal call, no money" : "PayPal Sandbox: test money only"}</span>).</p>` : `<p>No confirmed order yet.</p>`}
 </div>`;
   };
 

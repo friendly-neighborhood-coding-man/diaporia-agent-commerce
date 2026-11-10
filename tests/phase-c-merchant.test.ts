@@ -176,6 +176,18 @@ describe("MOCK checkout: cart binding, idempotency, replay and failure states", 
     expect((await b.addToCart()).text).toContain("CART_LOCKED");
   });
 
+  it("MOCK return page labels a confirmed order as MOCK, never as Sandbox", async () => {
+    m = await startMockMerchant();
+    const { b, c, created } = await cartWithOrder(m);
+    m.mock!.buyerApprove(created.body.orderId);
+    expect((await b.api("/api/checkout/orders/approve", { cartRef: c.ref, csrf: c.csrf, orderId: created.body.orderId })).body.state).toBe("ORDER_CONFIRMED");
+    const html = await (await fetch(`${m.localUrl}/order/return?cart=${c.ref}`)).text();
+    expect(html).toContain("data-order-confirmation");
+    expect(html).toContain("MOCK: simulated, no PayPal call, no money");
+    expect(html).not.toMatch(/Sandbox/);
+    expect(html).toContain("Fulfillment: NOT_VERIFIED");
+  });
+
   it("price changed after the cart was shown → no order", async () => {
     m = await startMockMerchant({ storeKnobs: { unitPriceDriftAfterCartMinor: 100 } });
     const { created } = await cartWithOrder(m);
