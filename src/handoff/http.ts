@@ -18,7 +18,7 @@ import type { HumanView } from "./drivers.js";
  *  POST action=finish     → read-only observation + seller-side check; browser destroyed
  *  POST action=cancel     → only before takeover
  *
- * The KERNEL live-view URL appears ONLY in the HTML of an authenticated takeover response (no-store, no-referrer).
+ * The KERNEL live-view URL appears ONLY in the HTML of an authenticated takeover response (no-store, Referrer-Policy same-origin: no referrer leaves the origin).
  * It is never returned by MCP, written to the audit log or printed.
  */
 export interface HandoffHttpDeps {
@@ -42,7 +42,7 @@ export function createHandoffRoutes(deps: HandoffHttpDeps) {
     res.statusCode = status;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Referrer-Policy", "same-origin");
     res.setHeader("Content-Security-Policy", `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'${frameOrigins.length ? `; frame-src ${frameOrigins.join(" ")}` : ""}`);
     res.end(body);
   };

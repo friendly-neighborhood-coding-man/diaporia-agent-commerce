@@ -57,3 +57,11 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
 - **Known host behaviour folded in:** Codex `exec` needs a per-tool approval for the non-read-only `prepare_checkout` (seen in the handoff run). Grok needs user-scope registration. Hermes needs a disposable home and a cleaned environment.
 - **Verification:** `npm run scenario-i:selftest` runs setup, serve, a simulated host (MCP SDK client through the proxy), a simulated human, the probes and the builder. Three simulated hosts PASS, and a negative control that skips phase 2 FAILS on ten checks. The compared fields were checked to be populated, not null.
 - **Uncertainty:** the self-test transcripts are synthetic copies in each host's format, so it proves only that the tooling works. Real host transcripts may differ in format. If a parser misses a real host's calls, `hostOriginated` fails, and the fix belongs in the parser, not in the server.
+
+## 2026-11-10 · Scenario I run 1 stopped at the human step (DF-3)
+
+- **Observed:** all four hosts finished phase 1 (`APPROVAL_REQUIRED`) on commit 2009936. The owner then opened each authorization link in his browser, and every Review submit returned `{"error":"Forbidden"}`.
+- **Cause (reproduced in headless Chromium):** every response set `Referrer-Policy: no-referrer`. Under the Fetch standard, a browser then sends `Origin: null` on a same-origin form POST, and the owner page's Origin check (`sameOrigin`) rejects `null`. The MOCK PayPal approve form and the browser-handoff owner page had the same defect. The fetch()-based tests never send an Origin header, so none of them could see it.
+- **Change:** `Referrer-Policy: same-origin` on the server and on the handoff pages. A referrer still never leaves the origin, and same-origin POSTs now carry the real Origin. The Origin check is unchanged: `null` and foreign origins are still refused.
+- **Verification:** tests/browser-owner-flow.test.ts drives review → $60 → authorize → MOCK approve → COMPLETED in a real Chromium and asserts that all three POSTs carried the page's origin. A second test checks that `null` and foreign origins still get 403. The test fails on the old header. 349/349 tests pass.
+- **Uncertainty:** run 1 host phase-1 transcripts are kept as evidence of an aborted run. Its checkouts expired unauthorized. Any rerun is a new run on the new commit.

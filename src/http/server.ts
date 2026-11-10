@@ -345,7 +345,7 @@ function header(req: IncomingMessage, name: string): string | undefined { const 
 function sameOrigin(req: IncomingMessage, allowed: string[]): boolean { const o = req.headers.origin; return o === undefined || allowed.includes(o); }
 function securityHeaders(res: ServerResponse) {
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("Cache-Control", "no-store");
 }
 function send(res: ServerResponse, status: number, body: unknown) {
