@@ -77,6 +77,19 @@ export class Store {
     if (!mcols.has("auto_use")) this.db.exec("ALTER TABLE mandates ADD COLUMN auto_use INTEGER NOT NULL DEFAULT 0");
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS mandates_one_live_per_bound_checkout ON mandates(bound_checkout_session_id)
       WHERE bound_checkout_session_id IS NOT NULL AND status <> 'REVOKED'`);
+    // IR-02 (WP-2): one live checkout per (user, purchase session, offer, quantity), enforced by the database across
+    // concurrent calls and processes. The predicate is the complement of the states that allow a new attempt
+    // (CANCELLED, FAILED, EXPIRED, REFUNDED), so it covers exactly what findActiveDuplicate (PREPARED, HOLD,
+    // APPROVAL_REQUIRED, APPROVED, CAPTURE_PENDING, UNKNOWN) and findPaymentInFlightOrDone's COMPLETED dedup cover.
+    // prepareCheckout also re-checks inside BEGIN IMMEDIATE; this index is the backstop. A legacy database that
+    // already holds such duplicates (the IR-02 defect) cannot get the index; the transactional check still applies.
+    try {
+      this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS checkouts_one_live_per_purchase_offer ON checkout_sessions(user_id, purchase_session_id, offer_id, quantity)
+        WHERE state NOT IN ('CANCELLED','FAILED','EXPIRED','REFUNDED')`);
+    } catch (e) {
+      if (!/UNIQUE constraint failed/i.test(e instanceof Error ? e.message : String(e))) throw e;
+      console.warn("[diaporia] existing duplicate live checkouts: index checkouts_one_live_per_purchase_offer not created; the transactional check still applies");
+    }
     this.db.exec(`CREATE INDEX IF NOT EXISTS checkout_by_capture ON checkout_sessions(capture_id);
       CREATE TABLE IF NOT EXISTS webhook_events (
         event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, capture_id TEXT, checkout_session_id TEXT,

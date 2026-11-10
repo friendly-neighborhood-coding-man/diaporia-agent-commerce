@@ -357,13 +357,44 @@ export class CommerceGateway {
         policy: null, paymentEffect: "NONE" as const, paymentEnvironment: paymentEnvironment(this.payments.name), liveMerchantCheckout: false as const, note: "This merchant has no DIAPORIA-supported checkout. DIAPORIA does not pay third-party merchants; use the merchant's own checkout." };
     }
     if ("code" in bound) throw new CommerceError(bound.code, bound.detail);
-    let cs = this.sessions.createCheckout({
-      checkoutSessionId, merchantIdentity: bound.binding,
-      userId, purchaseSessionId: ps.purchaseSessionId, offerId: offer.offerId, merchantId: offer.merchantId, quoteId: quote.quoteId, identity: ps.lockedIdentity,
-      quantity: input.quantity, currency: ps.intent.currency, cost: v.cost, totalMinor: v.cost.totalMinor, clientMaxMinor: input.maximumApprovedTotalMinor,
-      provider: this.payments.name, expiresAt: Math.min(Date.parse(quote.expiresAt), Date.parse(bound.binding.attestationExpiresAt), this.now() + (this.config.checkoutTtlMs ?? CHECKOUT_TTL_MS)),
-      merchantName: offer.merchantName, merchantDomain: offer.merchantDomain, checkoutPath: v.checkoutPath, disclosure: disclosureFor(this.payments.name),
+    // IR-02 (WP-2). The checks above ran before several awaits (offers, quote, merchant identity), so a concurrent
+    // identical prepare (in this process or another process on the same database) may have created a checkout since.
+    // Re-decide atomically: the same two checks and the insert in ONE BEGIN IMMEDIATE transaction, with the partial
+    // UNIQUE index checkouts_one_live_per_purchase_offer as the database backstop. The loser returns the winner's
+    // checkout (deduplicated) and never reserves a mandate or calls createOrder.
+    const lockedIdentity = ps.lockedIdentity; const cost = v.cost; const totalMinor = v.cost.totalMinor; const binding = bound.binding;
+    type Claim = { created: true; cs: CheckoutSession } | { created: false; cs: CheckoutSession; after?: "COMPLETED" };
+    const claim = this.store.transaction((): Claim => {
+      const winner = (): Claim | null => {
+        const f = this.sessions.findPaymentInFlightOrDone(userId, ps.purchaseSessionId);
+        if (f && !(f.offerId === input.offerId && f.quantity === input.quantity))
+          throw new CommerceError("INVALID_STATE", `A payment for this purchase session is ${f.state}; a new payment attempt is prohibited until it is final.`, { checkoutSessionId: f.checkoutSessionId });
+        if (f && f.state === "COMPLETED") return { created: false, cs: f, after: "COMPLETED" };
+        const d = this.sessions.findActiveDuplicate(userId, ps.purchaseSessionId, input.offerId, input.quantity);
+        return d ? { created: false, cs: d } : null;
+      };
+      const w = winner();
+      if (w) return w;
+      try {
+        return { created: true, cs: this.sessions.createCheckout({
+          checkoutSessionId, merchantIdentity: binding,
+          userId, purchaseSessionId: ps.purchaseSessionId, offerId: offer.offerId, merchantId: offer.merchantId, quoteId: quote.quoteId, identity: lockedIdentity,
+          quantity: input.quantity, currency: ps.intent.currency, cost, totalMinor, clientMaxMinor: input.maximumApprovedTotalMinor,
+          provider: this.payments.name, expiresAt: Math.min(Date.parse(quote.expiresAt), Date.parse(binding.attestationExpiresAt), this.now() + (this.config.checkoutTtlMs ?? CHECKOUT_TTL_MS)),
+          merchantName: offer.merchantName, merchantDomain: offer.merchantDomain, checkoutPath: v.checkoutPath, disclosure: disclosureFor(this.payments.name),
+        }) };
+      } catch (e) {
+        if (!/UNIQUE constraint failed/i.test(errorText(e))) throw e;
+        const again = winner();
+        if (again) return again;
+        throw e;
+      }
     });
+    if (!claim.created) {
+      this.audit.append(claim.cs.checkoutSessionId, userId, "PREPARE_DEDUPLICATED", { ...(claim.after ? { after: claim.after } : {}), concurrent: true, actor });
+      return this.prepareResult(claim.after ? claim.cs : this.expireIfNeeded(claim.cs), null, true);
+    }
+    let cs = claim.cs;
     this.audit.append(cs.checkoutSessionId, userId, "CHECKOUT_PREPARED", { totalMinor: cs.totalMinor, currency: cs.currency, summaryHash: cs.summaryHash, actor });
     this.audit.append(cs.checkoutSessionId, userId, "MERCHANT_IDENTITY_BOUND", { attestationId: bound.binding.attestationId, intendedPayeeId: bound.binding.intendedPayeeId,
       payeeRelationship: bound.binding.payeeRelationship, provenance: bound.binding.provenance });

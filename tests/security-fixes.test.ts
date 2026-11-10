@@ -14,6 +14,12 @@ import { OWNER, SONY_BLACK, TOKENS, buyer, call, mcpClient, researchAndCompare, 
 import { startHandoffHarness } from "./handoff-helpers.js";
 import { Store } from "../src/store/Database.js";
 import { MandateRepository } from "../src/policy/PurchaseMandate.js";
+import { MockCommerceResearchAdapter } from "../src/research/CommerceResearchAdapter.js";
+
+/** The MOCK catalog with realistic merchant-quote latency, as in the reviewer's IR-02 probe. */
+class SlowQuotes extends MockCommerceResearchAdapter {
+  override async getQuote(...a: Parameters<MockCommerceResearchAdapter["getQuote"]>) { await new Promise((r) => setTimeout(r, 150)); return super.getQuote(...a); }
+}
 
 vi.setConfig({ testTimeout: 60_000 });
 const open: Array<{ close(): Promise<void> }> = [];
@@ -194,6 +200,77 @@ describe("WP-1 (IR-01): no purchase completes without a human step", () => {
     const ev = audit(h, p.checkoutSessionId);
     expect(ev.find((e) => e.type === "MANDATE_RESERVED")!.data.actor).toMatch(/^MCP_TOKEN:[0-9a-f]{12}$/);
     expect(ev.find((e) => e.type === "PROVIDER_ORDER_RECOVERED")!.data.actor).toBe("RECONCILE");
+    await ai.close();
+  });
+});
+
+describe("WP-2 (IR-02): one purchase session pays at most once, under concurrency", () => {
+  const liveCheckouts = (h: Harness, ps: string) => (h.app.store.db.prepare("SELECT count(*) n FROM checkout_sessions WHERE purchase_session_id = ?").get(ps) as any).n as number;
+
+  it("concurrent identical prepare_checkout (slow quotes): one checkout, one createOrder, one reservation; the loser is deduplicated", async () => {
+    const h = await harness({ research: new SlowQuotes() });
+    const m = await rawMandate(h.url, { productIdentity: SONY_BLACK, currency: "USD", maximumTotalMinor: 12000, maximumTransactions: 2, autoUse: true });
+    const a = await mcpClient(h.url, TOKENS.alice); const b = await mcpClient(h.url, TOKENS.alice);
+    const { research } = await researchAndCompare(a);
+    const [p1, p2] = await Promise.all([call(a, "prepare_checkout", prepareArgs(research.purchaseSessionId)), call(b, "prepare_checkout", prepareArgs(research.purchaseSessionId))]);
+    expect(p1.checkoutSessionId).toBe(p2.checkoutSessionId);
+    expect([p1.deduplicated, p2.deduplicated].sort()).toEqual([false, true]);
+    expect(liveCheckouts(h, research.purchaseSessionId)).toBe(1);
+    expect(h.mock.calls.createOrder).toBe(1);
+    const row = h.app.store.db.prepare("SELECT reserved_minor, transactions_used FROM mandates WHERE id = ?").get(m.body.mandateId) as any;
+    expect(row.transactions_used).toBe(1); expect(row.reserved_minor).toBe(p1.purchaseSummary.totalMinor);
+    const winner = [p1, p2].find((p) => !p.deduplicated)!;
+    await buyer(h, winner.approvalUrl);
+    expect((await call(a, "get_checkout_status", { checkoutSessionId: winner.checkoutSessionId })).state).toBe("COMPLETED");
+    // After completion an identical prepare returns the completed checkout; still one order.
+    const again = await call(b, "prepare_checkout", prepareArgs(research.purchaseSessionId));
+    expect(again.checkoutSessionId).toBe(winner.checkoutSessionId); expect(again.deduplicated).toBe(true);
+    expect(h.mock.calls.createOrder).toBe(1);
+    await a.close(); await b.close();
+  });
+
+  it("five concurrent identical prepares still give exactly one checkout and one provider order", async () => {
+    const h = await harness({ research: new SlowQuotes() });
+    await rawMandate(h.url, { productIdentity: SONY_BLACK, currency: "USD", maximumTotalMinor: 30000, maximumTransactions: 5, autoUse: true });
+    const clients = await Promise.all([1, 2, 3, 4, 5].map(() => mcpClient(h.url, TOKENS.alice)));
+    const { research } = await researchAndCompare(clients[0]!);
+    const out = await Promise.all(clients.map((c) => call(c, "prepare_checkout", prepareArgs(research.purchaseSessionId))));
+    expect(new Set(out.map((p) => p.checkoutSessionId)).size).toBe(1);
+    expect(out.filter((p) => !p.deduplicated)).toHaveLength(1);
+    expect(h.mock.calls.createOrder).toBe(1);
+    for (const c of clients) await c.close();
+  });
+
+  it("two server processes on ONE SQLite file: concurrent identical prepares create one checkout and one provider order in total", async () => {
+    const dbPath = tempDb();
+    const h1 = await harness({ dbPath, research: new SlowQuotes() }); const h2 = await harness({ dbPath, research: new SlowQuotes() });
+    await rawMandate(h1.url, { productIdentity: SONY_BLACK, currency: "USD", maximumTotalMinor: 12000, maximumTransactions: 2, autoUse: true });
+    const a = await mcpClient(h1.url, TOKENS.alice); const b = await mcpClient(h2.url, TOKENS.alice);
+    const { research } = await researchAndCompare(a);
+    const [p1, p2] = await Promise.all([call(a, "prepare_checkout", prepareArgs(research.purchaseSessionId)), call(b, "prepare_checkout", prepareArgs(research.purchaseSessionId))]);
+    expect(p1.checkoutSessionId).toBe(p2.checkoutSessionId);
+    expect([p1.deduplicated, p2.deduplicated].sort()).toEqual([false, true]);
+    expect(liveCheckouts(h1, research.purchaseSessionId)).toBe(1);
+    expect(h1.mock.calls.createOrder + h2.mock.calls.createOrder).toBe(1);
+    await a.close(); await b.close();
+  });
+
+  it("the database refuses a second live checkout for the same (user, session, offer, quantity), and allows one after a terminal state", async () => {
+    const h = await harness();
+    const ai = await mcpClient(h.url, TOKENS.alice);
+    const { research } = await researchAndCompare(ai);
+    const p = await call(ai, "prepare_checkout", prepareArgs(research.purchaseSessionId));   // no mandate: APPROVAL_REQUIRED
+    const db = h.app.store.db;
+    const cols = "id,user_id,purchase_session_id,offer_id,merchant_id,quote_id,identity_json,quantity,currency,cost_json,total_minor,client_max_minor,summary_json,summary_hash,state,provider,create_key,capture_key,expires_at,created_at,updated_at";
+    const copy = (id: string, state: string) => db.prepare(`INSERT INTO checkout_sessions(${cols}) SELECT ?,user_id,purchase_session_id,offer_id,merchant_id,quote_id,identity_json,quantity,currency,cost_json,total_minor,client_max_minor,summary_json,summary_hash,?,provider,?,?,expires_at,created_at,updated_at FROM checkout_sessions WHERE id = ?`)
+      .run(id, state, `k-${id}`, `c-${id}`, p.checkoutSessionId);
+    for (const state of ["PREPARED", "HOLD", "APPROVAL_REQUIRED", "APPROVED", "CAPTURE_PENDING", "UNKNOWN", "COMPLETED"])
+      expect(() => copy(`cs_dup_${state}`, state)).toThrow(/UNIQUE constraint failed/);
+    for (const state of ["CANCELLED", "FAILED", "EXPIRED", "REFUNDED"]) expect(() => copy(`cs_ok_${state}`, state)).not.toThrow();
+    // A terminal non-completed checkout allows a new attempt through the tool as well.
+    expect((await fetch(`${h.url}/owner/checkouts/${p.checkoutSessionId}/cancel`, { method: "POST", headers: { "X-Owner-Key": OWNER.alice } })).status).toBe(200);
+    const p2 = await call(ai, "prepare_checkout", prepareArgs(research.purchaseSessionId));
+    expect(p2.checkoutSessionId).not.toBe(p.checkoutSessionId); expect(p2.deduplicated).toBe(false);
     await ai.close();
   });
 });
