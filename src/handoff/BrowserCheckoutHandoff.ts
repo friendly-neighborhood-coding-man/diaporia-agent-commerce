@@ -415,7 +415,10 @@ export class BrowserCheckoutHandoff {
 
   // ------------------------------------------------------------------ host-neutral contract (MCP + HTTP)
   publicStatus(h: Handoff) {
-    const humanTurn = h.state === "HUMAN_ACTION_REQUIRED" || (h.state === "HOLD" && !!h.constraints && h.constraints.violations.every((v) => v === "AMOUNT_EXCEEDED") && this.sessions.has(h.handoffId));
+    const session = this.sessions.get(h.handoffId);
+    const browserAvailable = !!session && session.phase !== "CLOSED";
+    const humanTurn = browserAvailable && (h.state === "HUMAN_ACTION_REQUIRED" ||
+      (h.state === "HOLD" && !!h.constraints && h.constraints.violations.every((v) => v === "AMOUNT_EXCEEDED")));
     return {
       handoffId: h.handoffId, state: h.state, stateIsServerVerified: true as const, checkoutPath: "BROWSER_CHECKOUT_HANDOFF" as const,
       merchant: { name: h.merchantName, domain: h.merchantDomain, recipeId: h.recipeId },
