@@ -35,6 +35,26 @@ export function parseDecimalToMinor(text: string, currency: Currency): number {
   return assertMinor(minor, "amount");
 }
 
+/**
+ * IR-10 (WP-5). Strict parser for amounts a HUMAN types as a spending limit (owner authorization page, handoff
+ * maximum). Unlike parseDecimalToMinor (machine input: provider and merchant prices that may carry thousands
+ * separators), it never guesses: only ASCII digits, an optional dot and at most the currency's decimals. Commas
+ * (either meaning), any whitespace, non-ASCII or full-width digits, signs and exponents are refused, so "60,00" can
+ * never become 6,000.00.
+ */
+export function parseOwnerAmountToMinor(text: string, currency: Currency): number {
+  const exp = CURRENCY_EXPONENT[currency];
+  const pattern = exp === 0 ? /^[0-9]{1,9}$/ : new RegExp(`^[0-9]{1,9}(?:\\.[0-9]{1,${exp}})?$`);
+  if (typeof text !== "string" || !pattern.test(text)) throw new MoneyError(OWNER_AMOUNT_HELP[exp === 0 ? 0 : 1]!.replace("{c}", currency));
+  const [whole, frac = ""] = text.split(".");
+  const minor = Number(whole) * 10 ** exp + Number(frac.padEnd(exp, "0") || "0");
+  return assertMinor(minor, "amount");
+}
+const OWNER_AMOUNT_HELP = [
+  "Enter a whole number of {c} using digits only, for example 6000. No commas, spaces or decimals.",
+  "Enter the amount with a dot as the decimal separator, for example 60.00. No commas or spaces.",
+];
+
 /** Formats minor units to the decimal string PayPal expects ("59.39"). */
 export function formatMinor(minor: number, currency: Currency): string {
   assertMinor(minor, "amount");

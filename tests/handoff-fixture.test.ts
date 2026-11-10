@@ -251,7 +251,7 @@ describe("Phase A: isolation", () => {
     expect(tools).not.toContain("prepare_browser_checkout");
     const get = await fetch(prepared.humanAction.url);
     expect(await get.text()).toContain("Owner key");
-    const noCookie = await fetch(prepared.humanAction.url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "action=takeover&csrf=x" });
+    const noCookie = await fetch(prepared.humanAction.url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: h.url }, body: "action=takeover&csrf=x" });
     expect(noCookie.status).toBe(401);
   });
 });

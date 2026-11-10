@@ -28,8 +28,10 @@ const call = async (name: string, args: Record<string, unknown>): Promise<any> =
   const r = await client.callTool({ name, arguments: args });
   return r.isError ? { error: JSON.parse((r.content as Array<{ text: string }>)[0]!.text).error } : r.structuredContent;
 };
+// The MOCK buyer step needs the owner key (stand-in for the buyer's PayPal login) on a same-origin POST (WP-1).
+const mockBuyer = { headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: new URL(baseUrl).origin }, body: new URLSearchParams({ owner_key: ownerKey }).toString() };
 const sony = { brand: "Sony", model: "WH-CH720N", variant: "Black", condition: "new", sku: "WHCH720N/B" };
-await fetch(`${baseUrl}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify({ productIdentity: sony, currency: "USD", maximumTotalMinor: 6000 }) });
+await fetch(`${baseUrl}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify({ productIdentity: sony, currency: "USD", maximumTotalMinor: 6000, autoUse: true }) });
 
 console.log("DIAPORIA merchant identity demo — ALL MOCK: fictional registries, mock recipient attestation, mock PayPal.\n");
 const research = await call("research_purchase", { request: "Buy Sony WH-CH720N Black, never exceed $60", currency: "USD" });
@@ -54,18 +56,18 @@ console.log(`prepare_checkout → ${prep.state}; bound: payee ${b.intendedPayeeI
 // Attack: the PayPal order's recipient is swapped after preparation.
 const orderId = new URL(prep.approvalUrl).pathname.split("/").pop()!;
 app.mockPayPal!.substitutePayee(orderId, "MOCKPAYEE-ZULU");
-const approve = await fetch(`${baseUrl}/mock-paypal/checkout/${orderId}/approve`, { method: "POST", redirect: "manual" });
+const approve = await fetch(`${baseUrl}/mock-paypal/checkout/${orderId}/approve`, { method: "POST", redirect: "manual", headers: mockBuyer.headers, body: mockBuyer.body });
 await fetch(approve.headers.get("location")!);
 const s = await call("get_checkout_status", { checkoutSessionId: prep.checkoutSessionId });
 console.log(`Recipient swapped to MOCKPAYEE-ZULU after approval → ${s.state} / ${s.failure?.code}; captures: ${app.mockPayPal!.calls.captureOrder}`);
 
 // Clean run with a new mandate: recipient verified, payment captured.
-await fetch(`${baseUrl}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify({ productIdentity: sony, currency: "USD", maximumTotalMinor: 6000 }) });
+await fetch(`${baseUrl}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey }, body: JSON.stringify({ productIdentity: sony, currency: "USD", maximumTotalMinor: 6000, autoUse: true }) });
 const r2 = await call("research_purchase", { request: "Buy Sony WH-CH720N Black, never exceed $60", currency: "USD" });
 await call("compare_purchase_offers", { researchSessionId: r2.purchaseSessionId, productIdentity: sony, destination: { country: "US", region: "CA" } });
 const p2 = await call("prepare_checkout", { purchaseSessionId: r2.purchaseSessionId, offerId: "off_alpha", maximumApprovedTotalMinor: 6000, currency: "USD", quantity: 1 });
 const o2 = new URL(p2.approvalUrl).pathname.split("/").pop()!;
-const a2 = await fetch(`${baseUrl}/mock-paypal/checkout/${o2}/approve`, { method: "POST", redirect: "manual" });
+const a2 = await fetch(`${baseUrl}/mock-paypal/checkout/${o2}/approve`, { method: "POST", redirect: "manual", headers: mockBuyer.headers, body: mockBuyer.body });
 await fetch(a2.headers.get("location")!);
 const s2 = await call("get_checkout_status", { checkoutSessionId: p2.checkoutSessionId });
 console.log(`Untampered checkout → ${s2.state}; recipient ${s2.recipient.actualRecipientId} verified=${s2.recipient.verified} [${s2.recipient.provenance}]; fulfillment ${s2.fulfillment}`);

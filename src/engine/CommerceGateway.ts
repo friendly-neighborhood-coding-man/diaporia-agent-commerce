@@ -67,6 +67,12 @@ export type CapabilityStatus = "VERIFIED_TRUE" | "VERIFIED_FALSE" | "LISTING_CLA
 const CHECKOUT_TTL_MS = 15 * 60_000;
 /** A CAPTURE_PENDING row without a capture id older than this cannot have a provider call in flight (timeout 20 s). */
 const STUCK_CAPTURE_MS = 5 * 60_000;
+/**
+ * IR-11 (WP-3). Oldest create-order attempt that reconcile may still replay with the same PayPal-Request-Id. IR-18:
+ * PayPal's documented default PayPal-Request-Id retention is 6 h (official docs, owner's check of 2026-11-10); the
+ * actual Sandbox/live behaviour is UNVERIFIED. 5 h leaves a 1 h margin. Older attempts are never replayed.
+ */
+export const SAFE_CREATE_REPLAY_WINDOW_MS = 5 * 3600_000;
 
 /**
  * Shown to the host and the user in every checkout summary. It must name the environment that will actually run:
@@ -309,7 +315,11 @@ export class CommerceGateway {
   }
 
   // ---------------------------------------------------------------- prepare_checkout
-  async prepareCheckout(userId: string, input: { purchaseSessionId: string; offerId: string; maximumApprovedTotalMinor: number; currency: string; quantity: number }) {
+  /**
+   * `actor` is the provenance recorded on every audit event this call causes (IR-01 / WP-1): for the MCP tool it is
+   * MCP_TOKEN:<token fingerprint>. Never a raw token.
+   */
+  async prepareCheckout(userId: string, input: { purchaseSessionId: string; offerId: string; maximumApprovedTotalMinor: number; currency: string; quantity: number }, actor = "MCP_TOKEN:unknown") {
     const ps = this.livePurchaseSession(input.purchaseSessionId, userId);
     if (ps.state !== "OFFER_VERIFIED" || !ps.comparison || !ps.lockedIdentity) throw new CommerceError("INVALID_STATE", `Session is ${ps.state}; compare offers and obtain a verified offer first.`);
     if (!isMinor(input.maximumApprovedTotalMinor) || input.maximumApprovedTotalMinor <= 0) throw new CommerceError("INVALID_INPUT", "maximumApprovedTotalMinor must be a positive integer of minor units");
@@ -353,27 +363,60 @@ export class CommerceGateway {
         policy: null, paymentEffect: "NONE" as const, paymentEnvironment: paymentEnvironment(this.payments.name), liveMerchantCheckout: false as const, note: "This merchant has no DIAPORIA-supported checkout. DIAPORIA does not pay third-party merchants; use the merchant's own checkout." };
     }
     if ("code" in bound) throw new CommerceError(bound.code, bound.detail);
-    let cs = this.sessions.createCheckout({
-      checkoutSessionId, merchantIdentity: bound.binding,
-      userId, purchaseSessionId: ps.purchaseSessionId, offerId: offer.offerId, merchantId: offer.merchantId, quoteId: quote.quoteId, identity: ps.lockedIdentity,
-      quantity: input.quantity, currency: ps.intent.currency, cost: v.cost, totalMinor: v.cost.totalMinor, clientMaxMinor: input.maximumApprovedTotalMinor,
-      provider: this.payments.name, expiresAt: Math.min(Date.parse(quote.expiresAt), Date.parse(bound.binding.attestationExpiresAt), this.now() + (this.config.checkoutTtlMs ?? CHECKOUT_TTL_MS)),
-      merchantName: offer.merchantName, merchantDomain: offer.merchantDomain, checkoutPath: v.checkoutPath, disclosure: disclosureFor(this.payments.name),
+    // IR-02 (WP-2). The checks above ran before several awaits (offers, quote, merchant identity), so a concurrent
+    // identical prepare (in this process or another process on the same database) may have created a checkout since.
+    // Re-decide atomically: the same two checks and the insert in ONE BEGIN IMMEDIATE transaction, with the partial
+    // UNIQUE index checkouts_one_live_per_purchase_offer as the database backstop. The loser returns the winner's
+    // checkout (deduplicated) and never reserves a mandate or calls createOrder.
+    const lockedIdentity = ps.lockedIdentity; const cost = v.cost; const totalMinor = v.cost.totalMinor; const binding = bound.binding;
+    type Claim = { created: true; cs: CheckoutSession } | { created: false; cs: CheckoutSession; after?: "COMPLETED" };
+    const claim = this.store.transaction((): Claim => {
+      const winner = (): Claim | null => {
+        const f = this.sessions.findPaymentInFlightOrDone(userId, ps.purchaseSessionId);
+        if (f && !(f.offerId === input.offerId && f.quantity === input.quantity))
+          throw new CommerceError("INVALID_STATE", `A payment for this purchase session is ${f.state}; a new payment attempt is prohibited until it is final.`, { checkoutSessionId: f.checkoutSessionId });
+        if (f && f.state === "COMPLETED") return { created: false, cs: f, after: "COMPLETED" };
+        const d = this.sessions.findActiveDuplicate(userId, ps.purchaseSessionId, input.offerId, input.quantity);
+        return d ? { created: false, cs: d } : null;
+      };
+      const w = winner();
+      if (w) return w;
+      try {
+        return { created: true, cs: this.sessions.createCheckout({
+          checkoutSessionId, merchantIdentity: binding,
+          userId, purchaseSessionId: ps.purchaseSessionId, offerId: offer.offerId, merchantId: offer.merchantId, quoteId: quote.quoteId, identity: lockedIdentity,
+          quantity: input.quantity, currency: ps.intent.currency, cost, totalMinor, clientMaxMinor: input.maximumApprovedTotalMinor,
+          provider: this.payments.name, expiresAt: Math.min(Date.parse(quote.expiresAt), Date.parse(binding.attestationExpiresAt), this.now() + (this.config.checkoutTtlMs ?? CHECKOUT_TTL_MS)),
+          merchantName: offer.merchantName, merchantDomain: offer.merchantDomain, checkoutPath: v.checkoutPath, disclosure: disclosureFor(this.payments.name),
+        }) };
+      } catch (e) {
+        if (!/UNIQUE constraint failed/i.test(errorText(e))) throw e;
+        const again = winner();
+        if (again) return again;
+        throw e;
+      }
     });
-    this.audit.append(cs.checkoutSessionId, userId, "CHECKOUT_PREPARED", { totalMinor: cs.totalMinor, currency: cs.currency, summaryHash: cs.summaryHash });
+    if (!claim.created) {
+      this.audit.append(claim.cs.checkoutSessionId, userId, "PREPARE_DEDUPLICATED", { ...(claim.after ? { after: claim.after } : {}), concurrent: true, actor });
+      return this.prepareResult(claim.after ? claim.cs : this.expireIfNeeded(claim.cs), null, true);
+    }
+    let cs = claim.cs;
+    this.audit.append(cs.checkoutSessionId, userId, "CHECKOUT_PREPARED", { totalMinor: cs.totalMinor, currency: cs.currency, summaryHash: cs.summaryHash, actor });
     this.audit.append(cs.checkoutSessionId, userId, "MERCHANT_IDENTITY_BOUND", { attestationId: bound.binding.attestationId, intendedPayeeId: bound.binding.intendedPayeeId,
       payeeRelationship: bound.binding.payeeRelationship, provenance: bound.binding.provenance });
     if (!this.config.paymentExecutionEnabled) {
       cs = this.sessions.transition(cs, "HOLD", { failureCode: "PUBLIC_PAYMENT_DISABLED", failureReason: "Payment execution is disabled on this deployment (no production user authentication)." });
       return this.prepareResult(cs, null, false);
     }
-    const mandate = this.policy.findApplicable(userId, cs.identity);
+    // IR-01 (WP-1): only a REUSABLE mandate the owner explicitly marked autoUse is used without a per-checkout owner step.
+    const mandate = this.policy.findApplicable(userId, cs.identity, { autoUseOnly: true });
     if (!mandate) {
       cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { failureCode: null });
-      this.audit.append(cs.checkoutSessionId, userId, "OWNER_AUTHORIZATION_REQUIRED", {});
+      const reusableNotAuto = this.policy.findApplicable(userId, cs.identity) !== null;
+      this.audit.append(cs.checkoutSessionId, userId, "OWNER_AUTHORIZATION_REQUIRED", { actor, ...(reusableNotAuto ? { reason: "REUSABLE_MANDATE_NOT_AUTO_USE" } : {}) });
       return this.prepareResult(cs, null, false);
     }
-    const { checkout, decision } = await this.startPayment(cs, mandate.mandateId);
+    const { checkout, decision } = await this.startPayment(cs, mandate.mandateId, actor);
     return this.prepareResult(checkout, decision, false);
   }
 
@@ -381,24 +424,25 @@ export class CommerceGateway {
    * Reserves the amount against a mandate atomically, then creates the provider order.
    * A policy denial happens BEFORE any payment provider call.
    */
-  async startPayment(cs: CheckoutSession, mandateId: string): Promise<{ checkout: CheckoutSession; decision: PolicyDecision }> {
+  async startPayment(cs: CheckoutSession, mandateId: string, actor: string): Promise<{ checkout: CheckoutSession; decision: PolicyDecision }> {
     cs = this.expireIfNeeded(cs);
     if (!["PREPARED", "APPROVAL_REQUIRED", "HOLD"].includes(cs.state) || cs.providerOrderId) throw new CommerceError("INVALID_STATE", `Checkout is ${cs.state}; payment cannot be started.`);
     if (!this.config.paymentExecutionEnabled) throw new CommerceError("PAYMENT_DISABLED", "Payment execution is disabled on this deployment.");
     const decision = this.policy.reserve(mandateId, { userId: cs.userId, checkoutSessionId: cs.checkoutSessionId, productIdentity: cs.identity, merchantId: cs.merchantId,
       currency: cs.currency, quantity: cs.quantity, totalMinor: cs.totalMinor });
-    this.audit.append(cs.checkoutSessionId, cs.userId, decision.allowed ? "MANDATE_RESERVED" : "MANDATE_REJECTED", { mandateId, code: decision.code, totalMinor: cs.totalMinor });
+    this.audit.append(cs.checkoutSessionId, cs.userId, decision.allowed ? "MANDATE_RESERVED" : "MANDATE_REJECTED", { mandateId, code: decision.code, totalMinor: cs.totalMinor, actor });
     if (!decision.allowed) {
       const checkout = cs.state === "HOLD" ? this.sessions.transition(this.sessions.transition(cs, "APPROVAL_REQUIRED"), "HOLD", { failureCode: decision.code, failureReason: decision.detail })
         : this.sessions.transition(cs, "HOLD", { failureCode: decision.code, failureReason: decision.detail });
       return { checkout, decision };
     }
-    if (cs.state === "PREPARED" || cs.state === "HOLD") cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor, failureCode: null, failureReason: null });
-    else cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor });
+    const createRequestedAt = cs.createRequestedAt ?? this.now();   // durable, before the provider call (WP-3)
+    if (cs.state === "PREPARED" || cs.state === "HOLD") cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor, failureCode: null, failureReason: null, createRequestedAt });
+    else cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor, createRequestedAt });
     try {
       const order = await this.payments.createOrder(this.createOrderInput(cs));
       cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { providerOrderId: order.orderId, approvalUrl: order.approvalUrl });
-      this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_CREATED", { provider: this.payments.name, orderId: order.orderId });
+      this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_CREATED", { provider: this.payments.name, orderId: order.orderId, actor });
     } catch (e) {
       if (e instanceof ProviderTimeoutError) {
         cs = this.sessions.transition(cs, "UNKNOWN", { failureCode: "CREATE_ORDER_TIMEOUT", failureReason: e.message });
@@ -406,7 +450,7 @@ export class CommerceGateway {
         this.policy.release(mandateId, cs.userId, cs.totalMinor, cs.checkoutSessionId);
         cs = this.sessions.transition(cs, "FAILED", { reservedMinor: 0, failureCode: "CREATE_ORDER_FAILED", failureReason: errorText(e) });
       }
-      this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_ERROR", { state: cs.state, reason: errorText(e) });
+      this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_ERROR", { state: cs.state, reason: errorText(e), actor });
     }
     return { checkout: cs, decision };
   }
@@ -431,10 +475,28 @@ export class CommerceGateway {
    */
   private async recoverTimedOutCreate(cs: CheckoutSession): Promise<CheckoutSession> {
     if (cs.state !== "UNKNOWN" || cs.providerOrderId || cs.captureId || cs.failureCode !== "CREATE_ORDER_TIMEOUT") return cs;
+    // IR-11 (WP-3). A replay is a provider WRITE. Past the checkout's expiry, or outside the idempotency window counted
+    // from the original attempt (createdAt for rows from before create_requested_at existed), the provider may treat it
+    // as a NEW order. Then nothing is sent: the checkout stays UNKNOWN and keeps its reservation (an uncertain outcome
+    // never releases authority) for manual review against the provider dashboard. No read-only lookup by request id or
+    // order id exists in the payment adapter, so none is attempted.
+    const attemptAt = cs.createRequestedAt ?? cs.createdAt;
+    const ageMs = this.now() - attemptAt;
+    const skip = cs.expiresAt <= this.now() ? "CHECKOUT_EXPIRED" : ageMs > SAFE_CREATE_REPLAY_WINDOW_MS ? "OUTSIDE_SAFE_REPLAY_WINDOW" : null;
+    if (skip) {
+      const reason = "Create-order outcome unknown and outside the safe replay window; no new provider request was sent. Check the provider dashboard.";
+      if (cs.failureReason !== reason) {
+        try { cs = this.sessions.transition(cs, "UNKNOWN", { failureReason: reason }); }
+        catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
+      }
+      this.audit.append(cs.checkoutSessionId, cs.userId, "RECOVER_CREATE_SKIPPED", { reason: skip, createRequestedAt: attemptAt, ageMs, windowMs: SAFE_CREATE_REPLAY_WINDOW_MS,
+        reservationKept: cs.reservedMinor, actor: "RECONCILE" });
+      return cs;
+    }
     try {
       const order = await this.payments.createOrder(this.createOrderInput(cs));
       cs = this.sessions.transition(cs, "UNKNOWN", { providerOrderId: order.orderId, approvalUrl: order.approvalUrl });
-      this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_RECOVERED", { provider: this.payments.name, orderId: order.orderId });
+      this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_RECOVERED", { provider: this.payments.name, orderId: order.orderId, actor: "RECONCILE" });
     } catch (e) {
       this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_PROVIDER_UNAVAILABLE", { step: "RECOVER_CREATE", reason: errorText(e) });
     }
@@ -462,7 +524,7 @@ export class CommerceGateway {
         if (/UNIQUE constraint failed/i.test(errorText(e))) return { ok: false, cs, reason: "ALREADY_AUTHORIZED" };
         throw e;
       }
-      this.audit.append(cs.checkoutSessionId, ownerUserId, "MANDATE_CREATED_BY_OWNER", { mandateId: mandate.mandateId, maximumTotalMinor, scope: mandate.scope, boundCheckoutSessionId: cs.checkoutSessionId });
+      this.audit.append(cs.checkoutSessionId, ownerUserId, "MANDATE_CREATED_BY_OWNER", { mandateId: mandate.mandateId, maximumTotalMinor, scope: mandate.scope, boundCheckoutSessionId: cs.checkoutSessionId, actor: `OWNER_SESSION:${ownerUserId}` });
       return { ok: true, cs, mandate };
     });
     if (!claim.ok) {
@@ -481,7 +543,7 @@ export class CommerceGateway {
       catch { /* raced with a reservation: the reservation logic owns it */ }
     };
     let out;
-    try { out = await this.startPayment(cs, mandate.mandateId); }
+    try { out = await this.startPayment(cs, mandate.mandateId, `OWNER_SESSION:${ownerUserId}`); }
     catch (e) { revokeUnused(e instanceof CommerceError ? e.code : "ERROR"); throw e; }
     if (!out.decision.allowed) revokeUnused(out.decision.code);
     return { mandate: this.mandates.get(mandate.mandateId, ownerUserId) ?? mandate, ...out };
@@ -511,7 +573,7 @@ export class CommerceGateway {
     const reserved = cs.reservedMinor;
     cs = this.sessions.transition(cs, "CANCELLED", { reservedMinor: 0, failureCode: "OWNER_CANCELLED", failureReason: "The owner cancelled this checkout before payment" });
     if (cs.mandateId && reserved > 0) this.policy.release(cs.mandateId, cs.userId, reserved, cs.checkoutSessionId);
-    this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCELLED", { releasedMinor: reserved });
+    this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCELLED", { releasedMinor: reserved, actor: `OWNER_SESSION:${ownerUserId}` });
     return { checkout: cs, cancelled: true, reason: "OWNER_CANCELLED" };
   }
 
@@ -519,7 +581,7 @@ export class CommerceGateway {
   /** Buyer came back from PayPal. The redirect itself proves nothing: PayPal is queried. */
   async handleBuyerReturn(checkoutSessionId: string, providerOrderId: string): Promise<CheckoutSession> {
     let cs = this.sessions.getCheckoutForProviderReturn(checkoutSessionId, providerOrderId);
-    this.audit.append(cs.checkoutSessionId, cs.userId, "BUYER_RETURNED", { stateAtReturn: cs.state });
+    this.audit.append(cs.checkoutSessionId, cs.userId, "BUYER_RETURNED", { stateAtReturn: cs.state, actor: "PROVIDER_RETURN" });
     if (cs.state === "UNKNOWN") return this.reconcile(cs.userId, cs.checkoutSessionId);
     if (cs.state !== "APPROVAL_REQUIRED" && cs.state !== "APPROVED") return cs; // duplicate/late redirect: no second capture
     if (cs.state === "APPROVAL_REQUIRED") {
@@ -544,12 +606,12 @@ export class CommerceGateway {
       if (order.status !== "APPROVED") { this.audit.append(cs.checkoutSessionId, cs.userId, "APPROVAL_NOT_VERIFIED", { providerStatus: order.status }); return cs; }
       try { cs = this.sessions.transition(cs, "APPROVED"); }
       catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
-      this.audit.append(cs.checkoutSessionId, cs.userId, "BUYER_APPROVAL_VERIFIED", { providerStatus: order.status });
+      this.audit.append(cs.checkoutSessionId, cs.userId, "BUYER_APPROVAL_VERIFIED", { providerStatus: order.status, actor: "PROVIDER_RETURN" });
     }
     return this.capture(cs);
   }
 
-  private async capture(cs: CheckoutSession): Promise<CheckoutSession> {
+  private async capture(cs: CheckoutSession, actor: "PROVIDER_RETURN" | "RECONCILE" = "PROVIDER_RETURN"): Promise<CheckoutSession> {
     // A replay (a capture for this order was already requested once) must never end in FAILED or release the
     // reservation on its own errors: the first request may still land. Its pre-gate refusals keep UNKNOWN.
     const replay = this.captureEverRequested(cs);
@@ -601,7 +663,7 @@ export class CommerceGateway {
     } catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(read.checkoutSessionId, read.userId); throw e; }
     if (!gate.go) return gate.cs;
     cs = gate.cs;
-    this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_REQUESTED", { idempotent: true, replay });
+    this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_REQUESTED", { idempotent: true, replay, actor });
     let capture: ProviderCapture;
     try { capture = await this.payments.captureOrder(cs.providerOrderId!, cs.captureKey); }
     catch (e) {
@@ -618,7 +680,7 @@ export class CommerceGateway {
       this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_OUTCOME_UNKNOWN", { reason: errorText(e) });
       return cs;
     }
-    return this.applyCapture(cs, capture);
+    return this.applyCapture(cs, capture, actor);
   }
 
   /**
@@ -663,7 +725,7 @@ export class CommerceGateway {
     return { actual };
   }
 
-  private async applyCapture(cs: CheckoutSession, capture: ProviderCapture): Promise<CheckoutSession> {
+  private async applyCapture(cs: CheckoutSession, capture: ProviderCapture, actor = "RECONCILE"): Promise<CheckoutSession> {
     if (!capture.amount || capture.amount.amountMinor !== cs.totalMinor || capture.amount.currency !== cs.currency) {
       cs = this.sessions.transition(cs, "UNKNOWN", { captureId: capture.captureId || null, captureStatus: capture.status, failureCode: "CAPTURE_AMOUNT_MISMATCH", failureReason: "Captured amount differs from the approved summary; manual review required" });
       this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_AMOUNT_MISMATCH", {});
@@ -677,7 +739,7 @@ export class CommerceGateway {
         if (cs.state === "UNKNOWN") cs = this.sessions.transition(cs, "CAPTURE_PENDING", { captureId: capture.captureId, captureStatus: "COMPLETED" });
         cs = this.sessions.transition(cs, "COMPLETED", { captureId: capture.captureId, captureStatus: "COMPLETED", failureCode: null, failureReason: null });
         if (cs.mandateId) this.policy.consume(cs.mandateId, cs.userId, cs.reservedMinor);
-        this.audit.append(cs.checkoutSessionId, cs.userId, "PAYMENT_COMPLETED_VERIFIED", { captureId: capture.captureId });
+        this.audit.append(cs.checkoutSessionId, cs.userId, "PAYMENT_COMPLETED_VERIFIED", { captureId: capture.captureId, actor });
         return cs;
       }
       cs = this.sessions.transition(cs, "CAPTURE_PENDING", { captureId: capture.captureId, captureStatus: "COMPLETED_UNVERIFIED", failureCode: "CAPTURE_VERIFICATION_PENDING", failureReason: "Capture reported COMPLETED but could not be re-read yet" });
@@ -706,7 +768,7 @@ export class CommerceGateway {
     }
     const out = this.sessions.transition(cs, "CANCELLED", { reservedMinor: 0, failureCode: "BUYER_CANCELLED", failureReason: "Buyer cancelled on the payment page" });
     if (cs.mandateId && cs.reservedMinor > 0) this.policy.release(cs.mandateId, cs.userId, cs.reservedMinor, cs.checkoutSessionId);
-    this.audit.append(cs.checkoutSessionId, cs.userId, "BUYER_CANCELLED", {});
+    this.audit.append(cs.checkoutSessionId, cs.userId, "BUYER_CANCELLED", { actor: "PROVIDER_RETURN" });
     return out;
   }
 
@@ -724,7 +786,7 @@ export class CommerceGateway {
     }
     if (!["UNKNOWN", "CAPTURE_PENDING"].includes(cs.state) || !cs.providerOrderId) return cs;
     const order = await this.payments.getOrder(cs.providerOrderId);
-    this.audit.append(cs.checkoutSessionId, userId, "RECONCILED", { providerStatus: order.status, captures: order.captures.length });
+    this.audit.append(cs.checkoutSessionId, userId, "RECONCILED", { providerStatus: order.status, captures: order.captures.length, actor: "RECONCILE" });
     const cap = order.captures[0];
     if (cap) {
       // Never trust the order's embedded capture: read the capture itself (Payments v2).
@@ -753,7 +815,7 @@ export class CommerceGateway {
       // Before expiry: legitimate recovery. A replay after an uncertain capture reuses the same PayPal-Request-Id.
       try { cs = this.sessions.transition(cs, "APPROVED", { failureCode: null, failureReason: null }); }
       catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, userId); throw e; }
-      return this.capture(cs);
+      return this.capture(cs, "RECONCILE");
     }
     // A recovered create whose order the buyer never approved, past the checkout's expiry: nothing was or can be
     // captured by us (we only capture APPROVED orders on a payable checkout), so close it and release the bound
@@ -837,7 +899,7 @@ export class CommerceGateway {
       return { checkout: cs, outcome: "PROVIDER_UNAVAILABLE", providerStatus: null };
     }
     cs = this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); // freshest local state
-    const ev = { source, providerStatus: cap.status, reason: cap.reason, captureId: cap.captureId };
+    const ev = { source, providerStatus: cap.status, reason: cap.reason, captureId: cap.captureId, actor: "RECONCILE" };
     if (cap.captureId !== cs.captureId) {
       this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_CAPTURE_ID_MISMATCH", ev);
       return { checkout: cs, outcome: "CAPTURE_ID_MISMATCH", providerStatus: cap.status };

@@ -34,6 +34,11 @@ export interface PurchaseMandate {
    */
   scope: "REUSABLE" | "CHECKOUT_BOUND";
   boundCheckoutSessionId: string | null;
+  /**
+   * IR-01 (WP-1). REUSABLE only: the owner explicitly allowed prepare_checkout to use this mandate automatically
+   * (no per-checkout owner step). Default false. Always false for CHECKOUT_BOUND.
+   */
+  autoUse: boolean;
   createdAt: string;
 }
 
@@ -49,6 +54,8 @@ export interface CreateMandateInput {
   createdVia: PurchaseMandate["createdVia"];
   /** Required for, and only allowed with, createdVia OWNER_APPROVAL_PAGE. */
   boundCheckoutSessionId?: string;
+  /** OWNER_API (REUSABLE) only. Default false. */
+  autoUse?: boolean;
 }
 
 type MandateRow = Record<string, string | number | null>;
@@ -72,14 +79,17 @@ export class MandateRepository {
     if (!Number.isSafeInteger(maxT) || maxT < 1 || maxT > 10) throw new Error("maximumTransactions must be 1..10");
     const bound = input.boundCheckoutSessionId ?? null;
     if ((input.createdVia === "OWNER_APPROVAL_PAGE") !== (bound !== null)) throw new Error("Owner-page mandates must be bound to exactly one checkout; owner-API mandates must not be");
+    if (input.autoUse !== undefined && typeof input.autoUse !== "boolean") throw new Error("autoUse must be a boolean");
+    const autoUse = input.autoUse === true;
+    if (autoUse && input.createdVia !== "OWNER_API") throw new Error("autoUse is only allowed on reusable owner-API mandates");
     const ttl = input.ttlSeconds ?? 3600;
     if (!Number.isSafeInteger(ttl) || ttl < 60 || ttl > 7 * 86400) throw new Error("ttlSeconds must be 60..604800");
     const id = `mdt_${randomUUID()}`;
     const now = this.now();
     this.store.db.prepare(`INSERT INTO mandates(id,user_id,identity_json,currency,max_total_minor,max_quantity,max_transactions,expires_at,
-      merchant_constraints_json,status,created_via,created_at,bound_checkout_session_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      merchant_constraints_json,status,created_via,created_at,bound_checkout_session_id,auto_use) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       id, input.userId, JSON.stringify(input.productIdentity), input.currency, input.maximumTotalMinor, maxQ, maxT, now + ttl * 1000,
-      JSON.stringify({ allowedMerchantIds: input.allowedMerchantIds ?? null }), "ACTIVE", input.createdVia, now, bound);
+      JSON.stringify({ allowedMerchantIds: input.allowedMerchantIds ?? null }), "ACTIVE", input.createdVia, now, bound, autoUse ? 1 : 0);
     return this.get(id, input.userId)!;
   }
 
@@ -114,6 +124,7 @@ export class MandateRepository {
       createdVia: r.created_via as PurchaseMandate["createdVia"],
       scope: r.created_via === "OWNER_APPROVAL_PAGE" ? "CHECKOUT_BOUND" : "REUSABLE",
       boundCheckoutSessionId: r.bound_checkout_session_id == null ? null : String(r.bound_checkout_session_id),
+      autoUse: r.created_via !== "OWNER_APPROVAL_PAGE" && Number(r.auto_use ?? 0) === 1,
       createdAt: new Date(Number(r.created_at)).toISOString(),
     };
   }

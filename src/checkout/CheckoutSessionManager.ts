@@ -100,6 +100,11 @@ export interface CheckoutSession {
   providerPendingReason: string | null;
   /** When DIAPORIA first sent a capture request for this order (null = never; then no capture can exist). */
   captureRequestedAt: number | null;
+  /**
+   * IR-11 (WP-3). When DIAPORIA first sent the create-order request (set once, before the provider call). A replay of
+   * that request is only safe inside the provider's idempotency window, measured from this time.
+   */
+  createRequestedAt: number | null;
 }
 
 const PURCHASE_TTL_MS = 30 * 60_000;
@@ -143,7 +148,7 @@ export class CheckoutSessionManager {
 
   createCheckout(input: Omit<CheckoutSession, "checkoutSessionId" | "summary" | "summaryHash" | "state" | "version" | "mandateId" | "reservedMinor" |
     "providerOrderId" | "approvalUrl" | "captureId" | "captureStatus" | "createKey" | "captureKey" | "failureCode" | "failureReason" | "createdAt" | "updatedAt" |
-    "merchantIdentity" | "intendedPayeeId" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason" | "captureRequestedAt"> & {
+    "merchantIdentity" | "intendedPayeeId" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason" | "captureRequestedAt" | "createRequestedAt"> & {
     merchantName: string; merchantDomain: string; checkoutPath: string; disclosure: string; checkoutSessionId?: string; merchantIdentity?: MerchantIdentityBinding | null }): CheckoutSession {
     const id = input.checkoutSessionId ?? newCheckoutSessionId();
     const mi = input.merchantIdentity ?? null;
@@ -221,14 +226,14 @@ export class CheckoutSessionManager {
 
   /** Compare-and-set transition. Throws StaleStateError when another request moved the session first. */
   transition(cs: CheckoutSession, to: PurchaseState, patch: Partial<Pick<CheckoutSession, "mandateId" | "reservedMinor" | "providerOrderId" | "approvalUrl" |
-    "captureId" | "captureStatus" | "failureCode" | "failureReason" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason" | "captureRequestedAt">> = {}): CheckoutSession {
+    "captureId" | "captureStatus" | "failureCode" | "failureReason" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason" | "captureRequestedAt" | "createRequestedAt">> = {}): CheckoutSession {
     assertTransition("checkout", cs.state, to);
     const n = { ...cs, ...patch };
     const r = this.store.db.prepare(`UPDATE checkout_sessions SET state=?, version=version+1, mandate_id=?, reserved_minor=?, provider_order_id=?,
-      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, actual_recipient_id=?, provider_verified_at=?, provider_pending_reason=?, capture_requested_at=?, updated_at=?
+      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, actual_recipient_id=?, provider_verified_at=?, provider_pending_reason=?, capture_requested_at=?, create_requested_at=?, updated_at=?
       WHERE id=? AND user_id=? AND state=? AND version=?`).run(
       to, n.mandateId, n.reservedMinor, n.providerOrderId, n.approvalUrl, n.captureId, n.captureStatus, n.failureCode, n.failureReason, n.actualRecipientId,
-      n.providerVerifiedAt, n.providerPendingReason, n.captureRequestedAt, this.now(),
+      n.providerVerifiedAt, n.providerPendingReason, n.captureRequestedAt, n.createRequestedAt, this.now(),
       cs.checkoutSessionId, cs.userId, cs.state, cs.version);
     if (r.changes !== 1) throw new StaleStateError(`Checkout ${cs.checkoutSessionId} changed concurrently (expected ${cs.state} v${cs.version})`);
     return this.getCheckout(cs.checkoutSessionId, cs.userId);
@@ -251,6 +256,7 @@ export class CheckoutSessionManager {
       providerVerifiedAt: r.provider_verified_at == null ? null : Number(r.provider_verified_at),
       providerPendingReason: r.provider_pending_reason == null ? null : String(r.provider_pending_reason),
       captureRequestedAt: r.capture_requested_at == null ? null : Number(r.capture_requested_at),
+      createRequestedAt: r.create_requested_at == null ? null : Number(r.create_requested_at),
     };
   }
 }

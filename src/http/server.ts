@@ -10,7 +10,7 @@ import type { PaymentProvider } from "../payment/PaymentProvider.js";
 import { DevAuth, SCOPES, type Principal } from "../auth/devAuth.js";
 import { createCommerceMcpServer } from "../mcp/MCPCommerceAdapter.js";
 import { handleSubscriptionRoutes } from "../billing/subscriptions/http.js";
-import { parseDecimalToMinor } from "../domain/money.js";
+import { formatMinor, MoneyError, parseOwnerAmountToMinor } from "../domain/money.js";
 import { NotFoundError } from "../checkout/CheckoutSessionManager.js";
 import { esc, money, page } from "./html.js";
 import { RateLimiter } from "./rateLimit.js";
@@ -87,10 +87,12 @@ export function createApp(cfg: AppConfig): App {
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
   const mcpLimiter = new RateLimiter(120, 60_000);
   const webLimiter = new RateLimiter(30, 60_000);
-  const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number }>();
+  // IR-09 (WP-4): an owner review session is bound to the checkout it reviewed (csId) and to the summary shown.
+  // WP-5 (IR-10): previewMinor is the strictly parsed limit the owner was shown on the confirm step.
+  const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number; csId: string; summaryHash: string; previewMinor?: number }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
-    sameOrigin: (req) => sameOrigin(req, allowedOrigins), readText }) : null;
+    sameOrigin: (req) => sameOriginStrict(req, allowedOrigins), readText }) : null;
   const handoffTimer = handoff ? setInterval(() => { void handoff.tick(); }, 15_000) : null;
   handoffTimer?.unref();
 
@@ -147,7 +149,7 @@ export function createApp(cfg: AppConfig): App {
           return html(res, 200, consentPage(r.pending, paymentExecutionEnabled), formActionFor(r.pending.redirectUri));
         }
         if (p === "/oauth/authorize" && req.method === "POST") {
-          if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+          if (!sameOriginStrict(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
           const form = new URLSearchParams(await readText(req));
           const pend = oauth.getPending(form.get("request_id"));
           const out = oauth.completeAuthorization(form);
@@ -169,9 +171,10 @@ export function createApp(cfg: AppConfig): App {
         let m;
         try { m = gateway.mandates.create({ userId, productIdentity: b.productIdentity as never, currency: String(b.currency), maximumTotalMinor: Number(b.maximumTotalMinor),
           maximumQuantity: b.maximumQuantity === undefined ? 1 : Number(b.maximumQuantity), maximumTransactions: b.maximumTransactions === undefined ? 1 : Number(b.maximumTransactions),
-          ttlSeconds: b.ttlSeconds === undefined ? 3600 : Number(b.ttlSeconds), allowedMerchantIds: Array.isArray(b.allowedMerchantIds) ? b.allowedMerchantIds.map(String) : null, createdVia: "OWNER_API" }); }
+          ttlSeconds: b.ttlSeconds === undefined ? 3600 : Number(b.ttlSeconds), allowedMerchantIds: Array.isArray(b.allowedMerchantIds) ? b.allowedMerchantIds.map(String) : null, createdVia: "OWNER_API",
+          autoUse: b.autoUse === undefined ? false : (b.autoUse as boolean) }); }
         catch (e) { return send(res, 400, { error: e instanceof Error ? e.message : "Invalid mandate" }); }
-        gateway.audit.append(m.mandateId, userId, "MANDATE_CREATED_BY_OWNER_API", { maximumTotalMinor: m.maximumTotalMinor });
+        gateway.audit.append(m.mandateId, userId, "MANDATE_CREATED_BY_OWNER_API", { maximumTotalMinor: m.maximumTotalMinor, autoUse: m.autoUse, actor: `OWNER_SESSION:${userId}` });
         return send(res, 201, m);
       }
       const revoke = /^\/owner\/mandates\/(mdt_[0-9a-f-]{36})\/revoke$/.exec(url.pathname);
@@ -209,7 +212,7 @@ export function createApp(cfg: AppConfig): App {
         if (req.method === "GET") return html(res, 200, envPage("Authorize a DIAPORIA checkout", `<p>An AI assistant prepared checkout <code>${esc(csId)}</code>. Enter your owner key to review it.
           The AI client cannot do this step: its token cannot create spending authority.</p>
           <form method="post"><input type="hidden" name="action" value="review"><label>Owner key<input name="ownerKey" type="password" autocomplete="off" required></label><p><button>Review checkout</button></p></form>`));
-        if (req.method !== "POST" || !sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Forbidden" });
+        if (req.method !== "POST" || !sameOriginForm(req, allowedOrigins)) return send(res, 403, { error: "Forbidden" });
         const form = new URLSearchParams(await readText(req));
         if (form.get("action") === "review") {
           const userId = cfg.auth.verifyOwnerKey(form.get("ownerKey") ?? undefined);
@@ -217,7 +220,8 @@ export function createApp(cfg: AppConfig): App {
           let cs;
           try { cs = gateway.sessions.getCheckout(csId, userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
           const sid = randomBytes(24).toString("base64url"); const csrf = randomBytes(24).toString("base64url");
-          ownerSessions.set(sid, { userId, csrf, expiresAt: now() + 10 * 60_000 });
+          ownerSessions.set(sid, { userId, csrf, expiresAt: now() + 10 * 60_000, csId, summaryHash: cs.summaryHash });
+          for (const [k, v] of ownerSessions) if (v.expiresAt <= now()) ownerSessions.delete(k);
           res.setHeader("Set-Cookie", `dac_owner=${sid}; HttpOnly; SameSite=Strict; Path=/authorize; Max-Age=600${base.protocol === "https:" ? "; Secure" : ""}`);
           return html(res, 200, envPage("Review and set your spending limit", reviewBody(cs, csrf, payments.name, cs.mandateId ? gateway.mandates.get(cs.mandateId, userId) : null)));
         }
@@ -225,6 +229,8 @@ export function createApp(cfg: AppConfig): App {
           const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
           const sess = sid ? ownerSessions.get(sid) : undefined;
           if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          // IR-09 (WP-4): a session opened for another checkout is refused and NOT consumed.
+          if (sess.csId !== csId) return html(res, 403, envPage("Different checkout", "<p>You reviewed a different checkout. Open this checkout's own link and review it first. Nothing was changed.</p>"));
           ownerSessions.delete(sid!);
           let out;
           try { out = await gateway.cancelCheckoutAsOwner(sess.userId, csId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
@@ -232,15 +238,39 @@ export function createApp(cfg: AppConfig): App {
             ? "<p>Nothing was paid. Any reserved spending limit was released. You can return to your AI assistant.</p>"
             : `<p class="state">${esc(out.reason)}</p><p>The checkout was left unchanged because cancelling now could race a payment. Ask your AI assistant to check the checkout status.</p>`));
         }
+        if (form.get("action") === "preview") {
+          // WP-5 (IR-10): echo before commit. Parse the typed limit strictly and show it back; nothing is created here.
+          const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
+          const sess = sid ? ownerSessions.get(sid) : undefined;
+          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          if (sess.csId !== csId) return html(res, 403, envPage("Different checkout", "<p>You reviewed a different checkout. Open this checkout's own link and review it first. Nothing was changed.</p>"));
+          let cs;
+          try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
+          let maximum: number;
+          try { maximum = parseOwnerAmountToMinor(form.get("maximum") ?? "", cs.currency); }
+          catch (e) { return html(res, 400, envPage("Invalid amount", `<p>${esc(e instanceof MoneyError ? e.message : "Invalid amount.")}</p><p>No spending limit was created. Go back and enter it again.</p>`)); }
+          if (maximum <= 0) return html(res, 400, envPage("Invalid amount", "<p>The limit must be more than zero. No spending limit was created.</p>"));
+          sess.previewMinor = maximum;
+          return html(res, 200, envPage("Confirm your spending limit", confirmBody(cs, sess.csrf, maximum)));
+        }
         if (form.get("action") === "authorize") {
           const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
           const sess = sid ? ownerSessions.get(sid) : undefined;
           if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          // IR-09 (WP-4): a session opened for another checkout is refused and NOT consumed; no authority is created.
+          if (sess.csId !== csId) return html(res, 403, envPage("Different checkout", "<p>You reviewed a different checkout. Open this checkout's own link and review it first. No spending limit was created.</p>"));
           ownerSessions.delete(sid!);
           let cs;
           try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
+          // The human must have seen exactly this summary.
+          if (cs.summaryHash !== sess.summaryHash) return html(res, 409, envPage("Checkout changed", "<p>The checkout changed since you reviewed it. Review it again. No spending limit was created.</p>"));
           let maximum: number;
-          try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, envPage("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
+          try { maximum = parseOwnerAmountToMinor(form.get("maximum") ?? "", cs.currency); }
+          catch (e) { return html(res, 400, envPage("Invalid amount", `<p>${esc(e instanceof MoneyError ? e.message : "Invalid amount.")}</p><p>No spending limit was created.</p>`)); }
+          // The confirm form carries the minor value it showed; it must match both the typed text and what this session previewed.
+          const shown = form.get("maximum_minor");
+          if (shown !== null && (shown !== String(maximum) || sess.previewMinor !== maximum))
+            return html(res, 409, envPage("Amount not confirmed", "<p>The amount differs from the one you confirmed. Review the checkout again. No spending limit was created.</p>"));
           let out;
           try { out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum); }
           catch (e) {
@@ -292,15 +322,28 @@ export function createApp(cfg: AppConfig): App {
       }
 
       // ---- Mock PayPal hosted page (only when the mock provider is active) ----
+      // IR-01 (WP-1). The mock buyer step stands in for PayPal's own buyer login, so it needs a human credential:
+      // the owner key of the checkout's user, on a strict same-origin browser POST. An AI client holding only its
+      // MCP token cannot approve. The PayPal Sandbox path is unchanged (PayPal's buyer login is the human step).
       const mock = /^\/mock-paypal\/checkout\/(MOCK[A-F0-9]{16})(?:\/(approve|cancel))?$/.exec(url.pathname);
       if (mock && mockPayPal) {
         const orderId = mock[1]!; const order = mockPayPal.describe(orderId);
         if (!order) return html(res, 404, page("Unknown order", "<p>No such mock order.</p>", "MOCK PayPal"));
+        const ownerField = '<label>Owner key (MOCK buyer login)<input name="owner_key" type="password" autocomplete="off" required></label>';
         if (!mock[2] && req.method === "GET") return html(res, 200, page("MOCK PayPal checkout", `<p>This is a local <b>mock</b> of PayPal's hosted approval page. No PayPal API is called.</p>
           <table><tr><td>Order</td><td>${esc(orderId)}</td></tr><tr><td>Amount</td><td>${esc(order.amount ? money(order.amount.amountMinor, order.amount.currency) : "?")}</td></tr></table>
-          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/approve" style="display:inline"><button>Approve (mock buyer)</button></form>
-          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/cancel" style="display:inline"><button class="secondary">Cancel</button></form>`, "MOCK PayPal — not real, not Sandbox"));
-        if (mock[2] && req.method === "POST" && sameOrigin(req, allowedOrigins)) {
+          <p class="muted">MOCK only: the owner key stands in for the buyer's own PayPal login. The AI assistant cannot do this step.</p>
+          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/approve">${ownerField}<p><button>Approve (mock buyer)</button></p></form>
+          <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/cancel">${ownerField}<p><button class="secondary">Cancel</button></p></form>`, "MOCK PayPal — not real, not Sandbox"));
+        if (mock[2] && req.method === "POST") {
+          if (!sameOriginStrict(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+          const ownerUserId = cfg.auth.verifyOwnerKey(new URLSearchParams(await readText(req)).get("owner_key") ?? undefined);
+          if (!ownerUserId) return html(res, 401, page("Not authorized", "<p>Owner key required (MOCK buyer login). Nothing was approved.</p>", "MOCK PayPal — not real, not Sandbox"));
+          // The mock order carries its checkout id (PayPal custom_id); the owner must be that checkout's user.
+          const row = store.db.prepare("SELECT user_id FROM checkout_sessions WHERE id = ?").get(String(order.customId)) as { user_id: string } | undefined;
+          const checkoutUserId = row ? String(row.user_id) : null;
+          if (checkoutUserId !== ownerUserId) return html(res, 403, page("Not authorized", "<p>This order does not belong to that owner. Nothing was approved.</p>", "MOCK PayPal — not real, not Sandbox"));
+          gateway.audit.append(String(order.customId), ownerUserId, mock[2] === "approve" ? "MOCK_BUYER_APPROVED" : "MOCK_BUYER_CANCELLED", { orderId, actor: `OWNER_SESSION:${ownerUserId}` });
           res.statusCode = 303;
           res.setHeader("Location", mock[2] === "approve" ? mockPayPal.buyerApprove(orderId) : mockPayPal.buyerCancel(orderId));
           return res.end();
@@ -347,7 +390,36 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(t); } catch { throw new BadJson(); }
 }
 function header(req: IncomingMessage, name: string): string | undefined { const v = req.headers[name]; return Array.isArray(v) ? v[0] : v; }
+/**
+ * Lenient origin check for header-authenticated API routes (X-Owner-Key / bearer). Non-browser clients
+ * (curl, scripts, the owner CLI) send no Origin; a present Origin must be allowed.
+ */
 function sameOrigin(req: IncomingMessage, allowed: string[]): boolean { const o = req.headers.origin; return o === undefined || allowed.includes(o); }
+/**
+ * IR-01 (WP-1). Strict check for state-changing BROWSER form routes: a missing Origin is NOT same-origin. Origin
+ * must be present and allowed ("null" never is), or, when a browser omits Origin, Sec-Fetch-Site must say
+ * same-origin. A cross-site Sec-Fetch-Site always refuses, even next to an allowed Origin.
+ */
+export function sameOriginStrict(req: IncomingMessage, allowed: string[]): boolean {
+  const site = header(req, "sec-fetch-site");
+  if (site !== undefined && site !== "same-origin") return false;
+  const o = header(req, "origin");
+  if (o !== undefined) return o !== "null" && allowed.includes(o);
+  return site === "same-origin";
+}
+/**
+ * Browser-form check for the owner review page (/authorize). Refuses any request a browser marks as cross-site
+ * (an Origin that is not allowed, or Sec-Fetch-Site other than same-origin). A request with neither header is not
+ * a browser request, so an origin check cannot stop it anyway (Origin is forgeable outside a browser); that route
+ * is authenticated by the owner key (review) or by the checkout-bound SameSite=Strict session cookie plus CSRF
+ * token (authorize, cancel).
+ */
+export function sameOriginForm(req: IncomingMessage, allowed: string[]): boolean {
+  const site = header(req, "sec-fetch-site");
+  if (site !== undefined && site !== "same-origin") return false;
+  const o = header(req, "origin");
+  return o === undefined || (o !== "null" && allowed.includes(o));
+}
 function securityHeaders(res: ServerResponse) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
@@ -389,13 +461,30 @@ export function reviewBody(cs: CheckoutView, csrf: string, provider: string, man
     <tr><td>Your current spending limit</td><td data-field="spending-limit">${limit}</td></tr>
     <tr><td>Quote expires</td><td>${esc(new Date(cs.expiresAt).toISOString())}</td></tr>
     <tr><td>State</td><td class="state">${esc(cs.state)}</td></tr></table>
-    <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
-    <label>Maximum you authorize (${esc(cur)})<input name="maximum" inputmode="decimal" required placeholder="60.00"></label>
-    <p class="muted">This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve. Approving moves no money by itself.</p>
-    <p><button>Authorize and continue to payment approval</button></p></form>
+    <form method="post"><input type="hidden" name="action" value="preview"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <label>Maximum you authorize (${esc(cur)})<input name="maximum" inputmode="decimal" required placeholder="${esc(CURRENCY_PLACEHOLDER(cur))}"></label>
+    <p class="muted">Use digits and a dot as the decimal separator (no commas or spaces). You confirm the amount on the next page.
+    This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve. Approving moves no money by itself.</p>
+    <p><button>Check amount</button></p></form>
     <form method="post"><input type="hidden" name="action" value="cancel"><input type="hidden" name="csrf" value="${esc(csrf)}">
     <p><button class="secondary">Cancel this checkout</button></p></form>
     <p class="muted">Afterwards, return to your AI assistant and ask it for the checkout status. A browser redirect is never proof of payment.</p>`;
+}
+const CURRENCY_PLACEHOLDER = (cur: CheckoutView["currency"]) => (cur === "JPY" || cur === "KRW" ? "6000" : "60.00");
+/** WP-5 (IR-10): the confirm step. The human sees the parsed limit before any spending authority exists. */
+export function confirmBody(cs: CheckoutView, csrf: string, maximumMinor: number): string {
+  const cur = cs.currency;
+  return `<p data-field="confirm-limit">You are authorizing up to <b>${esc(cur)} ${esc(formatMinor(maximumMinor, cur))}</b> for this checkout.</p>
+    <table><tr><td>Checkout</td><td><code>${esc(cs.checkoutSessionId)}</code></td></tr>
+    <tr><td>Product</td><td>${esc(`${cs.identity.brand} ${cs.identity.model} · ${cs.identity.variant ?? "—"}`)}</td></tr>
+    <tr><td><b>Total payable</b></td><td><b>${esc(money(cs.totalMinor, cur))}</b></td></tr></table>
+    ${maximumMinor < cs.totalMinor ? `<p class="state">This limit is below the total payable, so payment will not start.</p>` : ""}
+    <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <input type="hidden" name="maximum" value="${esc(formatMinor(maximumMinor, cur))}"><input type="hidden" name="maximum_minor" value="${maximumMinor}">
+    <p><button>Confirm and continue to payment approval</button></p></form>
+    <form method="post"><input type="hidden" name="action" value="cancel"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <p><button class="secondary">Cancel this checkout</button></p></form>
+    <p class="muted">Wrong amount? Go back and enter it again. Nothing has been authorized yet.</p>`;
 }
 /** Metadata documents may be fetched cross-origin by browser-based MCP clients. */
 function sendPublic(res: ServerResponse, status: number, body: unknown) {

@@ -37,8 +37,8 @@ step("0.", `AI client discovered tools: ${tools.tools.map((t) => `${t.name}${t.a
 
 const sony = { brand: "Sony", model: "WH-CH720N", variant: "Black", condition: "new", sku: "WHCH720N/B" };
 await fetch(`${baseUrl}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": ownerKey },
-  body: JSON.stringify({ productIdentity: sony, currency: "USD", maximumTotalMinor: 6000 }) });
-step("1.", "The human (owner key, not the AI) created a mandate: Sony WH-CH720N Black, new, max $60.00, 1 transaction.");
+  body: JSON.stringify({ productIdentity: sony, currency: "USD", maximumTotalMinor: 6000, autoUse: true }) });
+step("1.", "The human (owner key, not the AI) created a mandate: Sony WH-CH720N Black, new, max $60.00, 1 transaction, explicitly allowed for automatic use.");
 
 const request = "Buy Sony WH-CH720N Black for the lowest total price, but never exceed $60.";
 const research = await call("research_purchase", { request, currency: "USD" });
@@ -63,7 +63,9 @@ step("5.", `prepare_checkout → ${prep.state}, policy ${prep.policy.code}, tota
 console.log(`   approval URL for the user: ${prep.approvalUrl}`);
 
 const orderId = new URL(prep.approvalUrl).pathname.split("/").pop();
-const approve = await fetch(`${baseUrl}/mock-paypal/checkout/${orderId}/approve`, { method: "POST", redirect: "manual" });
+// The MOCK buyer step is the human's: it needs the owner key (stand-in for the buyer's PayPal login) on a same-origin POST.
+const approve = await fetch(`${baseUrl}/mock-paypal/checkout/${orderId}/approve`, { method: "POST", redirect: "manual",
+  headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: new URL(baseUrl).origin }, body: new URLSearchParams({ owner_key: ownerKey }).toString() });
 await fetch(approve.headers.get("location")!);
 step("6.", "Buyer approved on the (mock) PayPal page; server verified approval with the provider and captured once.");
 

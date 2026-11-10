@@ -34,9 +34,9 @@ Input: `purchaseSessionId`, `offerId`, `maximumApprovedTotalMinor`, `currency`, 
 Server steps: session must be `OFFER_VERIFIED`; offer must have been eligible; a **fresh** quote is fetched and re-verified; total must be ≤ `maximumApprovedTotalMinor`; repeated identical calls return the same checkout (`deduplicated: true`). Then:
 - external merchant → `checkoutSessionId: null`, `checkoutPath: EXTERNAL_MERCHANT_CHECKOUT`, `externalCheckoutUrl`;
 - payment disabled → `HOLD` / `PUBLIC_PAYMENT_DISABLED`;
-- no mandate → `APPROVAL_REQUIRED` + `userAuthorizationUrl` (owner page), requirements `OWNER_MANDATE_REQUIRED`, `PAYPAL_BUYER_APPROVAL_REQUIRED`;
+- no mandate the owner allowed for automatic use (`autoUse: true`, default `false`) → `APPROVAL_REQUIRED` + `userAuthorizationUrl` (owner page), requirements `OWNER_MANDATE_REQUIRED`, `PAYPAL_BUYER_APPROVAL_REQUIRED`;
 - mandate rejects → `HOLD` + `policy.code` (e.g. `AMOUNT_EXCEEDED`), no PayPal call;
-- mandate allows → reservation + PayPal order → `APPROVAL_REQUIRED` + `approvalUrl` (PayPal hosted page).
+- mandate allows → reservation + PayPal order → `APPROVAL_REQUIRED` + `approvalUrl` (PayPal hosted page). In MOCK the hosted page needs the checkout owner's key (stand-in for the buyer's PayPal login); the AI client cannot approve.
 
 Output also includes the immutable `purchaseSummary`, its `summaryHash`, `expiresAt`, `paymentEffect: "NO_FUNDS_CAPTURED"`.
 
@@ -79,4 +79,5 @@ Scope `purchase.read`, read-only. The same contract, plus `observation` (read-on
 
 - `POST /owner/checkouts/{cs_id}/cancel` (header `X-Owner-Key`): cancels a checkout only while no capture can exist (`PREPARED`, `HOLD`, or `APPROVAL_REQUIRED` when the provider still reports the order unapproved). Returns `200 {cancelled: true}` and releases the mandate reservation, or `409 {cancelled: false, reason}` with `BUYER_ALREADY_APPROVED_AT_PROVIDER`, `PROVIDER_STATE_UNKNOWN` or `NOT_CANCELLABLE_IN_<STATE>`. The owner review page has the same Cancel button.
 - `prepare_checkout` repeated with identical arguments after the checkout reached `COMPLETED` returns that checkout with `deduplicated: true`; one purchase session buys at most once.
+- This also holds for **concurrent** identical calls, in one process or in several processes on one database (WP-2, IR-02): the duplicate checks and the checkout insert run in one `BEGIN IMMEDIATE` transaction, backed by the partial UNIQUE index `checkouts_one_live_per_purchase_offer` on `(user_id, purchase_session_id, offer_id, quantity)` for every state except `CANCELLED`, `FAILED`, `EXPIRED` and `REFUNDED` (those allow a new attempt). The loser gets the winner's `checkoutSessionId` with `deduplicated: true`, reserves nothing and creates no provider order. A loser may see the winner before its payment order exists (`approvalUrl` still null); `get_checkout_status` shows the result.
 - With `DIAPORIA_AUTH_MODE=oauth`, `/mcp` accepts OAuth access tokens only. See [REMOTE_MCP_AUTH.md](REMOTE_MCP_AUTH.md).

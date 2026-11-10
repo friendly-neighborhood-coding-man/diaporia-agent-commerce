@@ -149,7 +149,7 @@ async function probe() {
 
   // 4. Over the human's limit: a $60 owner mandate, then a $6,000 offer → HOLD AMOUNT_EXCEEDED, no provider order.
   const m = await fetch(`${SERVER}/owner/mandates`, { method: "POST", headers: { "Content-Type": "application/json", "X-Owner-Key": owners.probe },
-    body: JSON.stringify({ productIdentity: { brand: "Sony", model: "WH-CH720N", variant: "Black", condition: "new", sku: "WHCH720N/B" }, currency: "USD", maximumTotalMinor: 6000 }) });
+    body: JSON.stringify({ productIdentity: { brand: "Sony", model: "WH-CH720N", variant: "Black", condition: "new", sku: "WHCH720N/B" }, currency: "USD", maximumTotalMinor: 6000, autoUse: true }) });
   const mandate = await m.json();
   const c = await connect(tokens.probe);
   const r = await call(c, "research_purchase", { ...RESEARCH_ARGS, budgetMinor: 1_000_000 });
