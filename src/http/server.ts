@@ -76,6 +76,10 @@ export function createApp(cfg: AppConfig): App {
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
     ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service: cfg.service ?? null }, now);
   const base = new URL(cfg.baseUrl);
+  // Every human-facing page names the real payment environment. MOCK is never labelled Sandbox.
+  const envBanner = payments.name === "PAYPAL_SANDBOX" ? "PayPal Sandbox: test accounts and test money only. No real money moves."
+    : "MOCK environment: simulated payment, no PayPal call, no money moves.";
+  const envPage = (title: string, body: string) => page(title, body, envBanner);
   const oauth = cfg.authMode === "oauth" ? new OAuthAuthority(store, cfg.auth, { issuer: base.origin, resource: `${base.origin}/mcp`, ...(cfg.oauth ?? {}) }, now) : null;
   if (oauth && base.protocol !== "https:" && !isLoopbackUrl(cfg.baseUrl)) throw new Error("OAuth mode requires an https PUBLIC_BASE_URL unless it is loopback");
   const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
@@ -188,47 +192,57 @@ export function createApp(cfg: AppConfig): App {
         return send(res, 200, gateway.getCheckoutStatus(userId, cs.checkoutSessionId));
       }
 
+      const cancel = /^\/owner\/checkouts\/(cs_[0-9a-f-]{36})\/cancel$/.exec(url.pathname);
+      if (cancel && req.method === "POST") {
+        if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"));
+        if (!userId) return send(res, 401, { error: "Owner key required" });
+        const out = await gateway.cancelCheckoutAsOwner(userId, cancel[1]!);
+        return send(res, out.cancelled ? 200 : 409, { cancelled: out.cancelled, reason: out.reason, status: gateway.getCheckoutStatus(userId, out.checkout.checkoutSessionId) });
+      }
+
       // ---- Owner authorization page for a prepared checkout ----
       const auth = /^\/authorize\/(cs_[0-9a-f-]{36})$/.exec(url.pathname);
       if (auth) {
         const csId = auth[1]!;
-        if (req.method === "GET") return html(res, 200, page("Authorize a DIAPORIA checkout", `<p>An AI assistant prepared checkout <code>${esc(csId)}</code>. Enter your owner key to review it.
+        if (req.method === "GET") return html(res, 200, envPage("Authorize a DIAPORIA checkout", `<p>An AI assistant prepared checkout <code>${esc(csId)}</code>. Enter your owner key to review it.
           The AI client cannot do this step: its token cannot create spending authority.</p>
           <form method="post"><input type="hidden" name="action" value="review"><label>Owner key<input name="ownerKey" type="password" autocomplete="off" required></label><p><button>Review checkout</button></p></form>`));
         if (req.method !== "POST" || !sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Forbidden" });
         const form = new URLSearchParams(await readText(req));
         if (form.get("action") === "review") {
           const userId = cfg.auth.verifyOwnerKey(form.get("ownerKey") ?? undefined);
-          if (!userId) return html(res, 401, page("Not authorized", "<p>Owner key not recognized.</p>"));
+          if (!userId) return html(res, 401, envPage("Not authorized", "<p>Owner key not recognized.</p>"));
           let cs;
-          try { cs = gateway.sessions.getCheckout(csId, userId); } catch { return html(res, 404, page("Not found", "<p>Checkout not found.</p>")); }
+          try { cs = gateway.sessions.getCheckout(csId, userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
           const sid = randomBytes(24).toString("base64url"); const csrf = randomBytes(24).toString("base64url");
           ownerSessions.set(sid, { userId, csrf, expiresAt: now() + 10 * 60_000 });
           res.setHeader("Set-Cookie", `dac_owner=${sid}; HttpOnly; SameSite=Strict; Path=/authorize; Max-Age=600${base.protocol === "https:" ? "; Secure" : ""}`);
-          const c = cs.cost;
-          return html(res, 200, page("Review and set your spending limit", `<table>
-            <tr><td>Product</td><td>${esc(`${cs.identity.brand} ${cs.identity.model} · ${cs.identity.variant ?? "—"} · ${cs.identity.condition}`)}</td></tr>
-            <tr><td>Merchant</td><td>${esc(cs.summary.merchant.name)} <span class="muted">(fictional demo merchant)</span></td></tr>
-            <tr><td>Quantity</td><td>${cs.quantity}</td></tr><tr><td>Item</td><td>${esc(money(c.itemMinor, cs.currency))}</td></tr>
-            <tr><td>Shipping</td><td>${esc(money(c.shippingMinor, cs.currency))}</td></tr><tr><td>Tax</td><td>${esc(money(c.taxMinor, cs.currency))}</td></tr>
-            <tr><td><b>Total</b></td><td><b>${esc(money(cs.totalMinor, cs.currency))}</b></td></tr><tr><td>State</td><td class="state">${esc(cs.state)}</td></tr></table>
-            <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
-            <label>Maximum you authorize (${esc(cs.currency)})<input name="maximum" inputmode="decimal" required placeholder="60.00"></label>
-            <p class="muted">This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve.</p>
-            <p><button>Authorize and continue to PayPal</button></p></form>`));
+          return html(res, 200, envPage("Review and set your spending limit", reviewBody(cs, csrf, payments.name, cs.mandateId ? gateway.mandates.get(cs.mandateId, userId) : null)));
+        }
+        if (form.get("action") === "cancel") {
+          const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
+          const sess = sid ? ownerSessions.get(sid) : undefined;
+          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          ownerSessions.delete(sid!);
+          let out;
+          try { out = await gateway.cancelCheckoutAsOwner(sess.userId, csId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
+          return html(res, out.cancelled ? 200 : 409, envPage(out.cancelled ? "Checkout cancelled" : "Checkout not cancelled", out.cancelled
+            ? "<p>Nothing was paid. Any reserved spending limit was released. You can return to your AI assistant.</p>"
+            : `<p class="state">${esc(out.reason)}</p><p>The checkout was left unchanged because cancelling now could race a payment. Ask your AI assistant to check the checkout status.</p>`));
         }
         if (form.get("action") === "authorize") {
           const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
           const sess = sid ? ownerSessions.get(sid) : undefined;
-          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, page("Session expired", "<p>Review the checkout again.</p>"));
+          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
           ownerSessions.delete(sid!);
           let cs;
-          try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, page("Not found", "<p>Checkout not found.</p>")); }
+          try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
           let maximum: number;
-          try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, page("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
+          try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, envPage("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
           const out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum);
           if (out.decision.allowed && out.checkout.approvalUrl) { res.statusCode = 303; res.setHeader("Location", out.checkout.approvalUrl); return res.end(); }
-          return html(res, 403, page("Checkout not authorized", `<p class="state">${esc(out.decision.code)}</p><p>${esc(out.decision.detail)}</p><p>No payment was started.</p>`));
+          return html(res, 403, envPage("Checkout not authorized", `<p class="state">${esc(out.decision.code)}</p><p>${esc(out.decision.detail)}</p><p>No payment was started.</p>`));
         }
         return send(res, 400, { error: "Unknown action" });
       }
@@ -258,15 +272,15 @@ export function createApp(cfg: AppConfig): App {
       // ---- PayPal (or mock) buyer return / cancel ----
       if ((url.pathname === "/paypal/return" || url.pathname === "/paypal/cancel") && req.method === "GET") {
         const csId = url.searchParams.get("checkout") ?? ""; const orderId = url.searchParams.get("token") ?? "";
-        if (!/^cs_[0-9a-f-]{36}$/.test(csId) || !/^[A-Z0-9]{8,40}$/.test(orderId)) return html(res, 400, page("Invalid return", "<p>Malformed return parameters.</p>"));
+        if (!/^cs_[0-9a-f-]{36}$/.test(csId) || !/^[A-Z0-9]{8,40}$/.test(orderId)) return html(res, 400, envPage("Invalid return", "<p>Malformed return parameters.</p>"));
         try {
           const cs = url.pathname === "/paypal/return" ? await gateway.handleBuyerReturn(csId, orderId) : await gateway.handleBuyerCancel(csId, orderId);
-          return html(res, 200, page("Payment status", `<p>Server-verified state: <span class="state">${esc(cs.state)}</span></p>
+          return html(res, 200, envPage("Payment status", `<p>Server-verified state: <span class="state">${esc(cs.state)}</span></p>
             ${cs.failureCode ? `<p class="muted">${esc(cs.failureCode)}: ${esc(cs.failureReason)}</p>` : ""}
             <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>
             <p class="muted">Even a COMPLETED payment is only the payment step: no merchant order confirmation or shipment is verified by DIAPORIA.</p>`));
         } catch (e) {
-          if (e instanceof NotFoundError) return html(res, 404, page("Not found", "<p>Unknown checkout.</p>"));
+          if (e instanceof NotFoundError) return html(res, 404, envPage("Not found", "<p>Unknown checkout.</p>"));
           throw e;
         }
       }
@@ -335,6 +349,47 @@ function securityHeaders(res: ServerResponse) {
 }
 function send(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(body));
+}
+type CheckoutView = import("../checkout/CheckoutSessionManager.js").CheckoutSession;
+type MandateView = import("../policy/PurchaseMandate.js").PurchaseMandate;
+/**
+ * Owner review page: everything the human needs to decide, with nothing implied. Unknown charges are
+ * listed as unknown (never zero), the payee is named with its provenance, and the payment
+ * environment is explicit. Approving here creates a DIAPORIA spending limit; it moves no money.
+ */
+export function reviewBody(cs: CheckoutView, csrf: string, provider: string, mandate: MandateView | null): string {
+  const c = cs.cost; const cur = cs.currency;
+  const env = provider === "PAYPAL_SANDBOX" ? "PayPal Sandbox (test money only)" : "MOCK (simulated; no PayPal call, no money)";
+  const mi = cs.summary.merchantIdentity;
+  const payee = mi
+    ? `${esc(mi.verifiedLegalName)} · payee <code>${esc(mi.intendedPayeeId)}</code>${mi.payeeRelationship === "DIAPORIA_SANDBOX_PLATFORM_ACCOUNT"
+      ? ' <span class="muted">(DIAPORIA\'s own Sandbox platform account receives this test payment, not the merchant)</span>' : ' <span class="muted">(merchant-attested payee)</span>'}`
+    : '<span class="state">UNKNOWN</span> <span class="muted">(no verified merchant identity; payment will not start)</span>';
+  const unknown = c.unknownComponents.length ? `<span class="state">${esc(c.unknownComponents.join(", "))}</span> <span class="muted">(unknown is not zero; the total cannot be verified)</span>` : "none";
+  const limit = mandate
+    ? `${esc(money(mandate.maximumTotalMinor, mandate.currency))} (${esc(mandate.authorizationStatus)}, expires ${esc(mandate.expiresAt)}; reserved ${esc(money(mandate.reservedMinor, mandate.currency))}, used ${esc(money(mandate.consumedMinor, mandate.currency))})`
+    : "none yet: you set it below";
+  return `<table>
+    <tr><td>Payment environment</td><td data-field="payment-environment"><b>${esc(env)}</b></td></tr>
+    <tr><td>Product</td><td>${esc(`${cs.identity.brand} ${cs.identity.model} · ${cs.identity.variant ?? "—"} · ${cs.identity.condition}${cs.identity.sku ? ` · SKU ${cs.identity.sku}` : ""}`)}</td></tr>
+    <tr><td>Merchant</td><td>${esc(cs.summary.merchant.name)} (${esc(cs.summary.merchant.domain)}) <span class="muted">(fictional demo merchant)</span></td></tr>
+    <tr><td>Funds go to</td><td data-field="payee">${payee}</td></tr>
+    <tr><td>Quantity</td><td>${cs.quantity}</td></tr><tr><td>Item</td><td>${esc(money(c.itemMinor, cur))}</td></tr>
+    <tr><td>Shipping</td><td>${esc(money(c.shippingMinor, cur))}</td></tr><tr><td>Tax</td><td>${esc(money(c.taxMinor, cur))}</td></tr>
+    <tr><td>Fees</td><td>${esc(money(c.feesMinor, cur))}</td></tr><tr><td>Discount</td><td>${esc(money(c.discountMinor, cur))}</td></tr>
+    <tr><td>Unknown charges</td><td data-field="unknown-charges">${unknown}</td></tr>
+    <tr><td><b>Total payable</b></td><td data-field="total"><b>${esc(money(cs.totalMinor, cur))}</b></td></tr>
+    <tr><td>AI assistant's requested maximum</td><td>${esc(money(cs.clientMaxMinor, cur))} <span class="muted">(narrows only; grants nothing)</span></td></tr>
+    <tr><td>Your current spending limit</td><td data-field="spending-limit">${limit}</td></tr>
+    <tr><td>Quote expires</td><td>${esc(new Date(cs.expiresAt).toISOString())}</td></tr>
+    <tr><td>State</td><td class="state">${esc(cs.state)}</td></tr></table>
+    <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <label>Maximum you authorize (${esc(cur)})<input name="maximum" inputmode="decimal" required placeholder="60.00"></label>
+    <p class="muted">This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve. Approving moves no money by itself.</p>
+    <p><button>Authorize and continue to payment approval</button></p></form>
+    <form method="post"><input type="hidden" name="action" value="cancel"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <p><button class="secondary">Cancel this checkout</button></p></form>
+    <p class="muted">Afterwards, return to your AI assistant and ask it for the checkout status. A browser redirect is never proof of payment.</p>`;
 }
 /** Metadata documents may be fetched cross-origin by browser-based MCP clients. */
 function sendPublic(res: ServerResponse, status: number, body: unknown) {

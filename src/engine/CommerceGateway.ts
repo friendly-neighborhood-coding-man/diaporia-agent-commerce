@@ -414,6 +414,34 @@ export class CommerceGateway {
     return { mandate, ...(await this.startPayment(cs, mandate.mandateId)) };
   }
 
+  /**
+   * The owner withdraws a checkout before any capture. Allowed only while nothing can have been
+   * captured: PREPARED, HOLD, or APPROVAL_REQUIRED when the provider still reports the order as not
+   * approved. If the provider says the buyer already approved (or the read fails), the checkout is
+   * left alone and the reason is returned: cancelling then could race a capture.
+   */
+  async cancelCheckoutAsOwner(ownerUserId: string, checkoutSessionId: string): Promise<{ checkout: CheckoutSession; cancelled: boolean; reason: string }> {
+    let cs = this.expireIfNeeded(this.sessions.getCheckout(checkoutSessionId, ownerUserId));
+    if (!["PREPARED", "HOLD", "APPROVAL_REQUIRED"].includes(cs.state)) return { checkout: cs, cancelled: false, reason: `NOT_CANCELLABLE_IN_${cs.state}` };
+    if (cs.state === "APPROVAL_REQUIRED" && cs.providerOrderId) {
+      try {
+        const order = await this.payments.getOrder(cs.providerOrderId);
+        if (order.status === "APPROVED" || order.status === "COMPLETED") {
+          this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCEL_REFUSED", { providerStatus: order.status });
+          return { checkout: cs, cancelled: false, reason: "BUYER_ALREADY_APPROVED_AT_PROVIDER" };
+        }
+      } catch (e) {
+        this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCEL_CHECK_FAILED", { reason: errorText(e) });
+        return { checkout: cs, cancelled: false, reason: "PROVIDER_STATE_UNKNOWN" };
+      }
+    }
+    const reserved = cs.reservedMinor;
+    cs = this.sessions.transition(cs, "CANCELLED", { reservedMinor: 0, failureCode: "OWNER_CANCELLED", failureReason: "The owner cancelled this checkout before payment" });
+    if (cs.mandateId && reserved > 0) this.policy.release(cs.mandateId, cs.userId, reserved, cs.checkoutSessionId);
+    this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCELLED", { releasedMinor: reserved });
+    return { checkout: cs, cancelled: true, reason: "OWNER_CANCELLED" };
+  }
+
   // ---------------------------------------------------------------- provider return / cancel / reconcile
   /** Buyer came back from PayPal. The redirect itself proves nothing: PayPal is queried. */
   async handleBuyerReturn(checkoutSessionId: string, providerOrderId: string): Promise<CheckoutSession> {
