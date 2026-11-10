@@ -79,8 +79,10 @@ export class TavilySearch implements IndependentSearchProvider {
     for (let i = 0; i < this.retry.attempts; i++) {
       this.calls++;
       try {
+        // Redirects are never followed (review R-08): the bearer token must not leave api.tavily.com.
         const r = await this.fetchImpl("https://api.tavily.com/search", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.#key}` },
-          body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) });
+          body: JSON.stringify(body), redirect: "manual", signal: AbortSignal.timeout(20_000) });
+        if ((r.status >= 300 && r.status < 400) || r.type === "opaqueredirect") throw new Error(`Tavily HTTP ${r.status} redirect refused`);
         if (r.status === 429 || r.status >= 500) {
           last = new Error(`Tavily HTTP ${r.status}`);
           if (i + 1 < this.retry.attempts) { await new Promise((res) => setTimeout(res, Math.min(this.retry.maxRetryAfterMs, Number(r.headers.get("retry-after") ?? 0) * 1000 || this.retry.baseDelayMs * 2 ** i))); continue; }

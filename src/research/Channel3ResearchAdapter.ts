@@ -46,6 +46,8 @@ function axisValue(axis: AttributeAxis, label: string): string {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+class RedirectRefused extends Error {}
+
 export class Channel3ResearchAdapter implements CommerceResearchAdapter {
   readonly name = "channel3-live";
   readonly isMock = false;
@@ -65,12 +67,14 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
     for (let i = 0; i < policy.attempts; i++) {
       this.calls++;
       try {
-        const r = await (this.opts.fetchImpl ?? fetch)(url, { ...init, signal: AbortSignal.timeout(25_000) });
+        // Redirects are never followed (review R-08): the API key header must not leave api.trychannel3.com.
+        const r = await (this.opts.fetchImpl ?? fetch)(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(25_000) });
+        if ((r.status >= 300 && r.status < 400) || r.type === "opaqueredirect") throw new RedirectRefused(`Channel3 HTTP ${r.status} redirect refused`);
         if (r.status !== 429 && r.status < 500) return r;
         last = new Error(`Channel3 HTTP ${r.status}`);
         if (i + 1 < policy.attempts) await sleep(Math.min(policy.maxRetryAfterMs, Number(r.headers.get("retry-after") ?? 0) * 1000 || policy.baseDelayMs * 2 ** i));
         else return r;
-      } catch (e) { last = e; if (i + 1 < policy.attempts) await sleep(policy.baseDelayMs * 2 ** i); }
+      } catch (e) { if (e instanceof RedirectRefused) throw e; last = e; if (i + 1 < policy.attempts) await sleep(policy.baseDelayMs * 2 ** i); }
     }
     throw last instanceof Error ? last : new Error("Channel3 request failed");
   }

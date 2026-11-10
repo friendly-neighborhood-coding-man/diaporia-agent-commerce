@@ -15,6 +15,8 @@
  * Logs contain provider, path, status, credits and provider request id only: never headers, keys or bodies.
  */
 export const SERVICE_LIVE_CAPS = Object.freeze({ CHANNEL3: 1, TAVILY: 2, KERNEL: 1 });
+/** Service adapters make exactly one HTTP attempt per metered call, so ledger counts equal HTTP counts (review R-08). */
+export const SERVICE_LIVE_RETRY = Object.freeze({ attempts: 1, baseDelayMs: 0, maxRetryAfterMs: 0 });
 export const APPROVED_PROVIDER_HOSTS = Object.freeze({ CHANNEL3: "api.trychannel3.com", TAVILY: "api.tavily.com" });
 /** Documented prices after each provider's 1,000 free monthly credits (docs/research/PROVIDER_CONTRACTS.md). */
 export const DOCUMENTED_USD_PER_CREDIT = Object.freeze({ CHANNEL3: 0.007, TAVILY: 0.008 });
