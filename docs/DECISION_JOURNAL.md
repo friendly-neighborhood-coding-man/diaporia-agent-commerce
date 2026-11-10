@@ -200,3 +200,13 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
   4. Grok's first phase-2 `use_tool` used an unqualified tool name and failed inside Grok before reaching the server. The server saw exactly one status call and one receipt call.
 - **Evidence:** on the owner's PC in `.data/scenario-i-run3/evidence`: `matrix.json`, the four host files and `semantic-fidelity.json`. A grep for token or key prefixes, personal email and user paths found 0 matches. It is not committed. Run 1 and run 2 are preserved; their sha256 re-check was still running at the time of writing.
 - **Acceptance:** run 3 meets the Scenario I PASS definition (4/4 hosts plus probes) for MOCK on loopback. Full acceptance is the owner's decision, after the five human-review items.
+
+## 2026-11-10 · Scenario I ACCEPTED, LOCAL MOCK VERIFIED
+
+- **Decision (owner, 15:48:49Z):** "I formally accept Scenario I Run 3 as PASS within its local MOCK scope: 4/4 hosts, 17/17 checks each, all security probes passing, and all five semantic-review items accepted."
+- **Human review, recorded separately:** `docs/evidence/interop/scenario-i-run3/semantic-fidelity.human-review.json`. The owner ACCEPTED all five NEEDS_HUMAN_REVIEW items (Claude Code P2, Codex P1 and P2, Grok P1 and P2). The automated report is unchanged: `semantic-fidelity.json` on the owner's PC, sha256 `3d0440f7…09f3`, ruleset sha256 `5cc76e9c…78dc`. The record repeats its raw verdicts and quotes. Raw transcripts and credentials are not published.
+- **Scope:** local MOCK on loopback only. This says nothing about PayPal Sandbox, live payments, remote hosts or other prompts. No rerun was made to obtain the decisions.
+- **Follow-ups done:**
+  - The runbook pre-warms the Hermes gateway (`hermes gateway ensure --timeout 120`) and records only the `^Hermes Agent v` version line.
+  - Three non-blocking interoperability observations are recorded in docs/INTEROP.md: the Hermes version line, the MCP protocol fallback, and Grok's internal tool-name retry.
+- **Next (owner):** an independent security review of the integrated MVP and a research/read-only remote MCP deployment plan. Neither may deploy anything or start a Sandbox, KERNEL or Cloudflare operation without a separate explicit authorization.

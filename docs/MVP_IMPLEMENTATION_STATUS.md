@@ -74,12 +74,12 @@ Every file and every test title from #2, #3 and #4 exists in this branch (checke
 | Docs explain real vs simulated vs blocked | This file, README status table, MISSION.md |
 | Reviewer can reproduce the demo | `npm run dogfood` and `npm run demo:e2e` (offline) |
 
-The MVP is **not** technically complete: the remote-host and Phase C criteria are BLOCKED on owner-approved external steps. The four-local-host criterion is met in MOCK by Scenario I run 3, pending the owner's acceptance.
+The MVP is **not** technically complete: the remote-host and Phase C criteria are BLOCKED on owner-approved external steps. The four-local-host criterion is met and accepted: Scenario I is LOCAL MOCK VERIFIED. It says nothing about Sandbox, live payments or remote hosts.
 
 ## Waiting on owner approval (prepared, not executed)
 
 1. ~~Push this branch and open a draft PR~~: done 2026-11-10 (draft PR #9, CI green). **Merge** still needs the owner, after the blockers in MERGE_READINESS.md.
-2. **Scenario I on the owner's PC.** Run 3 on 0d4aa8b PASSED the 17 checks for all 4 hosts and the probes; full acceptance is the owner's decision after reviewing 5 semantic-fidelity items. Run 1 ABORTED_DF3 and run 2 FAILED_DF4 are preserved: [SCENARIO_I_RUNBOOK.md](SCENARIO_I_RUNBOOK.md). Four hosts run research → compare → prepare, the owner authorizes $60 on the owner page and approves on the MOCK PayPal page, then the hosts read status and receipt. Probes follow. No money and no paid DIAPORIA provider calls; it uses the owner's host subscriptions.
+2. ~~**Scenario I on the owner's PC.**~~ **ACCEPTED, LOCAL MOCK VERIFIED** (owner, 2026-11-10). Run 3 on 0d4aa8b: 4/4 hosts PASS 17/17, the probes pass, and the owner accepted all 5 semantic-fidelity review items. Run 1 ABORTED_DF3 and run 2 FAILED_DF4 are preserved: [SCENARIO_I_RUNBOOK.md](SCENARIO_I_RUNBOOK.md). Four hosts run research → compare → prepare, the owner authorizes $60 on the owner page and approves on the MOCK PayPal page, then the hosts read status and receipt. Probes follow. No money and no paid DIAPORIA provider calls; it uses the owner's host subscriptions.
 3. **Remote host test**: deploy `DIAPORIA_AUTH_MODE=oauth` on an HTTPS host in research/read mode (payment tools are not offered there by design), then connect one remote MCP client. Needs a hostname, a Cloudflare route that does not touch existing routes, and an owner key held only by the owner.
 4. **Phase C C1** stays on hold as before (independent C0 review, exact HTTPS host, new signed approval). The merchant artifact hash changed in this branch, so any C1 statement must be generated from this commit.
 5. **Managed billing (PR #4)**: plan price, country eligibility, each Sandbox step.

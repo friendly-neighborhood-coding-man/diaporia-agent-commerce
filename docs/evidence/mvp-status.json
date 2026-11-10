@@ -214,11 +214,11 @@
         "scenario J public HTTPS smoke not run"
       ],
       "securityBlockers": [],
-      "nextTask": "Owner review of 5 semantic-fidelity humanReview items; owner decides full Scenario I acceptance",
+      "nextTask": "Independent security review of the integrated MVP; research/read-only remote MCP deployment plan (no deployment without a separate go)",
       "approvalRequired": [
         "use of owner PC"
       ],
-      "scenarioI": "RUN3_PASS_17_CHECKS (0d4aa8b, 2026-11-10, owner PC, MOCK, loopback): 4/4 hosts PASS 17/17, probes pass; semantic-fidelity/v1: 0 CONTRADICTED, Hermes NO_CONTRADICTION, 5 NEEDS_HUMAN_REVIEW items (Claude 1, Codex 2, Grok 2) awaiting owner decision; run 1 ABORTED_DF3, run 2 FAILED_DF4 preserved"
+      "scenarioI": "ACCEPTED, LOCAL MOCK VERIFIED (owner, 2026-11-10T15:48:49Z): run 3 on 0d4aa8b, 4/4 hosts PASS 17/17, probes pass; semantic-fidelity/v1 0 CONTRADICTED, 5 NEEDS_HUMAN_REVIEW items all ACCEPTED by the owner (recorded separately); run 1 ABORTED_DF3, run 2 FAILED_DF4 preserved"
     }
   ],
   "dogfood": {
@@ -230,7 +230,7 @@
     "F": "PASS",
     "G": "PASS",
     "H": "PASS",
-    "I": "PASS_RUN3_17_CHECKS_PENDING_OWNER_ACCEPTANCE",
+    "I": "ACCEPTED_LOCAL_MOCK_VERIFIED",
     "J": "PASS_OFFLINE_LOOPBACK",
     "K": "PASS"
   },
@@ -253,7 +253,7 @@
     },
     {
       "criterion": "four local hosts full workflow incl. status",
-      "status": "MET_LOCAL_MOCK_RUN3_PENDING_OWNER_ACCEPTANCE"
+      "status": "MET_LOCAL_MOCK_VERIFIED_ACCEPTED"
     },
     {
       "criterion": "remote host on authenticated HTTPS",

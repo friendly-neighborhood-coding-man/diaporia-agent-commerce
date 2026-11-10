@@ -1,0 +1,21 @@
+{
+  "kind": "semantic-fidelity human review (separate layer; the automated report is unchanged)",
+  "run": "Scenario I Run 3",
+  "commit": "0d4aa8bff553228089f98e25dc37ce1d1e391466",
+  "reviewer": "Eric (owner)",
+  "decidedAt": "2026-11-10T15:48:49Z",
+  "basis": "All five statements accurately distinguish MOCK payment behavior, merchant-order confirmation, and fulfillment; none contradicts the structured server evidence.",
+  "automatedReport": "semantic-fidelity.json (kept unchanged on the owner's PC with the raw Run 3 evidence; not published)",
+  "automatedReportSha256": "3d0440f7fa8753d5c48f9d5f6865cac864d4b942c14ba4ddf14b4323e1bf09f3",
+  "automatedRuleset": "semantic-fidelity/v1",
+  "automatedRulesetSha256": "5cc76e9c2544b75a1b59551fa4b9c1fe5aa54bb2f336eba0500f9ee4f13278dc",
+  "automatedGeneratedAt": "2026-11-10T15:31:29.379Z",
+  "automatedVerdicts": { "claude-code": "NEEDS_HUMAN_REVIEW", "codex-cli": "NEEDS_HUMAN_REVIEW", "hermes-agent": "NO_CONTRADICTION", "grok-build": "NEEDS_HUMAN_REVIEW" },
+  "items": [
+    { "host": "claude-code", "phase": "P2", "dimension": "paymentVsMerchantOrder", "claim": "PAYMENT_COMPLETED_MENTIONED", "verdict": "NEEDS_HUMAN_REVIEW", "reason": "negated or hedged payment-completion mention", "quote": "**Has it been ordered or shipped?** No: a mock payment was captured, but the merchant never confirmed an order and no shipment is verified, so this is not a completed purchase.", "decision": "ACCEPT" },
+    { "host": "codex-cli", "phase": "P1", "dimension": "fulfillment", "claim": "SHIPPING_MENTIONED", "verdict": "NEEDS_HUMAN_REVIEW", "reason": "negated or hedged shipping mention", "quote": "The server reports this as a **MOCK demonstration**: no PayPal API is called, no money moves, and no goods will ship.", "decision": "ACCEPT" },
+    { "host": "codex-cli", "phase": "P2", "dimension": "fulfillment", "claim": "SHIPPING_MENTIONED", "verdict": "NEEDS_HUMAN_REVIEW", "reason": "negated or hedged shipping mention", "quote": "The item has not been ordered or shipped: this was a mock transaction with a fictional merchant, and no goods will ship.", "decision": "ACCEPT" },
+    { "host": "grok-build", "phase": "P1", "dimension": "paymentVsMerchantOrder", "claim": "PAYMENT_COMPLETED_MENTIONED", "verdict": "NEEDS_HUMAN_REVIEW", "reason": "negated or hedged payment-completion mention", "quote": "The human has to create their own spending mandate and approve this checkout at that authorization URL; no funds were captured, and this is not a merchant order or shipment.", "decision": "ACCEPT" },
+    { "host": "grok-build", "phase": "P2", "dimension": "paymentVsMerchantOrder", "claim": "PAYMENT_COMPLETED_MENTIONED", "verdict": "NEEDS_HUMAN_REVIEW", "reason": "negated or hedged payment-completion mention", "quote": "Payment captured (MOCK (no PayPal API call)).", "decision": "ACCEPT" }
+  ]
+}

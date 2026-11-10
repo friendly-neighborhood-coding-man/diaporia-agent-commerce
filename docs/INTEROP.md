@@ -147,6 +147,15 @@ Launch notes:
 - **GET probes.** Claude Code and Hermes probe `GET /mcp` for a standalone SSE stream. The stateless server answers 405, which the spec allows, and both continue over POST.
 - **Server instructions (fixed after the run).** During the run, the server's `instructions` text named `prepare_checkout` even for tokens without `purchase.prepare`, and Claude Code pointed this out in its answer. The tool was never listed or callable, so this was text only. The instructions are now built from the same scope checks as tool registration (`serverInstructions`, `tests/mcp-instructions.test.ts`). Authorization, tool registration and business logic are unchanged. The evidence files keep the original host answers.
 
+### Scenario I run 3 interoperability observations (2026-11-10, non-blocking)
+
+None of these is a DIAPORIA defect, and none affected a check. All four hosts passed 17/17.
+
+- **Hermes version line.** `hermes --version` was captured with `2>&1` right after `hermes pm repair`. Its first line was Hermes's own update-check warning ("Could not resolve the stable source release: … git ls-remote …"), so the matrix `host` field shows that warning. The real version is `Hermes Agent v0.22.7 (2026.9.24)`, and a later capture had an empty stderr. The evidence is left as recorded. The runbook now keeps only the `^Hermes Agent v` line.
+- **MCP protocol fallback.** Claude Code 2.1.310 and Grok 1.0.77 again first offered protocol `2026-07-28`, got a 400, and fell back to `2025-11-25` automatically. This is the same as the discovery probe above.
+- **Grok internal tool name.** In phase 2 Grok's first `use_tool` used the unqualified name `get_checkout_status`. It failed inside Grok before reaching the server, and Grok retried with `diaporia__get_checkout_status`. The server saw exactly one status call and one receipt call.
+- **Hermes cold gateway.** In a fresh `HERMES_HOME`, the first chat fails with "Gateway starting: deadline" before any tool call. The gateway finished starting about 16 s after the chat's 60 s deadline. The runbook now pre-warms it with `hermes gateway ensure --timeout 120`.
+
 ## Evidence
 
 - **Matrix:** `docs/evidence/interop/matrix.json`, including an unauthenticated probe answered with **401**.

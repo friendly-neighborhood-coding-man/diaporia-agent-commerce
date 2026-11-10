@@ -35,7 +35,7 @@ node scripts/interop/scenario-i.mjs setup        # writes .data/scenario-i/ ; pr
 claude --version > .data/scenario-i/claude-version.txt
 codex --version  > .data/scenario-i/codex-version.txt
 grok --version   > .data/scenario-i/grok-version.txt
-HERMES_HOME=<disposable home> hermes --version > .data/scenario-i/hermes-version.txt
+HERMES_HOME=<disposable home> hermes --version 2>/dev/null | grep -m1 "^Hermes Agent v" > .data/scenario-i/hermes-version.txt   # only the version line (run 3: an update-check warning was captured instead)
 ```
 
 The self-test drives the same scripts with a simulated host (the official MCP SDK client) and a simulated human, then checks that the evidence builder passes three hosts and fails a fourth host that skipped phase 2. It proves the tooling, not any host.
@@ -103,11 +103,12 @@ Use a disposable `HERMES_HOME`, the same kind as in the earlier runs: the `claud
 # Launch environment: no OpenRouter key (paid fallback) and no ANTHROPIC_* / CLAUDE* variables from a parent session.
 H() { env -u OPENROUTER_API_KEY $(env | grep -oE '^(ANTHROPIC|CLAUDE)[A-Z0-9_]*' | sed 's/^/-u /') HERMES_HOME=<disposable home> hermes "$@"; }
 H mcp test diaporia            # expect: Connected; tools include prepare_checkout
+H gateway ensure --timeout 120 # pre-warm (added after run 3): exit 0 = ready. A fresh HERMES_HOME cold-starts in a bit over the chat's 60 s deadline
 H chat --query-file .data/scenario-i/prompt-phase1.txt --oneshot -Q --format stream-json --max-turns 8 \
   > .data/scenario-i/hermes-agent.p1.stream.jsonl
 ```
 
-If that home's gateway was first started with the wrong environment, stop the gateway before retrying.
+If that home's gateway was first started with the wrong environment, stop the gateway before retrying. Run `H gateway ensure` in the same cleaned environment as the chat, because the gateway keeps the environment it was first launched with. `H gateway status` shows its state. Without the pre-warm, the first chat in a fresh home fails with "Gateway starting: deadline" before any tool call (runs 1 and 3; each used its one launch rerun).
 
 **Stop conditions for phase 1.** If a host calls a tool outside the three, opens a URL, or gets an error, do not retry with a changed prompt. Keep its transcript as evidence and continue with the next host. The builder will mark that host FAIL with the failed checks. One rerun of a host is allowed only for a host-side launch problem that never reached the server, such as login, approval policy or config. Record the reason.
 
