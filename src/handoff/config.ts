@@ -39,6 +39,9 @@ export async function configureHandoffFromEnv(env: NodeJS.ProcessEnv): Promise<C
     if (!env.HANDOFF_RECIPES_FILE) throw new Error("HANDOFF_DRIVER=kernel needs HANDOFF_RECIPES_FILE");
     const recipes = JSON.parse(readFileSync(env.HANDOFF_RECIPES_FILE, "utf8")) as MerchantCheckoutRecipe[];
     const driver = new KernelDriver(env.KERNEL_API_KEY, { allowLive: true, maxSessions: Number(env.HANDOFF_KERNEL_MAX_SESSIONS ?? 2) });
+    // The old human session is no longer authenticated after restart. Reap every durable
+    // unverified browser record before exposing another live handoff.
+    await driver.recoverOrphanedBrowsers();
     return {
       config: { driver, recipes: new MerchantRecipeRegistry(recipes, { allowLoopbackOrigin: false }), sellers: new SellerSourceRegistry([]),
         handoffTtlMs: 10 * 60_000, takeoverTtlMs: 10 * 60_000 },
