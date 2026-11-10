@@ -89,6 +89,18 @@ describe("KERNEL driver (offline wire test)", () => {
     for (const secret of ["LIVE_SECRET", "CDP_SECRET", "jwt=", "sk_test_kernel_key"]) expect(everything).not.toContain(secret);
   });
 
+  it("arms exactly one independent watchdog and clamps the wall-clock lifetime to ten minutes", async () => {
+    const k = fakeKernel();
+    const armed: Array<{ id: string; ms: number }> = [];
+    const d = new KernelDriver("sk_test_kernel_key_000", { allowLive: true, fetchImpl: k.fetchImpl,
+      maxWallMs: 999_999_999, watchdog: async (id, ms) => { armed.push({ id, ms }); } });
+    const s = await d.open({ label: "bounded", merchantHost: "example.org", allowedHosts: ["example.org"], timeoutSeconds: 3600 });
+    expect(armed).toEqual([{ id: "kb_1", ms: 600_000 }]);
+    expect(s.phase).toBe("AUTOMATION");
+    await s.close();
+    expect(s.phase).toBe("CLOSED");
+  });
+
   it("enforces a per-process browser cap", async () => {
     const k = fakeKernel();
     const d = new KernelDriver("sk_test_kernel_key_000", { allowLive: true, fetchImpl: k.fetchImpl, baseUrl: "https://api.kernel.test", maxSessions: 1 });
