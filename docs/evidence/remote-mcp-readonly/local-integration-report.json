@@ -2,36 +2,36 @@
   "mode": "local-integration",
   "verificationLevel": "LOCAL_VERIFIED (local integration; emulated proxy; not a remote host)",
   "publicOrigin": "https://mcp.diaporia.test",
-  "startedAt": "2026-11-10T17:57:12.993Z",
+  "startedAt": "2026-11-10T18:59:08.913Z",
   "node": "v22.23.4",
   "verdict": "PASS",
-  "passed": 108,
-  "total": 108,
+  "passed": 139,
+  "total": 139,
   "steps": [
     {
       "step": 1,
-      "pass": 21,
-      "total": 21
+      "pass": 26,
+      "total": 26
     },
     {
       "step": 2,
-      "pass": 4,
-      "total": 4
-    },
-    {
-      "step": 3,
-      "pass": 11,
-      "total": 11
-    },
-    {
-      "step": 4,
       "pass": 5,
       "total": 5
     },
     {
-      "step": 5,
+      "step": 3,
       "pass": 6,
       "total": 6
+    },
+    {
+      "step": 4,
+      "pass": 6,
+      "total": 6
+    },
+    {
+      "step": 5,
+      "pass": 9,
+      "total": 9
     },
     {
       "step": 6,
@@ -50,8 +50,8 @@
     },
     {
       "step": 9,
-      "pass": 3,
-      "total": 3
+      "pass": 4,
+      "total": 4
     },
     {
       "step": 10,
@@ -60,8 +60,8 @@
     },
     {
       "step": 11,
-      "pass": 6,
-      "total": 6
+      "pass": 7,
+      "total": 7
     },
     {
       "step": 12,
@@ -70,8 +70,8 @@
     },
     {
       "step": 13,
-      "pass": 31,
-      "total": 31
+      "pass": 45,
+      "total": 45
     },
     {
       "step": 14,
@@ -80,8 +80,8 @@
     },
     {
       "step": 15,
-      "pass": 3,
-      "total": 3
+      "pass": 13,
+      "total": 13
     }
   ],
   "checks": [
@@ -124,6 +124,36 @@
     {
       "step": 1,
       "name": "startup refused: short owner key (exit 78, never listens)",
+      "ok": true,
+      "detail": "exit=78"
+    },
+    {
+      "step": 1,
+      "name": "startup refused: no pre-registered OAuth clients (exit 78, never listens)",
+      "ok": true,
+      "detail": "exit=78"
+    },
+    {
+      "step": 1,
+      "name": "startup refused: client secret in clear instead of sha256 (exit 78, never listens)",
+      "ok": true,
+      "detail": "exit=78"
+    },
+    {
+      "step": 1,
+      "name": "startup refused: client bound to a user without an owner key (exit 78, never listens)",
+      "ok": true,
+      "detail": "exit=78"
+    },
+    {
+      "step": 1,
+      "name": "startup refused: client redirect outside the allowlist (exit 78, never listens)",
+      "ok": true,
+      "detail": "exit=78"
+    },
+    {
+      "step": 1,
+      "name": "startup refused: dynamic registration requested (exit 78, never listens)",
       "ok": true,
       "detail": "exit=78"
     },
@@ -185,13 +215,13 @@
       "step": 1,
       "name": "service starts with the remote read-only profile",
       "ok": true,
-      "detail": "{\"ts\":\"2026-11-10T17:57:11.323Z\",\"event\":\"startup\",\"profile\":\"remote-readonly\",\"baseUrl\":\"https://mcp.diaporia.test\",\"resource\":\"https://mcp.diaporia.test/mcp\",\"scopes\":[\"purchase.research\",\"purchase.read\"],\"users\":[\"alice-remote\",\"bob-remote\"],\"trustedProxies\":[\"127.0.0.1\"],\"accessTokenTtlSec\":3600,\"refreshTokenTtlSec\":604800,\"maxClients\":200,\"rateLimits\":{\"mcpPerMinute\":120,\"webPerMinute\":30,\"re"
+      "detail": "{\"ts\":\"2026-11-10T18:59:06.319Z\",\"event\":\"startup\",\"profile\":\"remote-readonly\",\"baseUrl\":\"https://mcp.diaporia.test\",\"resource\":\"https://mcp.diaporia.test/mcp\",\"scopes\":[\"purchase.research\",\"purchase.read\"],\"users\":[\"alice-remote\",\"bob-remote\"],\"trustedProxies\":[\"127.0.0.1\"],\"accessTokenTtlSec\":3600,\"refreshTokenTtlSec\":604800,\"maxClients\":200,\"rateLimits\":{\"mcpPerMinute\":120,\"webPerMinute\":30,\"re"
     },
     {
       "step": 1,
-      "name": "startup manifest: payment execution off, MOCK fixtures, research/read scopes only",
+      "name": "startup manifest: payment execution off, MOCK fixtures, research/read scopes, closed registration, key-bound grants",
       "ok": true,
-      "detail": "{\"ts\":\"2026-11-10T17:57:11.323Z\",\"event\":\"startup\",\"profile\":\"remote-readonly\",\"baseUrl\":\"https://mcp.diaporia.test\",\"resource\":\"https://mcp.diaporia.test/mcp\",\"scopes\":[\"purchase.research\",\"purchase.read\"],\"users\":[\"alice-remote\",\"bob-remote\"],\"trustedProxies\":[\"127.0.0.1\"],\"accessTokenTtlSec\":3600,\"refreshTokenTtlSec\":604800,\"maxClients\":200,\"rateLimits\":{\"mcpPerMinute\":120,\"webPerMinute\":30,\"re"
+      "detail": "{\"ts\":\"2026-11-10T18:59:06.319Z\",\"event\":\"startup\",\"profile\":\"remote-readonly\",\"baseUrl\":\"https://mcp.diaporia.test\",\"resource\":\"https://mcp.diaporia.test/mcp\",\"scopes\":[\"purchase.research\",\"purchase.read\"],\"users\":[\"alice-remote\",\"bob-remote\"],\"trustedProxies\":[\"127.0.0.1\"],\"accessTokenTtlSec\":3600,\"refreshTokenTtlSec\":604800,\"maxClients\":200,\"rateLimits\":{\"mcpPerMinute\":120,\"webPerMinute\":30,\"re"
     },
     {
       "step": 1,
@@ -219,9 +249,15 @@
     },
     {
       "step": 2,
-      "name": "authorization server metadata (RFC 8414): issuer, S256 only, code flow, DCR endpoint",
+      "name": "authorization server metadata (RFC 8414): issuer, S256 only, code flow, iss parameter",
       "ok": true,
-      "detail": "{\"issuer\":\"https://mcp.diaporia.test\",\"authorization_endpoint\":\"https://mcp.diaporia.test/oauth/authorize\",\"token_endpoint\":\"https://mcp.diaporia.test/oauth/token\",\"registration_endpoint\":\"https://mcp.diaporia.test/oauth/register\",\"revocation_endpoint\":\"https://mcp.diaporia.test/oauth/revoke\",\"response_types_supported\":[\"code\"],\"response_modes_supported\":[\"query\"],\"grant_types_supported\":[\"authori"
+      "detail": "{\"issuer\":\"https://mcp.diaporia.test\",\"authorization_endpoint\":\"https://mcp.diaporia.test/oauth/authorize\",\"token_endpoint\":\"https://mcp.diaporia.test/oauth/token\",\"revocation_endpoint\":\"https://mcp.diaporia.test/oauth/revoke\",\"response_types_supported\":[\"code\"],\"response_modes_supported\":[\"query\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"code_challenge_methods_supported\":[\""
+    },
+    {
+      "step": 2,
+      "name": "no registration_endpoint advertised; token endpoint accepts confidential clients only",
+      "ok": true,
+      "detail": "{\"issuer\":\"https://mcp.diaporia.test\",\"authorization_endpoint\":\"https://mcp.diaporia.test/oauth/authorize\",\"token_endpoint\":\"https://mcp.diaporia.test/oauth/token\",\"revocation_endpoint\":\"https://mcp.diaporia.test/oauth/revoke\",\"response_types_supported\":[\"code\"],\"response_modes_supported\":[\"query\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"code_challenge_methods_supported\":[\""
     },
     {
       "step": 2,
@@ -237,63 +273,39 @@
     },
     {
       "step": 3,
-      "name": "dynamic client registration (RFC 7591) issues a public client",
+      "name": "dynamic registration refused even for a familiar name and allowlisted callback (http://127.0.0.1:53682/callback)",
       "ok": true,
-      "detail": "201"
+      "detail": "403"
     },
     {
       "step": 3,
-      "name": "registration refuses redirect http://evil.example/cb",
+      "name": "dynamic registration refused even for a familiar name and allowlisted callback (https://claude.ai/api/mcp/auth_callback)",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 3,
+      "name": "dynamic registration refused even for a familiar name and allowlisted callback (https://chatgpt.com/connector_platform_oauth_redirect)",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 3,
+      "name": "authorize with an unknown client id: error page, no redirect",
       "ok": true,
       "detail": "400"
     },
     {
       "step": 3,
-      "name": "registration refuses redirect javascript:alert(1)",
+      "name": "authorize with a redirect not registered for that client issues no redirect",
       "ok": true,
       "detail": "400"
     },
     {
       "step": 3,
-      "name": "registration refuses redirect https://u:p@a.example/cb",
+      "name": "consent page names the operator-registered client and the one account it is bound to",
       "ok": true,
-      "detail": "400"
-    },
-    {
-      "step": 3,
-      "name": "registration refuses redirect https://claude.ai.evil.example/api/mcp/auth_callback",
-      "ok": true,
-      "detail": "400"
-    },
-    {
-      "step": 3,
-      "name": "registration refuses redirect https://evil.example/api/mcp/auth_callback",
-      "ok": true,
-      "detail": "400"
-    },
-    {
-      "step": 3,
-      "name": "registration accepts allowlisted host callback https://claude.ai/api/mcp/auth_callback",
-      "ok": true,
-      "detail": "201"
-    },
-    {
-      "step": 3,
-      "name": "registration accepts allowlisted host callback https://chatgpt.com/connector_platform_oauth_redirect",
-      "ok": true,
-      "detail": "201"
-    },
-    {
-      "step": 3,
-      "name": "registration accepts allowlisted host callback http://localhost:6274/oauth/callback",
-      "ok": true,
-      "detail": "201"
-    },
-    {
-      "step": 3,
-      "name": "authorize with an unregistered redirect issues no redirect",
-      "ok": true,
-      "detail": "400"
+      "detail": "200"
     },
     {
       "step": 4,
@@ -309,6 +321,12 @@
     },
     {
       "step": 4,
+      "name": "alice's client cannot be approved with bob's owner key (client bound to one user)",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 4,
       "name": "consent with a forged CSRF token is refused",
       "ok": true,
       "detail": "400"
@@ -321,9 +339,27 @@
     },
     {
       "step": 4,
-      "name": "test user alice approves: redirect carries code, state and iss (RFC 9207)",
+      "name": "test user alice approves her own client: redirect carries code, state and iss (RFC 9207)",
       "ok": true,
       "detail": "303"
+    },
+    {
+      "step": 5,
+      "name": "phishing simulation: the code alone (client id known, no secret) cannot be exchanged",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}"
+    },
+    {
+      "step": 5,
+      "name": "wrong client secret refused",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}"
+    },
+    {
+      "step": 5,
+      "name": "a code issued to alice's client cannot be redeemed with bob's client credentials",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid authorization code\"}"
     },
     {
       "step": 5,
@@ -333,7 +369,13 @@
     },
     {
       "step": 5,
-      "name": "code + PKCE S256 verifier → access and refresh tokens, research/read scope",
+      "name": "code + PKCE S256 + client secret → access and refresh tokens, research/read scope",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "step": 5,
+      "name": "client_secret_basic also works (hosts differ)",
       "ok": true,
       "detail": "200"
     },
@@ -346,14 +388,7 @@
     {
       "step": 5,
       "name": "code replay revokes the tokens that code produced",
-      "ok": true,
-      "detail": "401"
-    },
-    {
-      "step": 5,
-      "name": "a code issued to client B cannot be redeemed by client A",
-      "ok": true,
-      "detail": "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid authorization code\"}"
+      "ok": true
     },
     {
       "step": 5,
@@ -383,7 +418,7 @@
       "step": 7,
       "name": "research_purchase returns candidates with evidence",
       "ok": true,
-      "detail": "{\n  \"purchaseSessionId\": \"ps_32b4b1c1-d6b3-49b4-b2ab-a4e5bb636a78\",\n  \"state\": \"RESEARCHED\",\n  \"mode\": \"EXACT_PRODUCT_PURCHASE\",\n  \"intent\": {\n    \"currency\": \"USD\",\n    \"budgetMinor\": 6000,\n    \"budg"
+      "detail": "{\n  \"purchaseSessionId\": \"ps_7fca93a4-7434-4687-975f-7312251346a7\",\n  \"state\": \"RESEARCHED\",\n  \"mode\": \"EXACT_PRODUCT_PURCHASE\",\n  \"intent\": {\n    \"currency\": \"USD\",\n    \"budgetMinor\": 6000,\n    \"budg"
     },
     {
       "step": 7,
@@ -395,7 +430,7 @@
       "step": 8,
       "name": "compare_purchase_offers returns verified offers with full cost breakdown",
       "ok": true,
-      "detail": "{\n  \"purchaseSessionId\": \"ps_32b4b1c1-d6b3-49b4-b2ab-a4e5bb636a78\",\n  \"state\": \"OFFER_VERIFIED\",\n  \"productIdentity\": {\n    \"brand\": \"Sony\",\n    \"model\": \"WH-CH720N\",\n    \"variant\": \"Black\",\n    \"cond"
+      "detail": "{\n  \"purchaseSessionId\": \"ps_7fca93a4-7434-4687-975f-7312251346a7\",\n  \"state\": \"OFFER_VERIFIED\",\n  \"productIdentity\": {\n    \"brand\": \"Sony\",\n    \"model\": \"WH-CH720N\",\n    \"variant\": \"Black\",\n    \"cond"
     },
     {
       "step": 8,
@@ -423,7 +458,7 @@
     },
     {
       "step": 12,
-      "name": "alice's refresh token presented by bob's client is refused",
+      "name": "alice's refresh token presented with bob's client credentials is refused",
       "ok": true,
       "detail": "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid refresh token\"}"
     },
@@ -431,7 +466,7 @@
       "step": 12,
       "name": "usage summaries are per user",
       "ok": true,
-      "detail": "[977,\"{\\n  \\\"mode\\\": \\\"community\\\",\\n  \\\"usage\\\": {\\n    \\\"userId\\\": \\\"bob-remote\\\",\\n    \\\"period\\\": \"]"
+      "detail": "{\n  \"mode\": \"community\",\n  \"usage\": {\n    \"userId\": \"bob-remote\",\n    \"period\": "
     },
     {
       "step": 13,
@@ -614,6 +649,90 @@
       "detail": "404"
     },
     {
+      "step": 13,
+      "name": "GET /%6Fwner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "POST /%6Fwner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "GET /OWNER/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "POST /OWNER/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "GET //owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "POST //owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "GET /mcp/../owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 13,
+      "name": "POST /mcp/../owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 13,
+      "name": "GET /oauth/../owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 13,
+      "name": "POST /oauth/../owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 13,
+      "name": "GET /owner%2Fmandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "POST /owner%2Fmandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "step": 13,
+      "name": "GET /./owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "step": 13,
+      "name": "POST /./owner/mandates is closed (403/404) even with a valid token and owner key",
+      "ok": true,
+      "detail": "403"
+    },
+    {
       "step": 9,
       "name": "refresh rotates: new access + refresh token, same scope",
       "ok": true,
@@ -627,9 +746,15 @@
     },
     {
       "step": 9,
+      "name": "refresh without the client secret is refused",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}"
+    },
+    {
+      "step": 9,
       "name": "refresh-token reuse is refused and revokes the whole grant",
       "ok": true,
-      "detail": "[400,401]"
+      "detail": "400"
     },
     {
       "step": 14,
@@ -638,9 +763,8 @@
     },
     {
       "step": 14,
-      "name": "access token issued before the restart is still valid (DB-backed)",
-      "ok": true,
-      "detail": "200"
+      "name": "access token issued before the restart is still valid (DB-backed, same owner key)",
+      "ok": true
     },
     {
       "step": 14,
@@ -652,13 +776,13 @@
       "step": 14,
       "name": "alice's research session survives the restart",
       "ok": true,
-      "detail": "{\n  \"purchaseSessionId\": \"ps_32b4b1c1-d6b3-49b4-b2ab-a4e5bb636a78\",\n  \"state\": \"OFFER_VERIFIED\",\n  \"productIdentity\": {\n"
+      "detail": "{\n  \"purchaseSessionId\": \"ps_7fca93a4-7434-4687-975f-7312251346a7\",\n  \"state\": \"OFFER_VERIFIED\",\n  \"productIdentity\": {\n"
     },
     {
       "step": 10,
       "name": "revoking the refresh token (RFC 7009) revokes the grant; access token now 401",
       "ok": true,
-      "detail": "[200,401]"
+      "detail": "200"
     },
     {
       "step": 10,
@@ -675,6 +799,12 @@
     {
       "step": 11,
       "name": "owner key as bearer rejected with 401",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "step": 11,
+      "name": "client secret as bearer rejected with 401",
       "ok": true,
       "detail": "401"
     },
@@ -703,33 +833,81 @@
       "detail": "[2,200]"
     },
     {
-      "step": 3,
-      "name": "client registration has its own limit (10 per hour per client): the 11th is refused",
-      "ok": true,
-      "detail": "[201,201,201,201,201,201,201,201,201,201,429]"
-    },
-    {
       "step": 15,
       "name": "rollback to OFF: stopping the service closes the endpoint",
       "ok": true
     },
     {
       "step": 15,
-      "name": "restore from the stopped-state backup and start again: healthy, still read-only",
+      "name": "after rotating alice's key (no revoke-all flag) startup revokes her old grant persistently",
       "ok": true,
-      "detail": "{\"ok\":true,\"paymentExecutionEnabled\":false,\"paymentEnvironment\":\"MOCK\",\"liveMerchantCheckout\":false,\"authMode\":\"oauth\",\"paymentProvider\":\"MOCK_PAYPAL\",\"researchAdapter\":\"mock-fixtures\"}"
+      "detail": "{\"revoked\":4,\"stale\":4,\"removedUsers\":0,\"all\":0,\"pruned\":{\"codes\":0,\"tokens\":0,\"clients\":0}}"
     },
     {
       "step": 15,
-      "name": "after restore a new grant works (OAuth tables intact)",
+      "name": "alice's pre-rotation access token is refused",
+      "ok": true
+    },
+    {
+      "step": 15,
+      "name": "alice's pre-rotation refresh token is refused (invalid_grant)",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_grant\",\"error_description\":\"Refresh token revoked\"}"
+    },
+    {
+      "step": 15,
+      "name": "bob's grant is unaffected by alice's rotation",
+      "ok": true
+    },
+    {
+      "step": 15,
+      "name": "the retired owner key can no longer approve anything",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "step": 15,
+      "name": "alice authorizes again with her new key",
       "ok": true,
       "detail": "200"
     },
     {
-      "step": 11,
-      "name": "audit log: JSON lines, no token, code or owner key appears",
+      "step": 15,
+      "name": "restore the pre-rotation backup with the current keys: starts healthy, still read-only",
+      "ok": true
+    },
+    {
+      "step": 15,
+      "name": "restored backup cannot revive the pre-rotation grant (access)",
+      "ok": true
+    },
+    {
+      "step": 15,
+      "name": "restored backup cannot revive the pre-rotation grant (refresh)",
       "ok": true,
-      "detail": "{\"lines\":169,\"leaked\":0}"
+      "detail": "{\"error\":\"invalid_grant\",\"error_description\":\"Refresh token revoked\"}"
+    },
+    {
+      "step": 15,
+      "name": "bob's grant survives the restore",
+      "ok": true
+    },
+    {
+      "step": 15,
+      "name": "removing bob's client registration revokes its grants at startup",
+      "ok": true
+    },
+    {
+      "step": 15,
+      "name": "a removed client can no longer use the token endpoint",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_client\",\"error_description\":\"Unknown client\"}"
+    },
+    {
+      "step": 11,
+      "name": "audit log: JSON lines, no token, code, client secret or owner key appears",
+      "ok": true,
+      "detail": "{\"lines\":192,\"leaked\":0}"
     }
   ]
 }

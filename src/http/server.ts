@@ -33,7 +33,8 @@ export interface AppConfig {
   authMode: "dev" | "public-readonly-demo" | "oauth";
   /** OAuth token lifetimes (tests). */
   oauth?: { accessTokenTtlSec?: number; refreshTokenTtlSec?: number; codeTtlSec?: number; maxClients?: number;
-    allowedRedirectUris?: string[]; grantMaxAgeSec?: number; maxPending?: number };
+    allowedRedirectUris?: string[]; grantMaxAgeSec?: number; maxPending?: number; registration?: "dynamic" | "closed";
+    preRegisteredClients?: import("../auth/oauth.js").PreRegisteredClient[]; bindGrantsToOwnerKey?: boolean };
   dbPath: string;
   auth: DevAuth;
   research?: CommerceResearchAdapter;
@@ -56,6 +57,8 @@ export interface AppConfig {
    * never 127.0.0.1:PORT or localhost:PORT, so a proxy that rewrites Host cannot reach a loopback profile.
    */
   strictHost?: boolean;
+  /** Remote deployments only (default off): /healthz answers only a loopback peer (the container health check). */
+  healthzLoopbackOnly?: boolean;
   /**
    * Remote deployments only (default empty). Socket addresses of reverse proxies whose X-Forwarded-For
    * is trusted for rate-limit keys; the last entry (the one the proxy appended) is the client.
@@ -116,6 +119,7 @@ export function createApp(cfg: AppConfig): App {
       const ip = clientIp(req, trustedProxies);
       if (!allowedHosts.includes(req.headers.host ?? "")) return send(res, 421, { error: "Host not allowed" });
 
+      if (url.pathname === "/healthz" && cfg.healthzLoopbackOnly && !/^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? "")) return send(res, 404, { error: "Not found" });
       if (url.pathname === "/healthz") return send(res, 200, { ok: true, paymentExecutionEnabled, paymentEnvironment: payments.name === "PAYPAL_SANDBOX" ? "PAYPAL_SANDBOX" : "MOCK", liveMerchantCheckout: false, authMode: cfg.authMode, paymentProvider: payments.name, researchAdapter: gateway.research.name });
 
       if (url.pathname === "/mcp") {
@@ -438,7 +442,7 @@ function consentPage(p: PendingAuthorization, paymentToolsAvailable: boolean, er
   const items = p.scopes.map((s) => `<p><label><input type="checkbox" name="scope" value="${esc(s)}" checked style="width:auto"> <code>${esc(s)}</code>: ${esc(SCOPE_TEXT[s] ?? s)}${
     s === SCOPES.PREPARE && !paymentToolsAvailable ? ' <span class="muted">(not offered on this deployment: payment tools are disabled here)</span>' : ""}</label></p>`).join("");
   return page("Allow an AI client to use DIAPORIA?", `${error ? `<p class="state">${esc(error)}</p>` : ""}
-    <p>The client <b>${esc(p.clientName)}</b> (self-registered; name not verified) wants to use DIAPORIA on your behalf. After you allow it, your browser returns to <code>${esc(redirectHost)}</code>.</p>
+    <p>The client <b>${esc(p.clientName)}</b> ${p.boundUserId ? `(registered by this server's operator for account <code>${esc(p.boundUserId)}</code> only)` : "(self-registered; name not verified)"} wants to use DIAPORIA on your behalf. After you allow it, your browser returns to <code>${esc(redirectHost)}</code>.</p>
     <form method="post" action="/oauth/authorize"><input type="hidden" name="request_id" value="${esc(p.id)}"><input type="hidden" name="csrf" value="${esc(p.csrf)}">
     ${items}
     <label>Owner key (proves you are the account owner)<input name="owner_key" type="password" autocomplete="off"></label>

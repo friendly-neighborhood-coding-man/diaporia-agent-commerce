@@ -1,0 +1,11 @@
+# Edge mode "cloudflare": Cloudflare Origin CA certificate (SSL mode Full (strict) for this hostname
+# only) and mandatory Authenticated Origin Pulls. A connection without a client certificate signed by
+# /certs/origin-pull-ca.pem fails the TLS handshake, so nothing can reach the origin around Cloudflare.
+# Use a per-hostname origin-pull certificate (owner-generated) rather than Cloudflare's shared zone
+# certificate: the shared one is presented for every Cloudflare customer's traffic.
+tls /certs/origin.pem /certs/origin.key {
+	client_auth {
+		mode require_and_verify
+		trust_pool file /certs/origin-pull-ca.pem
+	}
+}

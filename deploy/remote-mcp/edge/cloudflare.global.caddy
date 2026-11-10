@@ -1,0 +1,9 @@
+# Edge mode "cloudflare" (proxied record). PREPARED, NOT ACTIVATED: needs gate A2 option B.
+# Client-address headers are honoured only when the TCP peer is inside the Cloudflare ranges below AND
+# (see cloudflare.site.caddy) the TLS connection presented a client certificate from the origin-pull CA.
+# The ranges file is NOT committed: generate it at A2 from Cloudflare's official lists with
+#   node scripts/remote/cloudflare-ips.mjs > deploy/remote-mcp/edge/cloudflare-ips.caddy
+# Without it Caddy refuses to start in this mode (fail closed).
+import cloudflare-ips.caddy
+client_ip_headers CF-Connecting-IP
+trusted_proxies_strict

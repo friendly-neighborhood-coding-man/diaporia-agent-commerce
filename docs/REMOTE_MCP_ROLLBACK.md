@@ -1,6 +1,6 @@
 # Remote MCP rollback and incident response (research/read only)
 
-**Status: PREPARED, NOT EXECUTED on any real server.** The stop/restore path is LOCAL_VERIFIED by `npm run remote:validate` (step 15) and restart persistence by both harness modes (step 14).
+**Status: PREPARED, NOT EXECUTED on any real server.** The stop/restore path, including restoring a pre-rotation backup, is LOCAL_VERIFIED by `npm run remote:validate` (step 15) and restart persistence by both harness modes (step 14). After every rollback or restore, run `node scripts/remote/manifest.mjs` and compare with the approved manifest.
 
 `DC` below means `docker compose -f deploy/remote-mcp/compose.yaml --env-file deploy/remote-mcp/.env`.
 
@@ -10,7 +10,7 @@
 |---|---|---|---|
 | R1 Close the endpoint | no public traffic; app keeps running for inspection | `$DC stop caddy` | kept |
 | R2 Stop the service | endpoint and app stopped | `$DC down` | kept (volumes) |
-| R3 Revoke all grants | every remote host loses access at once | set `DIAPORIA_REVOKE_ALL_GRANTS_ON_START=1`, `$DC up -d app`, then set back to `0` | kept |
+| R3 Revoke grants | the affected hosts lose access at once | one user: rotate or remove their owner key, `$DC up -d app` (automatic, persistent); one client: remove its `DIAPORIA_OAUTH_CLIENTS` entry, restart; all: `DIAPORIA_REVOKE_ALL_GRANTS_ON_START=1`, `$DC up -d app`, then back to `0` | kept |
 | R4 Roll back the release | previous approved commit/image | below | kept |
 | R5 Restore data | database back to a stopped-state backup | below | replaced |
 | R6 Decommission | nothing left | below | deleted |
@@ -25,7 +25,7 @@ $DC up -d --build --wait
 $DC logs app | grep '"event":"startup"'     # configDigest must match that release's manifest
 ```
 
-The schema only adds tables (`CREATE TABLE IF NOT EXISTS`), so an older release can open a newer database. If the startup line shows `startup_refused`, the environment no longer matches that release: fix `.env`, never relax the check.
+The schema only adds tables and nullable columns (`owner_fp`), so an older release can open a newer database. **Rolling back to `0d9b931` or earlier drops the owner-key binding and closed registration**: those releases reopen dynamic registration and would accept grants approved by a since-rotated key. Roll back only to a release whose manifest shows `registration:"closed"` and `grantsBoundToOwnerKey:true`; otherwise use R2. If the startup line shows `startup_refused`, the environment no longer matches that release: fix `.env`, never relax the check.
 
 ## R5: restore a backup
 
@@ -35,7 +35,7 @@ docker run --rm -v diaporia-remote-mcp_app-data:/data -v "$PWD/backup":/b busybo
 $DC start app
 ```
 
-Grants issued after the backup are lost (hosts must reconnect). Grants revoked after the backup come back: follow with R3 if any revocation mattered.
+Grants issued after the backup are lost (hosts must reconnect). Grants of keys or clients removed since the backup are revoked again at startup (owner-key binding); other revocations made after the backup (a revoked refresh token, a revoke-all) come back: follow with R3 if any of them mattered.
 
 ## R6: decommission (end of the research window)
 

@@ -18,7 +18,7 @@ services:
       PORT: "8080"
       PUBLIC_BASE_URL: https://${MCP_HOSTNAME:?set MCP_HOSTNAME}${PUBLIC_PORT_SUFFIX:-}
       DIAPORIA_DB_PATH: /data/remote.sqlite
-      DIAPORIA_TRUSTED_PROXIES: 172.31.250.10
+      DIAPORIA_TRUSTED_PROXIES: 172.31.251.10
       DIAPORIA_WEB_RATE_PER_MIN: ${DIAPORIA_WEB_RATE_PER_MIN:-30}
       DIAPORIA_MCP_RATE_PER_MIN: ${DIAPORIA_MCP_RATE_PER_MIN:-120}
       DIAPORIA_MAX_OAUTH_CLIENTS: ${DIAPORIA_MAX_OAUTH_CLIENTS:-200}
@@ -48,9 +48,11 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
+    # Backend network only: internal (no route to the internet or the host's other networks) and not
+    # published, so nothing but Caddy can reach the app.
     networks:
-      edge:
-        ipv4_address: 172.31.250.20
+      backend:
+        ipv4_address: 172.31.251.20
 
   caddy:
     image: caddy:2@sha256:ce773ec7a742ce15ee6bf2bb5f65882b9e2a4487b10733e6f1484f86e6b5d8bc
@@ -59,13 +61,14 @@ services:
       app: { condition: service_healthy }
     environment:
       MCP_HOSTNAME: ${MCP_HOSTNAME:?set MCP_HOSTNAME}
-      CADDY_TLS: ${CADDY_TLS:?set CADDY_TLS}
+      CADDY_EDGE: ${CADDY_EDGE:?set CADDY_EDGE to direct, cloudflare or local}
       CADDY_EMAIL: ${CADDY_EMAIL:-admin@invalid}
     ports:
-      - "${PUBLISH_HTTP:-80}:80"
-      - "${PUBLISH_HTTPS:-443}:443"
+      - "${PUBLISH_HTTP:-0.0.0.0:80}:80"
+      - "${PUBLISH_HTTPS:-0.0.0.0:443}:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CADDY_EDGE_DIR:-./edge}:/etc/caddy/edge:ro
       - caddy-data:/data
       - caddy-config:/config
       - ${ORIGIN_CERT_DIR:-./certs}:/certs:ro
@@ -84,6 +87,8 @@ services:
     networks:
       edge:
         ipv4_address: 172.31.250.10
+      backend:
+        ipv4_address: 172.31.251.10
 
 volumes:
   app-data:
@@ -91,7 +96,15 @@ volumes:
   caddy-config:
 
 networks:
+  # Public side of Caddy, IPv4 only. Ports are published on 0.0.0.0 (IPv4) only: if Docker also listened
+  # on [::], its userland proxy would relay every IPv6 client from one gateway address and they would
+  # share one rate-limit identity. IPv6 needs compose.ipv6.yaml (gate A1), which is not verified here.
   edge:
     ipam:
       config:
         - subnet: 172.31.250.0/24
+  backend:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.251.0/24

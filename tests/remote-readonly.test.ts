@@ -15,8 +15,15 @@ import { Store } from "../src/store/Database.js";
 
 const key = () => `drk_${randomBytes(32).toString("base64url")}`;
 const dir = () => mkdtempSync(join(tmpdir(), "remote-ro-"));
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+const CLIENT_A = { id: `dcl_${"a".repeat(32)}`, secret: `dcs_${randomBytes(24).toString("base64url")}` };
+const CLIENT_B = { id: `dcl_${"b".repeat(32)}`, secret: `dcs_${randomBytes(24).toString("base64url")}` };
+const clientsEnv = () => [
+  `${CLIENT_A.id}|${sha(CLIENT_A.secret)}|alice-remote|https://claude.ai/api/mcp/auth_callback|Claude (alice)`,
+  `${CLIENT_B.id}|${sha(CLIENT_B.secret)}|bob-remote|http://127.0.0.1/callback|Claude Code (bob)`,
+].join(";");
 const good = (extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { PUBLIC_BASE_URL: "https://mcp.diaporia.test", DIAPORIA_OWNER_KEYS: `${key()}=alice-remote;${key()}=bob-remote`, DIAPORIA_DB_PATH: join(dir(), "r.sqlite"), PORT: "18999" };
+  const env: NodeJS.ProcessEnv = { PUBLIC_BASE_URL: "https://mcp.diaporia.test", DIAPORIA_OWNER_KEYS: `${key()}=alice-remote;${key()}=bob-remote`, DIAPORIA_DB_PATH: join(dir(), "r.sqlite"), PORT: "18999", DIAPORIA_OAUTH_CLIENTS: clientsEnv() };
   for (const [k, v] of Object.entries(extra)) { if (v === undefined) delete env[k]; else env[k] = v; }
   return env;
 };
@@ -41,7 +48,9 @@ describe("remote read-only startup configuration check", () => {
     ["no base URL", { PUBLIC_BASE_URL: undefined }, /required/],
     ["no owner keys", { DIAPORIA_OWNER_KEYS: undefined }, /no generated or file-based fallback/],
     ["local dok_ owner key", { DIAPORIA_OWNER_KEYS: `dok_${"a".repeat(40)}=alice` }, /must start with drk_/],
-    ["short owner key", { DIAPORIA_OWNER_KEYS: "drk_abc=alice" }, /too short/],
+    ["short owner key", { DIAPORIA_OWNER_KEYS: `drk_${"abc"}=alice` }, /too short/],
+    ["owner key with non-base64url characters", { DIAPORIA_OWNER_KEYS: `drk_${"!".repeat(43)}=alice` }, /exactly 43 base64url/],
+    ["owner key longer than generated", { DIAPORIA_OWNER_KEYS: `drk_${"A".repeat(44)}=alice` }, /exactly 43 base64url/],
     ["duplicate user", { DIAPORIA_OWNER_KEYS: `${key()}=a;${key()}=a` }, /twice/],
     ["relative DB path", { DIAPORIA_DB_PATH: "data/r.sqlite" }, /absolute/],
     ["in-memory DB", { DIAPORIA_DB_PATH: ":memory:" }, /absolute/],
@@ -85,13 +94,28 @@ describe("remote read-only app invariants", () => {
     expect(app.oauth!.authorizationServerMetadata().scopes_supported).not.toContain(SCOPES.PREPARE);
   });
 
-  it("startup housekeeping revokes grants of removed users and everything on rotation", () => {
+  it("startup housekeeping revokes stale grants, grants of removed users, and everything on request", () => {
     const cfg = loadRemoteReadonlyConfig(good());
     app = createRemoteReadonlyApp(cfg);
-    const ins = app.store.db.prepare("INSERT INTO oauth_tokens(token_hash,kind,family_id,client_id,user_id,scope,resource,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?)");
-    for (const u of ["alice-remote", "gone-user"]) ins.run(randomBytes(8).toString("hex"), "refresh", `f-${u}`, "dcl_x", u, "purchase.read", "r", Date.now() + 1e6, Date.now());
-    expect(remoteStartupHousekeeping(app, cfg).revoked).toBe(1);
-    expect(remoteStartupHousekeeping(app, { ...cfg, revokeAllGrantsOnStart: true }).revoked).toBe(1);
+    const fp = app.auth.ownerKeyFingerprint(cfg.ownerKeys[0]!.key)!;
+    const ins = app.store.db.prepare("INSERT INTO oauth_tokens(token_hash,kind,family_id,client_id,user_id,scope,resource,expires_at,created_at,owner_fp) VALUES (?,?,?,?,?,?,?,?,?,?)");
+    const row = (fam: string, client: string, user: string, ownerFp: string | null) => ins.run(randomBytes(8).toString("hex"), "refresh", fam, client, user, "purchase.read", "r", Date.now() + 1e6, Date.now(), ownerFp);
+    row("live", CLIENT_A.id, "alice-remote", fp);        // valid: kept
+    row("nofp", CLIENT_A.id, "alice-remote", null);      // no recorded key: stale
+    row("oldkey", CLIENT_A.id, "alice-remote", "0".repeat(64)); // rotated-away key: stale
+    row("dcr", "dcl_x", "alice-remote", fp);            // not pre-registered: stale
+    row("gone", CLIENT_A.id, "gone-user", fp);          // user removed
+    const h = remoteStartupHousekeeping(app, cfg);
+    expect(h.stale).toBe(3); expect(h.removedUsers).toBe(1); expect(h.all).toBe(0);
+    expect(remoteStartupHousekeeping(app, { ...cfg, revokeAllGrantsOnStart: true }).all).toBe(1);
+  });
+
+  it("advertises no registration endpoint and refuses dynamic registration", () => {
+    app = createRemoteReadonlyApp(loadRemoteReadonlyConfig(good()));
+    const md = app.oauth!.authorizationServerMetadata();
+    expect(md.registration_endpoint).toBeUndefined();
+    expect(md.token_endpoint_auth_methods_supported).not.toContain("none");
+    expect(app.oauth!.register({ redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], client_name: "Claude" }).status).toBe(403);
   });
 });
 
@@ -166,6 +190,83 @@ describe("OAuth hardening options (opt-in; local defaults unchanged)", () => {
     // gc runs before each insert, so at most maxPending + 1 remain and the newest always survive.
     expect(a.getPending(ids[5])).not.toBeNull(); expect(a.getPending(ids[4])).not.toBeNull();
     expect(a.getPending(ids[0])).toBeNull();
+  });
+
+  describe("closed registration with operator-registered clients bound to one account", () => {
+    const CB = "https://claude.ai/api/mcp/auth_callback";
+    const setup = (now: () => number = Date.now) => {
+      const owners = new DevAuth(); const aliceKey = key(); const bobKey = key();
+      owners.addOwnerKey(aliceKey, "alice"); owners.addOwnerKey(bobKey, "bob");
+      const store = new Store(":memory:");
+      const cfg = { issuer: "https://mcp.t", resource: "https://mcp.t/mcp", offeredScopes: [SCOPES.RESEARCH, SCOPES.READ], registration: "closed" as const, bindGrantsToOwnerKey: true, allowedRedirectUris: [CB],
+        preRegisteredClients: [{ clientId: CLIENT_A.id, secretSha256: sha(CLIENT_A.secret), userId: "alice", name: "Claude (alice)", redirectUris: [CB] }] };
+      return { a: new OAuthAuthority(store, owners, cfg, now), owners, store, cfg, aliceKey, bobKey };
+    };
+    const begin = (a: OAuthAuthority, clientId = CLIENT_A.id) => { const { v, c } = pkce(); const b = a.beginAuthorization(new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: CB, code_challenge: c, code_challenge_method: "S256" })); return { b, v }; };
+    const approve = (a: OAuthAuthority, id: string, csrf: string, ownerKey: string) => a.completeAuthorization(new URLSearchParams({ request_id: id, csrf, decision: "approve", owner_key: ownerKey, scope: "purchase.read" }));
+    const exchange = (a: OAuthAuthority, code: string, v: string, secret: string | null = CLIENT_A.secret) => a.token(new URLSearchParams({ grant_type: "authorization_code", code, code_verifier: v, client_id: CLIENT_A.id, redirect_uri: CB, ...(secret === null ? {} : { client_secret: secret }) }));
+    const fullClosedGrant = (a: OAuthAuthority, ownerKey: string) => {
+      const { b, v } = begin(a); if (!b.ok) throw new Error("begin failed");
+      const done = approve(a, b.pending.id, b.pending.csrf, ownerKey) as { redirect: string };
+      const code = new URL(done.redirect).searchParams.get("code")!;
+      return exchange(a, code, v);
+    };
+
+    it("refuses dynamic registration and unknown client ids", () => {
+      const { a } = setup();
+      expect(a.registrationOpen).toBe(false);
+      expect(a.register({ redirect_uris: [CB], client_name: "Claude" }).status).toBe(403);
+      expect(begin(a, `dcl_${"c".repeat(32)}`).b.ok).toBe(false);
+    });
+
+    it("a phishing party that knows only the client id and the shared callback cannot redeem the code", () => {
+      const { a, aliceKey } = setup();
+      const { b, v } = begin(a); if (!b.ok) throw new Error("begin failed");
+      expect(b.pending.boundUserId).toBe("alice");
+      const code = new URL((approve(a, b.pending.id, b.pending.csrf, aliceKey) as { redirect: string }).redirect).searchParams.get("code")!;
+      expect(exchange(a, code, v, null).status).toBe(401);
+      expect(exchange(a, code, v, `dcs_${randomBytes(24).toString("base64url")}`).status).toBe(401);
+    });
+
+    it("only the bound account can approve a pre-registered client", () => {
+      const { a, bobKey } = setup();
+      const { b } = begin(a); if (!b.ok) throw new Error("begin failed");
+      const r = approve(a, b.pending.id, b.pending.csrf, bobKey) as { error: { status: number; body(): Record<string, unknown> } };
+      expect(r.error.status).toBe(403); expect(r.error.body().error).toBe("access_denied");
+    });
+
+    it("grants die when the approving owner key is rotated, even across a restart and a restored backup", () => {
+      const s = setup();
+      const t = fullClosedGrant(s.a, s.aliceKey);
+      expect(t.status).toBe(200);
+      const access = `Bearer ${t.body.access_token}`;
+      expect(s.a.verifyAccessToken(access)?.userId).toBe("alice");
+      // Restart with a rotated key for alice: access and refresh tokens fail closed with no flag set.
+      const rotated = new DevAuth(); rotated.addOwnerKey(key(), "alice"); rotated.addOwnerKey(s.bobKey, "bob");
+      const restarted = new OAuthAuthority(s.store, rotated, s.cfg);
+      expect(restarted.verifyAccessToken(access)).toBeNull();
+      expect(restarted.token(new URLSearchParams({ grant_type: "refresh_token", refresh_token: String(t.body.refresh_token), client_id: CLIENT_A.id, client_secret: CLIENT_A.secret })).status).toBe(400);
+      expect(restarted.revokeStaleGrants()).toBe(0); // the failed refresh already revoked the family
+      // Roll back to the old key: the revocation is persistent, so the grant does not come back.
+      const rolledBack = new OAuthAuthority(s.store, s.owners, s.cfg);
+      expect(rolledBack.verifyAccessToken(access)).toBeNull();
+    });
+
+    it("startup revocation is persistent: a grant revoked under the new key stays dead after rolling back to the old key", () => {
+      const s = setup();
+      const t = fullClosedGrant(s.a, s.aliceKey); const access = `Bearer ${t.body.access_token}`;
+      const rotated = new DevAuth(); rotated.addOwnerKey(key(), "alice");
+      expect(new OAuthAuthority(s.store, rotated, s.cfg).revokeStaleGrants()).toBe(2); // access + refresh
+      expect(new OAuthAuthority(s.store, s.owners, s.cfg).verifyAccessToken(access)).toBeNull();
+    });
+
+    it("grants issued to a client whose registration was removed stop working", () => {
+      const s = setup();
+      const t = fullClosedGrant(s.a, s.aliceKey); const access = `Bearer ${t.body.access_token}`;
+      const without = new OAuthAuthority(s.store, s.owners, { ...s.cfg, preRegisteredClients: [] });
+      expect(without.verifyAccessToken(access)).toBeNull();
+      expect(without.revokeStaleGrants()).toBe(2);
+    });
   });
 
   it("prune removes unused clients and dead grants but keeps live ones", () => {

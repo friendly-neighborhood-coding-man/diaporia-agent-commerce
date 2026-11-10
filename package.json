@@ -43,7 +43,11 @@
     "remote:dev": "tsx src/remote/main.ts",
     "remote:owner-key": "node scripts/remote/owner-key.mjs",
     "remote:validate": "tsx scripts/remote/validate.ts",
-    "remote:validate:https": "bash deploy/remote-mcp/local-https-check.sh"
+    "remote:validate:https": "bash deploy/remote-mcp/local-https-check.sh",
+    "remote:oauth-client": "node scripts/remote/oauth-client.mjs",
+    "remote:edge-check": "bash deploy/remote-mcp/test/edge-check.sh",
+    "remote:preflight": "node scripts/remote/preflight.mjs",
+    "remote:manifest": "node scripts/remote/manifest.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

@@ -8,6 +8,7 @@
  * entrypoint (src/main.ts) on a loopback host.
  */
 import { isAbsolute } from "node:path";
+import { redirectAllowed as redirectAllowedLocal } from "../auth/oauth.js";
 
 export const REMOTE_OWNER_KEY_PREFIX = "drk_";
 /**
@@ -50,6 +51,7 @@ export interface RemoteReadonlyConfig {
   grantMaxAgeSec: number;
   maxPending: number;
   revokeAllGrantsOnStart: boolean;
+  clients: { clientId: string; secretSha256: string; userId: string; redirectUris: string[]; name: string }[];
 }
 
 export class RemoteConfigError extends Error {
@@ -102,7 +104,8 @@ export function loadRemoteReadonlyConfig(env: NodeJS.ProcessEnv): RemoteReadonly
     const key = eq > 0 ? entry.slice(0, eq) : ""; const userId = eq > 0 ? entry.slice(eq + 1) : "";
     if (!key || !/^[a-z0-9][a-z0-9_-]{0,62}$/i.test(userId)) { problems.push("DIAPORIA_OWNER_KEYS entries must look like drk_<secret>=<userId>"); continue; }
     if (!key.startsWith(REMOTE_OWNER_KEY_PREFIX)) problems.push(`owner key for "${userId}" must start with ${REMOTE_OWNER_KEY_PREFIX} (generate with npm run remote:owner-key); local dok_ keys are refused`);
-    else if (key.length < REMOTE_OWNER_KEY_PREFIX.length + 32) problems.push(`owner key for "${userId}" is too short (need at least 32 random characters)`);
+    else if (key.length < REMOTE_OWNER_KEY_PREFIX.length + 43) problems.push(`owner key for "${userId}" is too short (need drk_ + 43 random base64url characters from npm run remote:owner-key)`);
+    else if (!/^drk_[A-Za-z0-9_-]{43}$/.test(key)) problems.push(`owner key for "${userId}" must be drk_ followed by exactly 43 base64url characters (npm run remote:owner-key)`);
     if (ownerKeys.some((o) => o.key === key)) problems.push("DIAPORIA_OWNER_KEYS contains the same key twice");
     if (ownerKeys.some((o) => o.userId === userId)) problems.push(`DIAPORIA_OWNER_KEYS contains user "${userId}" twice`);
     ownerKeys.push({ key, userId });
@@ -136,7 +139,26 @@ export function loadRemoteReadonlyConfig(env: NodeJS.ProcessEnv): RemoteReadonly
       problems.push(`DIAPORIA_ALLOWED_REDIRECT_URIS entry "${a}" must be an https URI, an https prefix with a path ending in *, or "loopback"`);
   }
 
+  // Operator-registered OAuth clients (dynamic registration is always closed in this profile).
+  const clients: RemoteReadonlyConfig["clients"] = [];
+  const rawClients = env.DIAPORIA_OAUTH_CLIENTS ?? "";
+  if (!rawClients.trim()) problems.push("DIAPORIA_OAUTH_CLIENTS is required: register each AI host client with npm run remote:oauth-client (dynamic registration is disabled in this profile)");
+  for (const entry of rawClients.split(";").map((x) => x.trim()).filter(Boolean)) {
+    const [clientId = "", secretSha256 = "", userId = "", redirects = "", ...nameParts] = entry.split("|");
+    const name = nameParts.join("|").trim();
+    const redirectUris = redirects.split(",").map((x) => x.trim()).filter(Boolean);
+    if (!/^dcl_[0-9a-f]{32}$/.test(clientId)) { problems.push(`DIAPORIA_OAUTH_CLIENTS entry has an invalid client id (expected dcl_ + 32 hex)`); continue; }
+    if (!/^[0-9a-f]{64}$/.test(secretSha256)) problems.push(`client ${clientId}: secret must be given as its sha256 hex, never in clear`);
+    if (!ownerKeys.some((o) => o.userId === userId)) problems.push(`client ${clientId}: user "${userId}" has no owner key in DIAPORIA_OWNER_KEYS`);
+    if (!name || name.length > 80) problems.push(`client ${clientId}: name must be 1-80 characters`);
+    if (!redirectUris.length || redirectUris.length > 5) problems.push(`client ${clientId}: list 1 to 5 redirect URIs`);
+    for (const r of redirectUris) if (!redirectAllowedLocal(allowedRedirectUris, r)) problems.push(`client ${clientId}: redirect ${r} is not on DIAPORIA_ALLOWED_REDIRECT_URIS`);
+    if (clients.some((c) => c.clientId === clientId)) problems.push(`client ${clientId} is listed twice`);
+    clients.push({ clientId, secretSha256, userId, redirectUris, name });
+  }
+  if (env.DIAPORIA_OAUTH_REGISTRATION !== undefined && env.DIAPORIA_OAUTH_REGISTRATION !== "closed") problems.push("DIAPORIA_OAUTH_REGISTRATION can only be 'closed' in this profile (no dynamic registration)");
+
   if (problems.length) throw new RemoteConfigError(problems);
   return { host, port, baseUrl, dbPath, ownerKeys, trustedProxies, accessTokenTtlSec, refreshTokenTtlSec, maxClients, auditLog, mcpPerMinute, webPerMinute,
-    registerPerHour, allowedRedirectUris, grantMaxAgeSec, maxPending, revokeAllGrantsOnStart };
+    registerPerHour, allowedRedirectUris, grantMaxAgeSec, maxPending, revokeAllGrantsOnStart, clients };
 }

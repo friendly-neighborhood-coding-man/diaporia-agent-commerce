@@ -39,6 +39,14 @@ export class DevAuth {
     return hit ? { userId: hit.userId, scopes: hit.scopes, kind: "DEV_TOKEN", tokenFingerprint: h.toString("hex").slice(0, 12) } : null;
   }
 
+  /** Fingerprint (sha256 hex) of a currently valid owner key, or null. Lets a grant name the credential that approved it. */
+  ownerKeyFingerprint(key: string | undefined): string | null {
+    if (!this.verifyOwnerKey(key)) return null;
+    return sha(key!).toString("hex");
+  }
+  /** Fingerprints of all currently valid owner keys. */
+  ownerKeyFingerprints(): string[] { return this.owners.map((o) => o.hash.toString("hex")); }
+
   verifyOwnerKey(key: string | undefined): string | null {
     if (!key || key.length < 24 || key.length > 200) return null;
     const h = sha(key);

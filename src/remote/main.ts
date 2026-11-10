@@ -32,6 +32,7 @@ const manifest = { profile: REMOTE_PROFILE, baseUrl: cfg.baseUrl, resource: `${c
   trustedProxies: cfg.trustedProxies, accessTokenTtlSec: cfg.accessTokenTtlSec, refreshTokenTtlSec: cfg.refreshTokenTtlSec, maxClients: cfg.maxClients,
   rateLimits: { mcpPerMinute: cfg.mcpPerMinute, webPerMinute: cfg.webPerMinute, registerPerHour: cfg.registerPerHour },
   allowedRedirectUris: cfg.allowedRedirectUris, grantMaxAgeSec: cfg.grantMaxAgeSec, maxPending: cfg.maxPending,
+  registration: "closed", clients: cfg.clients.map((c) => ({ clientId: c.clientId, userId: c.userId, name: c.name, redirectUris: c.redirectUris })), grantsBoundToOwnerKey: true,
   paymentExecutionEnabled: app.paymentExecutionEnabled, research: app.gateway.research.name, payments: app.gateway.payments.name };
 const configDigest = createHash("sha256").update(JSON.stringify(manifest)).digest("hex").slice(0, 16);
 

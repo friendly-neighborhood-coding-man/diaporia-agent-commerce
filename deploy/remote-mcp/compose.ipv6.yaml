@@ -1,0 +1,19 @@
+# OPTIONAL, NOT VERIFIED (the preparation environment has no IPv6): dual-stack edge network so Docker
+# forwards published IPv6 ports with ip6tables NAT and Caddy sees real IPv6 client addresses.
+# Use only if gate A1 approves an AAAA record, after checking on the server that
+#   docker info shows ip6tables enabled (Docker 27+), and
+#   deploy/remote-mcp/test/edge-check.sh reports the IPv6 cases as PASS rather than BLOCKED.
+#   docker compose -f compose.yaml -f compose.ipv6.yaml ...   with PUBLISH_HTTP=80 PUBLISH_HTTPS=443
+services:
+  caddy:
+    networks:
+      edge:
+        ipv4_address: 172.31.250.10
+        ipv6_address: fd00:d1a:250::10
+networks:
+  edge:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+        - subnet: fd00:d1a:250::/64

@@ -31,8 +31,9 @@ export function createRemoteReadonlyApp(cfg: RemoteReadonlyConfig, opts: { now?:
     webhookVerifier: null, handoff: null, sandboxPlatformPayeeId: null, sandboxPlatformPayeeEmail: null,
     service: { mode: "community", ledger, router, billing: null },
     oauth: { accessTokenTtlSec: cfg.accessTokenTtlSec, refreshTokenTtlSec: Math.min(cfg.refreshTokenTtlSec, cfg.grantMaxAgeSec), maxClients: cfg.maxClients,
-      allowedRedirectUris: cfg.allowedRedirectUris, grantMaxAgeSec: cfg.grantMaxAgeSec, maxPending: cfg.maxPending },
-    strictHost: true, trustedProxies: cfg.trustedProxies,
+      allowedRedirectUris: cfg.allowedRedirectUris, grantMaxAgeSec: cfg.grantMaxAgeSec, maxPending: cfg.maxPending,
+      registration: "closed", preRegisteredClients: cfg.clients, bindGrantsToOwnerKey: true },
+    strictHost: true, healthzLoopbackOnly: true, trustedProxies: cfg.trustedProxies,
     rateLimits: { mcpPerMinute: cfg.mcpPerMinute, webPerMinute: cfg.webPerMinute, registerPerHour: cfg.registerPerHour },
     ...(opts.now ? { now: opts.now } : {}),
   });
@@ -41,13 +42,17 @@ export function createRemoteReadonlyApp(cfg: RemoteReadonlyConfig, opts: { now?:
 }
 
 /**
- * Startup housekeeping: grants of users whose owner key was removed are revoked (IR-07); with
- * revokeAll (owner-key rotation) every grant is revoked; dead OAuth rows are pruned (IR-04).
+ * Startup housekeeping (fail closed): grants approved by an owner key that is no longer configured, grants of
+ * removed users and grants of clients that are no longer registered are revoked persistently, so a key
+ * rotation, a restored backup or a rollback cannot revive them. revokeAll additionally revokes everything.
+ * Dead OAuth rows are pruned.
  */
 export function remoteStartupHousekeeping(app: App, cfg: RemoteReadonlyConfig) {
   const oauth = app.oauth!;
-  const revoked = cfg.revokeAllGrantsOnStart ? oauth.revokeAllGrants() : oauth.revokeGrantsExceptUsers(cfg.ownerKeys.map((o) => o.userId));
-  return { revoked, pruned: oauth.prune() };
+  const stale = oauth.revokeStaleGrants();
+  const removedUsers = oauth.revokeGrantsExceptUsers(cfg.ownerKeys.map((o) => o.userId));
+  const all = cfg.revokeAllGrantsOnStart ? oauth.revokeAllGrants() : 0;
+  return { revoked: stale + removedUsers + all, stale, removedUsers, all, pruned: oauth.prune() };
 }
 
 export function assertReadonlyInvariants(app: App): void {
@@ -58,4 +63,7 @@ export function assertReadonlyInvariants(app: App): void {
   if (offered !== [...REMOTE_SCOPES].sort().join(" ")) fail(`offered scopes are "${offered}"`);
   if (app.handoff) fail("browser handoff is configured");
   if (!app.mockPayPal) fail("a non-MOCK payment provider is configured");
+  if (app.oauth!.registrationOpen) fail("dynamic client registration is open");
+  if ("registration_endpoint" in app.oauth!.authorizationServerMetadata()) fail("registration endpoint is advertised");
+  if (!app.oauth!.cfg.bindGrantsToOwnerKey) fail("grants are not bound to owner keys");
 }

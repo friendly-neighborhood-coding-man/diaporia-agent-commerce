@@ -2,3 +2,4 @@
 secrets/
 certs/
 local/
+edge/cloudflare-ips.caddy
