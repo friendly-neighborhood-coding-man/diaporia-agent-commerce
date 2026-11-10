@@ -65,6 +65,22 @@ describe("recipes", () => {
     const r = fixtureRecipe("http://127.0.0.1:9999");
     expect(validateRecipe({ ...r, steps: [{ action: "click", selector: "#paypal-button" }] }, { allowLoopbackOrigin: true })).toBe("RECIPE_TARGETS_PAYMENT_CONTROL");
   });
+  it("requires an explicit exact-host KERNEL allowlist for a live sandbox merchant recipe", () => {
+    const base = { ...fixtureRecipe("http://127.0.0.1:9999"),
+      merchantDomain: "store.merchant-sandbox.com", origin: "https://store.merchant-sandbox.com/",
+      paymentHosts: ["www.sandbox.paypal.com"] };
+    const opts = { allowLoopbackOrigin: false };
+    expect(validateRecipe(base, opts)).toBe("RECIPE_EGRESS_ALLOWLIST_REQUIRED");
+    expect(validateRecipe({ ...base, networkAllowedHosts: ["*.paypal.com"] }, opts))
+      .toBe("RECIPE_EGRESS_HOST_INVALID");
+    expect(validateRecipe({ ...base, networkAllowedHosts: ["store.merchant-sandbox.com"] }, opts))
+      .toBe("RECIPE_EGRESS_REQUIRED_HOST_MISSING");
+    expect(validateRecipe({ ...base, networkAllowedHosts: ["store.merchant-sandbox.com", "localhost", "www.sandbox.paypal.com"] }, opts))
+      .toBe("RECIPE_EGRESS_HOST_INVALID");
+    expect(validateRecipe({ ...base, networkAllowedHosts: ["store.merchant-sandbox.com", "www.sandbox.paypal.com"] }, opts))
+      .toBeNull();
+  });
+
   it("payment-control pattern", () => {
     for (const t of ["PayPal", "Pay now", "Place order", "Place your order", "Buy now", "Complete purchase", "Confirm and pay"]) expect(PAYMENT_CONTROL.test(t)).toBe(true);
     for (const t of ["Add to cart", "Update quantity", "View cart", "Continue shopping"]) expect(PAYMENT_CONTROL.test(t)).toBe(false);
