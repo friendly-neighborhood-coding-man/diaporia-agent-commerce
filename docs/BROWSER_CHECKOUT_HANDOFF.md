@@ -82,7 +82,7 @@ Both drivers execute the **same** snippets (`buildPrepareScript`, `buildObserveS
 |---|---|
 | A, offline fixture | **Done.** 20 browser tests, 31 unit and KERNEL-wire tests, and an offline demo (`npm run demo:handoff`, with `--headed` or `--interactive`). |
 | B, KERNEL Live View | **PASS (synthetic popup, no payment).** One headful non-GPU browser ran for 64 s, about $0.009. The DELETE was sent and KERNEL confirmed the browser is gone, and a follow-up account check showed 0 running browsers. This proves same-session popup interaction through Live View. It does **not** prove PayPal compatibility: PayPal's own popup, login, risk checks and 2FA in a KERNEL datacenter browser remain Phase C. |
-| C, PayPal Sandbox through a controlled sandbox merchant | **Not started.** It needs separate owner authorization. Existing Sandbox orders must never be reused. |
+| C, PayPal Sandbox through a controlled sandbox merchant | **C0 offline done; C1–C3 not run.** Test merchant `apps/phase-c-test-merchant/` (MOCK default; SDK v6 Sandbox modes gated by owner-approved digests), recipe and signed seller status in `src/handoff/phaseCMerchant.ts`. See [PHASE_C_TEST_MERCHANT.md](PHASE_C_TEST_MERCHANT.md). Each live gate needs separate owner authorization. Existing Sandbox orders must never be reused. |
 | D, cross-host | **Done (MOCK).** All four real hosts made a host-originated `prepare_browser_checkout` call and got the same contract: 4/4 PASS. See `docs/HANDOFF_HOST_MATRIX.md`. |
 
 ## Run it
