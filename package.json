@@ -31,6 +31,7 @@
     "merchant:start:built": "node dist-merchant/apps/phase-c-test-merchant/src/main.js",
     "phase-c:approval": "tsx scripts/phase-c-approval.ts",
     "phase-c:recipe": "tsx scripts/phase-c-recipe.ts",
+    "phase-c:sign": "tsx scripts/phase-c-sign.ts",
     "demo:phase-c": "tsx scripts/demo-phase-c.ts",
     "phase-c:c3-compare": "tsx scripts/phase-c-c3-compare.ts",
     "phase-c:kernel-check": "tsx scripts/phase-c-kernel-check.ts"

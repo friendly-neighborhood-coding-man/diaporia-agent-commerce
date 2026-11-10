@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { FIXED_TOTAL_MINOR, MERCHANT_DOMAIN, PRODUCT, formatUsd } from "./catalog.js";
 import { PAYPAL_V6_SANDBOX_SDK_URL, approvalDigest, buildCaptureRetryStatement, type MerchantConfig } from "./config.js";
 import { SpendLedger } from "./spendLedger.js";
+import { PUBLIC_DIR, ownerSignatureValid } from "./integrity.js";
 import { MOCK_SELLER_MERCHANT_ID, MerchantCheckout, MerchantError, type Cart, type CheckoutOptions, type MerchantOrderState } from "./orders.js";
 import { MockMerchantPayPal, PayPalSandboxOrdersClient, type MerchantPayPal, type MockKnobs } from "./paypal.js";
 
@@ -48,9 +49,6 @@ export interface MerchantServer {
   close(): Promise<void>;
 }
 
-// Source run (tsx): ../public. Built run (dist-merchant/apps/phase-c-test-merchant/src): the repo's public dir.
-const PUBLIC_DIR = [new URL("../public/", import.meta.url), new URL("../../../../apps/phase-c-test-merchant/public/", import.meta.url)]
-  .map((u) => fileURLToPath(u)).find((d) => existsSync(`${d}checkout.js`)) ?? fileURLToPath(new URL("../public/", import.meta.url));
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const NONCE = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_BODY = 4096;
@@ -276,12 +274,16 @@ ${confirmed ? `<p data-order-confirmation>Order ${esc(s.orderRef ?? "")} confirm
       }
       // C2 mutation gate: one retry, owner-approved digest bound to the C2 approval and this cart.
       if (req.method === "POST" && p === "/operator/c2/retry-capture") {
-        const b = await apiBody(req, ["cartRef", "retryApprovalDigest"]);
+        const b = await apiBody(req, ["cartRef", "retryApprovalDigest", "ownerSignature"]);
+        if (!cfg.ownerPublicKey) return json(res, 403, { error: "OWNER_KEY_NOT_CONFIGURED", message: "Capture retries exist only in Sandbox C2 with the owner's public key configured." });
         const cart = checkout.get(String(b.cartRef ?? ""));
         if (!cart) return json(res, 404, { error: "CART_NOT_FOUND" });
         const want = approvalDigest(buildCaptureRetryStatement({ c2ApprovalDigest: cfg.approval?.digest ?? "MOCK", cartRef: cart.cartRef, merchantOrderRef: cart.merchantOrderRef }));
         if (typeof b.retryApprovalDigest !== "string" || b.retryApprovalDigest.toLowerCase() !== want)
           return json(res, 403, { error: "RETRY_APPROVAL_DIGEST_MISMATCH", message: "Print the C2_CAPTURE_RETRY statement with npm run phase-c:approval and get the owner's approval of its digest." });
+        // The digest is recomputable by anyone; the owner's Ed25519 signature over it is the authorization.
+        if (!ownerSignatureValid(cfg.ownerPublicKey, "capture-retry", want, b.ownerSignature))
+          return json(res, 403, { error: "RETRY_OWNER_SIGNATURE_INVALID", message: "ownerSignature must be the owner's Ed25519 signature of the C2_CAPTURE_RETRY digest (npm run phase-c:sign on the owner's machine)." });
         const c = await checkout.retryCaptureApproved(cart.cartRef);
         return json(res, 200, checkout.publicStatus(c.cartRef));
       }

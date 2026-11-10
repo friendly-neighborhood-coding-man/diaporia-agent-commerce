@@ -6,17 +6,20 @@ import { HmacFixtureSellerSource, SellerSourceRegistry } from "./sellerConfirmat
 import { FIXTURE_MERCHANT_DOMAIN, fixtureRecipe, startFixtureMerchant } from "./fixtureMerchant.js";
 import { PHASE_C_MERCHANT_DOMAIN, PhaseCSellerStatusSource } from "./phaseCMerchant.js";
 import { KernelCreationLedger } from "./kernelLedger.js";
+import { verifyPhaseCApproval, type VerifiedPhaseCApproval } from "./phaseCApproval.js";
 
 /**
  * A KERNEL configuration that includes the Phase C test merchant must name the owner-approved digest. It becomes the run
  * id of the durable creation ledger: at most ONE browser for that approval, across restarts and processes on this host.
  * The ledger dir is fixed (~/.diaporia/kernel-browser-ledger), not configurable from the environment.
  */
-export function phaseCKernelLedgerFromEnv(env: NodeJS.ProcessEnv, recipes: MerchantRecipeRegistry, dir?: string): KernelCreationLedger | null {
-  if (!recipes.get(PHASE_C_MERCHANT_DOMAIN)) return null;
-  const digest = (env.PHASE_C_APPROVED_DIGEST ?? "").trim().toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error("A Phase C KERNEL run needs PHASE_C_APPROVED_DIGEST (the owner-approved C1/C2 digest) for its durable browser ledger");
-  return new KernelCreationLedger({ runId: digest, maxBrowsers: 1, ...(dir ? { dir } : {}) });
+export function phaseCKernelLedgerFromEnv(env: NodeJS.ProcessEnv, recipes: MerchantRecipeRegistry, dir?: string,
+  verifyOpts?: Parameters<typeof verifyPhaseCApproval>[2]): { ledger: KernelCreationLedger; approval: VerifiedPhaseCApproval } | null {
+  const recipe = recipes.get(PHASE_C_MERCHANT_DOMAIN);
+  if (!recipe) return null;
+  // Signed statement, pinned code, host and user, exact origin and egress list: all before any provider call.
+  const approval = verifyPhaseCApproval(env, recipe, verifyOpts);
+  return { approval, ledger: new KernelCreationLedger({ runId: approval.digest, maxBrowsers: approval.kernelBrowsers, ...(dir ? { dir } : {}) }) };
 }
 
 /**
@@ -70,10 +73,11 @@ export async function configureHandoffFromEnv(env: NodeJS.ProcessEnv): Promise<C
     // Validate every public merchant and its egress allowlist BEFORE any provider API call.
     const registry = new MerchantRecipeRegistry(recipes, { allowLoopbackOrigin: false });
     const sellers = phaseCSellerSourcesFromEnv(env, registry);
-    const ledger = phaseCKernelLedgerFromEnv(env, registry);
+    const phaseC = phaseCKernelLedgerFromEnv(env, registry);
+    const ledger = phaseC?.ledger ?? null;
     if (ledger && ledger.used() >= 1) throw new Error("The Phase C approval's KERNEL browser was already created; a new owner approval (new digest) is required");
     const maxSessions = ledger ? 1 : Number(env.HANDOFF_KERNEL_MAX_SESSIONS ?? 2);
-    const driver = new KernelDriver(env.KERNEL_API_KEY, { allowLive: true, maxSessions, ...(ledger ? { creationLedger: ledger } : {}) });
+    const driver = new KernelDriver(env.KERNEL_API_KEY, { allowLive: true, maxSessions, ...(phaseC ? { creationLedger: phaseC.ledger, maxWallMs: phaseC.approval.maxWallMs } : {}) });
     // The old human session is no longer authenticated after restart. Reap every durable
     // unverified browser record before exposing another live handoff.
     await driver.recoverOrphanedBrowsers();

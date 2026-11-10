@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { isAbsolute, normalize } from "node:path";
+import type { KeyObject } from "node:crypto";
+import { loadOwnerPublicKey, merchantArtifactSha256, ownerSignatureValid } from "./integrity.js";
 import { fileURLToPath } from "node:url";
 import { FIXED_TOTAL_MINOR, MERCHANT_DOMAIN, PRODUCT } from "./catalog.js";
 
@@ -28,7 +31,7 @@ export class ConfigRefusedError extends Error {
 export interface Allowlist { browserHosts: string[]; sha256: string }
 
 export interface ApprovalStatement {
-  schema: "diaporia.phase-c.approval.v2";
+  schema: "diaporia.phase-c.approval.v3";
   gate: Gate;
   mode: Exclude<CheckoutMode, "MOCK">;
   merchantDomain: string;
@@ -53,6 +56,16 @@ export interface ApprovalStatement {
   merchantDataDir: string;
   /** One merchant process per approval: an exclusive lease file in merchantDataDir. Replicas are refused. */
   merchantInstances: 1;
+  /** Code pinning: the git commit the artifacts were built from (for humans) and the hashes each side verifies at startup. */
+  sourceCommit: string;
+  merchantArtifactSha256: string;
+  diaporiaArtifactSha256: string;
+  /** Where each side may run (os.hostname()), and DIAPORIA's OS account (its KERNEL ledger lives in that home dir). */
+  merchantHost: string;
+  diaporiaHost: string;
+  diaporiaServiceUser: string;
+  /** SHA-256 of the owner's Ed25519 public key (SPKI DER). Both sides require the owner's signature over the digest. */
+  ownerPublicKeySha256: string;
   expiresAt: string;
 }
 
@@ -79,6 +92,8 @@ export interface MerchantConfig {
   allowlist: Allowlist;
   paypal: { clientId: string; clientSecret: string; payeeMerchantId: string } | null;
   approval: { statement: ApprovalStatement; digest: string; expiresAtMs: number } | null;
+  /** Owner's Ed25519 public key (Sandbox modes): verifies the approval signature and each C2 capture-retry signature. */
+  ownerPublicKey: KeyObject | null;
 }
 
 export const DEFAULT_ALLOWLIST_PATH = [new URL("../config/network-allowlist.json", import.meta.url), new URL("../../../../apps/phase-c-test-merchant/config/network-allowlist.json", import.meta.url)]
@@ -132,22 +147,32 @@ export function kernelEgressHosts(origin: string, allowlist: Allowlist): string[
 export function buildApprovalStatement(p: {
   gate: Gate; merchantOrigin: string; allowlist: Allowlist; sellerMerchantId: string | null;
   maxMinutes: number; kernelUsdEstimate: string; merchantDataDir: string; expiresAt: string;
+  sourceCommit: string; merchantArtifactSha256: string; diaporiaArtifactSha256: string;
+  merchantHost: string; diaporiaHost: string; diaporiaServiceUser: string; ownerPublicKeySha256: string;
 }): ApprovalStatement {
   if (!Number.isInteger(p.maxMinutes) || p.maxMinutes < 1 || p.maxMinutes > 10) throw new ConfigRefusedError("APPROVAL_INVALID", "maxMinutes must be 1..10 (KERNEL watchdog ceiling)");
   if (!/^\d{1,2}\.\d{2}$/.test(p.kernelUsdEstimate)) throw new ConfigRefusedError("APPROVAL_INVALID", "the KERNEL USD estimate must look like 0.50");
   const dataDir = parseDataDir(p.merchantDataDir);
+  if (!/^[a-f0-9]{40}$/.test(p.sourceCommit)) throw new ConfigRefusedError("APPROVAL_INVALID", "sourceCommit must be a full 40-hex git commit");
+  for (const [k, v] of [["merchantArtifactSha256", p.merchantArtifactSha256], ["diaporiaArtifactSha256", p.diaporiaArtifactSha256], ["ownerPublicKeySha256", p.ownerPublicKeySha256]] as const)
+    if (!/^[a-f0-9]{64}$/.test(v)) throw new ConfigRefusedError("APPROVAL_INVALID", `${k} must be a SHA-256 hex digest`);
+  for (const [k, v] of [["merchantHost", p.merchantHost], ["diaporiaHost", p.diaporiaHost], ["diaporiaServiceUser", p.diaporiaServiceUser]] as const)
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(v)) throw new ConfigRefusedError("APPROVAL_INVALID", `${k} is required (letters, digits, . _ -)`);
   if (Number.isNaN(Date.parse(p.expiresAt))) throw new ConfigRefusedError("APPROVAL_INVALID", "expiresAt must be an ISO-8601 time");
   const c2 = p.gate === "C2";
   if (!p.sellerMerchantId) throw new ConfigRefusedError("APPROVAL_INVALID", "the Sandbox seller (business) merchant id is part of every approval");
   return {
-    schema: "diaporia.phase-c.approval.v2", gate: p.gate, mode: c2 ? "SANDBOX_APPROVAL_TEST" : "SANDBOX_POPUP_TEST",
+    schema: "diaporia.phase-c.approval.v3", gate: p.gate, mode: c2 ? "SANDBOX_APPROVAL_TEST" : "SANDBOX_POPUP_TEST",
     merchantDomain: MERCHANT_DOMAIN, merchantOrigin: p.merchantOrigin, networkAllowlistSha256: p.allowlist.sha256,
     kernelEgressHosts: kernelEgressHosts(p.merchantOrigin, p.allowlist),
     product: { sku: PRODUCT.sku, variant: PRODUCT.variant, quantity: PRODUCT.quantity, currency: PRODUCT.currency, fixedTotalMinor: FIXED_TOTAL_MINOR },
     maxSandboxOrders: 1, capture: c2, maxCaptures: c2 ? 1 : 0,
     sellerMerchantIdSha256: sha256Hex(p.sellerMerchantId),
     kernelBrowsers: 1, maxMinutes: p.maxMinutes, kernelUsdEstimateNotEnforced: p.kernelUsdEstimate,
-    merchantDataDir: dataDir, merchantInstances: 1, expiresAt: new Date(p.expiresAt).toISOString(),
+    merchantDataDir: dataDir, merchantInstances: 1,
+    sourceCommit: p.sourceCommit, merchantArtifactSha256: p.merchantArtifactSha256, diaporiaArtifactSha256: p.diaporiaArtifactSha256,
+    merchantHost: p.merchantHost, diaporiaHost: p.diaporiaHost, diaporiaServiceUser: p.diaporiaServiceUser, ownerPublicKeySha256: p.ownerPublicKeySha256,
+    expiresAt: new Date(p.expiresAt).toISOString(),
   };
 }
 
@@ -199,7 +224,7 @@ export function loadMerchantConfig(env: NodeJS.ProcessEnv, now: number = Date.no
     if (env.MERCHANT_PAYPAL_CLIENT_SECRET) throw new ConfigRefusedError("CREDENTIALS_IN_MOCK", "unset MERCHANT_PAYPAL_CLIENT_SECRET for MOCK mode");
     if (env.PHASE_C_APPROVED_DIGEST) throw new ConfigRefusedError("APPROVAL_IN_MOCK", "an approval digest is meaningless in MOCK mode; unset it");
     const origin = env.MERCHANT_PUBLIC_ORIGIN ? new URL(env.MERCHANT_PUBLIC_ORIGIN).origin : null;
-    return { mode, listenHost, listenPort, publicOrigin: origin, statusSecret, operatorKey, dataDir: env.MERCHANT_DATA_DIR || null, allowlist, paypal: null, approval: null };
+    return { mode, listenHost, listenPort, publicOrigin: origin, statusSecret, operatorKey, dataDir: env.MERCHANT_DATA_DIR || null, allowlist, paypal: null, approval: null, ownerPublicKey: null };
   }
 
   const gate: Gate = mode === "SANDBOX_APPROVAL_TEST" ? "C2" : "C1";
@@ -216,11 +241,22 @@ export function loadMerchantConfig(env: NodeJS.ProcessEnv, now: number = Date.no
   const expiresAtMs = Date.parse(expiresAt);
   if (Number.isNaN(expiresAtMs) || expiresAtMs <= now) throw new ConfigRefusedError("APPROVAL_EXPIRED", "PHASE_C_APPROVAL_EXPIRES_AT is missing or in the past");
   if (expiresAtMs - now > 24 * 3600_000) throw new ConfigRefusedError("APPROVAL_WINDOW_TOO_LONG", "approval windows are at most 24 hours");
+  if (!env.PHASE_C_OWNER_PUBLIC_KEY_FILE) throw new ConfigRefusedError("OWNER_KEY_REQUIRED", "PHASE_C_OWNER_PUBLIC_KEY_FILE (the owner's Ed25519 public key, PEM) is required in Sandbox modes");
+  let owner: ReturnType<typeof loadOwnerPublicKey>;
+  try { owner = loadOwnerPublicKey(readFileSync(env.PHASE_C_OWNER_PUBLIC_KEY_FILE, "utf8")); }
+  catch { throw new ConfigRefusedError("OWNER_KEY_INVALID", "PHASE_C_OWNER_PUBLIC_KEY_FILE is not an Ed25519 public key"); }
   const statement = buildApprovalStatement({ gate, merchantOrigin: publicOrigin, allowlist, sellerMerchantId: payeeMerchantId,
+    sourceCommit: (env.PHASE_C_SOURCE_COMMIT ?? "").trim(),
+    // Computed from the code THIS process runs and the machine it runs on: neither can be set from the environment.
+    merchantArtifactSha256: merchantArtifactSha256(), merchantHost: hostname(),
+    diaporiaArtifactSha256: (env.PHASE_C_DIAPORIA_ARTIFACT_SHA256 ?? "").trim(), diaporiaHost: (env.PHASE_C_DIAPORIA_HOST ?? "").trim(),
+    diaporiaServiceUser: (env.PHASE_C_DIAPORIA_SERVICE_USER ?? "").trim(), ownerPublicKeySha256: owner.sha256,
     maxMinutes: Number(env.PHASE_C_MAX_MINUTES ?? 10), kernelUsdEstimate: env.PHASE_C_KERNEL_USD_ESTIMATE ?? "0.50", merchantDataDir: dataDir, expiresAt });
   const digest = approvalDigest(statement);
   if (env.PHASE_C_APPROVED_DIGEST.trim().toLowerCase() !== digest)
-    throw new ConfigRefusedError("APPROVAL_DIGEST_MISMATCH", `PHASE_C_APPROVED_DIGEST does not match the ${gate} statement for this configuration`);
+    throw new ConfigRefusedError("APPROVAL_DIGEST_MISMATCH", `PHASE_C_APPROVED_DIGEST does not match the ${gate} statement for this configuration, code (artifact ${statement.merchantArtifactSha256.slice(0, 12)}) and host (${statement.merchantHost})`);
+  if (!ownerSignatureValid(owner.key, "approval", digest, env.PHASE_C_APPROVAL_SIGNATURE))
+    throw new ConfigRefusedError("APPROVAL_SIGNATURE_INVALID", "PHASE_C_APPROVAL_SIGNATURE is not the owner's Ed25519 signature of this digest");
   return { mode, listenHost, listenPort, publicOrigin, statusSecret, operatorKey, dataDir, allowlist,
-    paypal: { clientId, clientSecret, payeeMerchantId }, approval: { statement, digest, expiresAtMs } };
+    paypal: { clientId, clientSecret, payeeMerchantId }, approval: { statement, digest, expiresAtMs }, ownerPublicKey: owner.key };
 }

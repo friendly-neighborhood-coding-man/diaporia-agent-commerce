@@ -1,4 +1,7 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { hostname, userInfo } from "node:os";
+import { loadOwnerPublicKey, merchantArtifactSha256, signedMessage, type SignedPurpose } from "../apps/phase-c-test-merchant/src/integrity.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approvalDigest, buildApprovalStatement, loadAllowlist, loadMerchantConfig, DEFAULT_ALLOWLIST_PATH, type MerchantConfig } from "../apps/phase-c-test-merchant/src/config.js";
@@ -18,17 +21,33 @@ export function mockConfig(extra: Record<string, string> = {}): MerchantConfig {
   return loadMerchantConfig({ MERCHANT_LISTEN_PORT: "0", MERCHANT_STATUS_SECRET: STATUS_SECRET, MERCHANT_OPERATOR_KEY: OPERATOR_KEY, ...extra });
 }
 
+/** A throwaway OWNER key for tests (the real owner key lives only on the owner's machine). */
+const ownerKeys = generateKeyPairSync("ed25519");
+export const OWNER_PUBLIC_KEY_PEM = ownerKeys.publicKey.export({ type: "spki", format: "pem" }).toString();
+export const OWNER_PUBLIC_KEY_FILE = (() => { const f = join(mkdtempSync(join(tmpdir(), "phc-owner-")), "owner.pub.pem"); writeFileSync(f, OWNER_PUBLIC_KEY_PEM); return f; })();
+export const ownerSign = (purpose: SignedPurpose, digest: string) => sign(null, Buffer.from(signedMessage(purpose, digest)), ownerKeys.privateKey).toString("base64");
+export const otherSign = (purpose: SignedPurpose, digest: string) => sign(null, Buffer.from(signedMessage(purpose, digest)), generateKeyPairSync("ed25519").privateKey).toString("base64");
+export const SOURCE_COMMIT = "0123456789abcdef0123456789abcdef01234567";
+export const DIAPORIA_ARTIFACT = "d".repeat(64);
+
 /** Builds a Sandbox-mode environment whose digest matches, exactly as the operator would after owner approval. */
 export function sandboxEnv(gate: "C1" | "C2", over: Record<string, string | undefined> = {}, now = Date.now()): Record<string, string> {
   const expiresAt = new Date(now + 3600_000).toISOString();
   const dataDir = over.MERCHANT_DATA_DIR ?? mkdtempSync(join(tmpdir(), "phc-"));
   const statement = buildApprovalStatement({ gate, merchantOrigin: ORIGIN, allowlist: loadAllowlist(allowlistText()), sellerMerchantId: SELLER_ID,
-    maxMinutes: 10, kernelUsdEstimate: "0.50", merchantDataDir: dataDir, expiresAt });
+    maxMinutes: 10, kernelUsdEstimate: "0.50", merchantDataDir: dataDir, expiresAt,
+    sourceCommit: SOURCE_COMMIT, merchantArtifactSha256: merchantArtifactSha256(), diaporiaArtifactSha256: DIAPORIA_ARTIFACT,
+    merchantHost: hostname(), diaporiaHost: hostname(), diaporiaServiceUser: userInfo().username,
+    ownerPublicKeySha256: loadOwnerPublicKey(OWNER_PUBLIC_KEY_PEM).sha256 });
+  const digest = approvalDigest(statement);
   const env: Record<string, string | undefined> = {
     MERCHANT_CHECKOUT_MODE: gate === "C1" ? "SANDBOX_POPUP_TEST" : "SANDBOX_APPROVAL_TEST", MERCHANT_PUBLIC_ORIGIN: ORIGIN, MERCHANT_LISTEN_PORT: "0",
     MERCHANT_PAYPAL_CLIENT_ID: FAKE_CLIENT_ID, MERCHANT_PAYPAL_CLIENT_SECRET: FAKE_CLIENT_SECRET, MERCHANT_PAYPAL_SELLER_MERCHANT_ID: SELLER_ID,
     MERCHANT_DATA_DIR: dataDir, MERCHANT_STATUS_SECRET: STATUS_SECRET, MERCHANT_OPERATOR_KEY: OPERATOR_KEY,
-    PHASE_C_APPROVAL_EXPIRES_AT: expiresAt, PHASE_C_MAX_MINUTES: "10", PHASE_C_KERNEL_USD_ESTIMATE: "0.50", PHASE_C_APPROVED_DIGEST: approvalDigest(statement), ...over,
+    PHASE_C_APPROVAL_EXPIRES_AT: expiresAt, PHASE_C_MAX_MINUTES: "10", PHASE_C_KERNEL_USD_ESTIMATE: "0.50", PHASE_C_APPROVED_DIGEST: digest,
+    PHASE_C_SOURCE_COMMIT: SOURCE_COMMIT, PHASE_C_DIAPORIA_ARTIFACT_SHA256: DIAPORIA_ARTIFACT, PHASE_C_DIAPORIA_HOST: hostname(),
+    PHASE_C_DIAPORIA_SERVICE_USER: userInfo().username, PHASE_C_OWNER_PUBLIC_KEY_FILE: OWNER_PUBLIC_KEY_FILE,
+    PHASE_C_APPROVAL_SIGNATURE: ownerSign("approval", digest), ...over,
   };
   return Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined)) as Record<string, string>;
 }

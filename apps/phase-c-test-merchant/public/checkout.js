@@ -24,7 +24,7 @@
   }
   function cancelled(orderId) {
     if (orderId) post("/api/checkout/orders/cancel", { cartRef: ref, csrf: csrf, orderId: orderId }).catch(function () {});
-    say("Payment window closed or cancelled. Nothing was captured.");
+    say("Payment window closed or cancelled. Payment status unverified: the merchant server checks it with PayPal.");
   }
 
   if (mode === "MOCK") {
@@ -84,7 +84,7 @@
         var session = sdk.createPayPalOneTimePaymentSession({
           onApprove: function (data) { return approved(data && data.orderId); },
           onCancel: function (data) { cancelled(data && data.orderId); },
-          onError: function () { say("PayPal reported an error. Nothing was captured."); report("SDK_ON_ERROR"); },
+          onError: function () { say("PayPal reported an error. Payment status unverified: the merchant server checks it with PayPal."); report("SDK_ON_ERROR"); },
         });
         var button = document.getElementById("paypal-button");
         button.removeAttribute("hidden");

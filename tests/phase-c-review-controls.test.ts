@@ -15,7 +15,7 @@ import { configureHandoffFromEnv, phaseCKernelLedgerFromEnv } from "../src/hando
 import { MerchantRecipeRegistry } from "../src/handoff/recipes.js";
 import { phaseCBrowserHosts, phaseCRecipe } from "../src/handoff/phaseCMerchant.js";
 import { fixtureRecipe } from "../src/handoff/fixtureMerchant.js";
-import { Buyer, OPERATOR_KEY, ORIGIN, allowlistText, fakeSandboxPayPal, sandboxEnv } from "./phase-c-helpers.js";
+import { Buyer, OPERATOR_KEY, ORIGIN, allowlistText, fakeSandboxPayPal, otherSign, ownerSign, sandboxEnv } from "./phase-c-helpers.js";
 
 const servers: MerchantServer[] = [];
 const start = async (...a: Parameters<typeof startMerchantServer>) => { const s = await startMerchantServer(...a); servers.push(s); return s; };
@@ -89,8 +89,8 @@ describe("durable per-approval KERNEL browser-creation ledger", () => {
     const reg = new MerchantRecipeRegistry([phaseCRecipe("https://phase-c.operator-shop.com", phaseCBrowserHosts(allowlistText()))], { allowLoopbackOrigin: false });
     expect(() => phaseCKernelLedgerFromEnv({}, reg)).toThrow(/PHASE_C_APPROVED_DIGEST/);
     expect(() => phaseCKernelLedgerFromEnv({ PHASE_C_APPROVED_DIGEST: "not-a-digest" }, reg)).toThrow(/PHASE_C_APPROVED_DIGEST/);
+    expect(() => phaseCKernelLedgerFromEnv({ PHASE_C_APPROVED_DIGEST: DIGEST }, reg)).toThrow(/STATEMENT_FILE/);
     const dir = tmp("kled-");
-    expect(phaseCKernelLedgerFromEnv({ PHASE_C_APPROVED_DIGEST: DIGEST }, reg, dir)!.o).toMatchObject({ runId: DIGEST, maxBrowsers: 1 });
     // Any KERNEL recipe for the fictional Phase C domain is Phase C (it is the only real merchant on that name); other merchants are unaffected.
     const otherShop = { ...phaseCRecipe("https://phase-c.operator-shop.com", phaseCBrowserHosts(allowlistText())), recipeId: "other-v1", merchantDomain: "other-shop.example" };
     expect(phaseCKernelLedgerFromEnv({}, new MerchantRecipeRegistry([otherShop], { allowLoopbackOrigin: false }))).toBeNull();
@@ -204,11 +204,14 @@ describe("C3 reconciliation is read-only; capture retry is a separate, owner-app
 
   it("retry needs reconcile first, the exact owner-approved digest, and happens at most once with the same request id", async () => {
     const { m, c, pp, orderId, retryDigest } = await c2LostCapture();
-    const retry = (d: string) => op(m, "/operator/c2/retry-capture", { method: "POST", body: JSON.stringify({ cartRef: c.ref, retryApprovalDigest: d }) });
+    const retry = (d: string, sig = ownerSign("capture-retry", d)) => op(m, "/operator/c2/retry-capture", { method: "POST", body: JSON.stringify({ cartRef: c.ref, retryApprovalDigest: d, ownerSignature: sig }) });
     expect((await retry(retryDigest)).status).toBe(409); // RECONCILE_FIRST: still ORDER_UNKNOWN
     await op(m, `/operator/reconcile?cart=${c.ref}`);
     expect((await retry("0".repeat(64))).status).toBe(403);
     expect((await (await op(m, "/operator/c2/retry-capture", { method: "POST", body: JSON.stringify({ cartRef: c.ref }) })).json()).error).toBe("RETRY_APPROVAL_DIGEST_MISMATCH");
+    // The digest is public knowledge; without the OWNER's signature it authorizes nothing.
+    for (const sig of ["", otherSign("capture-retry", retryDigest), ownerSign("approval", retryDigest)])
+      expect((await (await retry(retryDigest, sig)).json()).error).toBe("RETRY_OWNER_SIGNATURE_INVALID");
     expect(pp.captures().length).toBe(0);
     const ok = await retry(retryDigest);
     expect((await ok.json()).state).toBe("ORDER_CONFIRMED");
@@ -227,7 +230,7 @@ describe("C3 reconciliation is read-only; capture retry is a separate, owner-app
     pp.buyerApproves(created.body.orderId);
     await b.api("/api/checkout/orders/approve", { cartRef: c.ref, csrf: c.csrf, orderId: created.body.orderId });
     const d = approvalDigest(buildCaptureRetryStatement({ c2ApprovalDigest: env.PHASE_C_APPROVED_DIGEST!, cartRef: c.ref, merchantOrderRef: m.checkout.get(c.ref)!.merchantOrderRef }));
-    const r = await op(m, "/operator/c2/retry-capture", { method: "POST", body: JSON.stringify({ cartRef: c.ref, retryApprovalDigest: d }) });
+    const r = await op(m, "/operator/c2/retry-capture", { method: "POST", body: JSON.stringify({ cartRef: c.ref, retryApprovalDigest: d, ownerSignature: ownerSign("capture-retry", d) }) });
     expect(r.status).toBe(403);
     expect((await r.json()).error).toBe("CAPTURE_NOT_ALLOWED_IN_MODE");
     expect(pp.requests.some((x) => x.url.endsWith("/capture"))).toBe(false);
