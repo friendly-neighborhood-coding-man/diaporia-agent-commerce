@@ -16,7 +16,7 @@ const GOOD_PAGE = {
 };
 
 type Call = { method: string; url: string; headers: Record<string, string>; body: any };
-function fakeKernel(opts: { page?: unknown; executeOk?: boolean; hang?: "create" | "execute"; createStatus?: number } = {}) {
+function fakeKernel(opts: { page?: unknown; executeOk?: boolean; hang?: "create" | "execute"; createStatus?: number; deleteStatus?: number } = {}) {
   const calls: Call[] = [];
   const fetchImpl = (async (u: string | URL, init?: RequestInit) => {
     const url = String(u); const method = init?.method ?? "GET";
@@ -32,7 +32,7 @@ function fakeKernel(opts: { page?: unknown; executeOk?: boolean; hang?: "create"
       if (opts.hang === "execute") return hang();
       return Response.json(opts.executeOk === false ? { success: false, error: "page crashed" } : { success: true, result: opts.page ?? GOOD_PAGE });
     }
-    if (method === "DELETE") return new Response(null, { status: 204 });
+    if (method === "DELETE") return new Response(null, { status: opts.deleteStatus ?? 204 });
     return new Response("unexpected", { status: 500 });
   }) as typeof fetch;
   return { calls, fetchImpl };
@@ -73,7 +73,11 @@ describe("KERNEL adapter: session lifecycle, timeouts, caps, secrecy", () => {
     const r = await kernel.inspect(REVIEW_URL, "active_noise_cancellation", "Q3");
     expect(k.calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual(["POST /browsers", "POST /browsers/brw_123/playwright/execute", "DELETE /browsers/brw_123"]);
     expect(k.calls.every((c) => new URL(c.url).host === "api.onkernel.com" && c.headers.Authorization === `Bearer ${KEY}`)).toBe(true);
-    expect(k.calls[0]!.body).toMatchObject({ headless: true, stealth: false });
+    expect(k.calls[0]!.body).toMatchObject({ headless: true, stealth: false, network: { allowed_hosts: ["headphone-lab.net"] } });
+    const snippet = String(k.calls[1]!.body.code);
+    expect(snippet).toContain('context.route("**/*"');
+    expect(snippet).toContain('u.origin !== allowedOrigin');
+    expect(snippet).toContain('context.routeWebSocket("**/*"');
     expect(k.calls[1]!.body.code).toContain(JSON.stringify(REVIEW_URL));
     expect(k.calls[1]!.body.timeout_sec).toBeGreaterThan(0);
     expect(r.outcome).toBe("EXPLICIT_STATEMENTS_FOUND");
@@ -81,6 +85,14 @@ describe("KERNEL adapter: session lifecycle, timeouts, caps, secrecy", () => {
     expect(r.browserSeconds).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(kernel)).not.toContain(KEY);
     expect(kernel.provenance).toBe("BYOK_LIVE");
+  });
+
+  it("never returns evidence if provider session deletion fails", async () => {
+    const k = fakeKernel({ deleteStatus: 503 });
+    const kernel = new KernelPageInspector(KEY, "community", { fetchImpl: k.fetchImpl, resolve: PUBLIC_DNS });
+    await expect(kernel.inspect(REVIEW_URL, "active_noise_cancellation", "Q3"))
+      .rejects.toThrow(/deletion unverified/);
+    expect(k.calls.at(-1)!.method).toBe("DELETE");
   });
 
   it("execution failure throws, and the browser session is still deleted", async () => {
