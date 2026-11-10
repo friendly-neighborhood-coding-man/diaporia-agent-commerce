@@ -14,6 +14,7 @@ import { KernelPageInspector } from "./evidence/KernelPageInspector.js";
 import { MockPayPalBillingProvider } from "./billing/Billing.js";
 import { randomBytes } from "node:crypto";
 import { configureHandoffFromEnv } from "./handoff/config.js";
+import { SERVICE_LIVE_CAPS } from "./metering/LiveCallGuard.js";
 
 const env = process.env;
 const host = env.HOST ?? "127.0.0.1";
@@ -49,7 +50,7 @@ const byok = env.EVIDENCE_PROVIDERS === "byok" && env.TAVILY_API_KEY;
 const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY ? new Channel3ResearchAdapter(env.CHANNEL3_API_KEY) : null;
 // Live providers: supplier prices are UNKNOWN (never assumed), so explicit per-request call caps bound spending.
 const ledger = byok || liveCatalog
-  ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1, TAVILY: 2, KERNEL: 1 } })
+  ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { ...SERVICE_LIVE_CAPS } })
   : new UsageLedger(serviceStore, PLACEHOLDER_PRICING);
 // Independent explicit opt-in: merely keeping KERNEL_API_KEY in .env.local must NEVER trigger paid browsing.
 // The remote egress controls are defense-in-depth, not an audited DNS rebinding / IP-layer firewall.

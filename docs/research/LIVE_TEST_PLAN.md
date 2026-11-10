@@ -19,6 +19,27 @@ iPhone 13 128GB (condition), waterproof hiking boots size 10 under $200, cheapes
 carafe, 4K USB-C monitor under $400, a Korean KRW request (expected currency blocker), cordless HEPA vacuum under $300.
 Research only: no `compare_purchase_offers`, no mandate, no checkout.
 
+## Two different cap sets
+
+| Cap set | Channel3 / Tavily / KERNEL per request | Where | Changed by this plan? |
+|---|---|---|---|
+| **Service caps** (normal operation with live keys) | 1 / 2 / 1 | `SERVICE_LIVE_CAPS` in `src/metering/LiveCallGuard.ts`, used by `main.ts` | **No** (a test pins them) |
+| **LTP-V2-01 live-test allowance** (this run only) | 3 / 6 / 0 | `LTP_V2_01_PER_REQUEST_ALLOWANCE` in the script | only exists inside the script |
+
+## Outer guard (`src/metering/LiveCallGuard.ts`, unit-tested in `tests/live-call-guard.test.ts`)
+
+- **Exact hostnames only:** `api.trychannel3.com` and `api.tavily.com`, https, default port, no userinfo. Look-alikes
+  (`api.tavily.com.evil.example`, `evilapi.tavily.com`, a sub-domain, another port) are refused before any byte is sent.
+- **No redirects:** every request is sent with `redirect: "manual"`. A 3xx is never followed; it still counts as a call
+  and as its expected credits, and it stops the run.
+- **Paths and parameters in plan only:** Channel3 `/v1/search`, `/v1/lookup` (1 credit), `/v1/products/{id}` (free, but
+  counted as a call); Tavily `/search` with `search_depth` basic only and never `auto_parameters`.
+- **Caps checked before sending:** run-total calls and run-total credits per provider. Credits charged per call are the
+  larger of the provider-reported credits and the documented cost; network failures are charged at the documented cost.
+- **Cost report:** credits charged × documented price, labelled as an upper bound (actual cost is $0 while free credits
+  last).
+- **Logging:** provider, path, status, credits, provider request id and duration only; never headers, keys or bodies.
+
 ## Request count and credit use (hard caps, fail closed)
 
 | | Per request | Whole run | Credits per call | Max credits | Max USD after free tier |
@@ -31,9 +52,8 @@ Research only: no `compare_purchase_offers`, no mandate, no checkout.
 Both providers give 1,000 free credits per month. The committed evidence records 2 Channel3 searches and 1 Tavily
 search this month (two smokes and one evidence check on 2026-11-09); any other use of the keys is unknown to me. If
 nothing else used them, the expected cost is $0. Retries are bounded (one retry
-on 429/5xx/network, Retry-After ≤ 3 s) and every retry counts against the caps above. Per-request caps are enforced by
-the `UsageLedger`; run totals by the script's own fetch wrapper, which also rejects any host other than Channel3 and
-Tavily.
+on 429/5xx/network, Retry-After ≤ 3 s) and every retry counts against the caps above. Per-request allowance is
+enforced by the `UsageLedger`; run totals, hosts and redirects by `LiveCallGuard`.
 
 ## Logging
 
@@ -48,6 +68,16 @@ One file, `docs/evidence/live-research-v2-<timestamp>.json`:
 No API keys, headers or raw full pages are logged. The repository is public, so the owner reviews the file before it
 is committed (third-party snippets are kept short for that reason).
 
+## Owner pre-flight before approval (not possible from the cloud container)
+
+1. Re-read the provider docs: `docs.tavily.com` and `docs.trychannel3.com` were not reachable from this container on
+   2026-11-10 (DNS blocked by the network policy), so `PROVIDER_CONTRACTS.md` (read earlier the same day) was not
+   re-verified. Check: hosts, credit cost per endpoint/depth, `limit ≤ 30`, error codes 429/432/433.
+2. Check remaining credits in each provider dashboard (≥ 30 Channel3 and ≥ 60 Tavily for a $0 run). The script makes no
+   usage/credit API call.
+3. Run from the owner's machine with a dedicated env file; nothing in the plan needs PayPal, KERNEL or Cloudflare keys
+   and the guard refuses any other host.
+
 ## Stopping conditions
 
 The run stops, and the remaining requests are recorded as NOT_RUN, on the first of:
@@ -55,7 +85,7 @@ The run stops, and the remaining requests are recorded as NOT_RUN, on the first 
 1. HTTP 401 or 403 (key problem) from either provider;
 2. HTTP 402, 432 or 433 (credit, plan or pay-as-you-go limit);
 3. a 429 or 5xx that survives the one bounded retry;
-4. any run-total cap reached;
+4. any run-total call or credit cap reached, or any redirect;
 5. any request to a host other than the two providers;
 6. any unexpected exception.
 

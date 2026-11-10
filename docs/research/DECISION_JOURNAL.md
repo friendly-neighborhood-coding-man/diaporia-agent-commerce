@@ -74,3 +74,15 @@ HEAD at run time; draft runs were taken on an uncommitted working tree on top of
   branch does not touch the code involved: **D1** `/authorize` is not fully strict-origin (CONTROL probes post without
   an Origin header); **D2** the WP-5 confirm step is enforced by the page flow, while a direct authorize POST is still
   accepted. Both need review before any payment-capable deployment (PR #12 body).
+
+## J-11 · Live-test hardening after the owner's push review (local, after PR #13 head 4a01434)
+- **Owner findings:** the live fetch wrapper matched Channel3 by host suffix (look-alike domains could pass); redirects
+  were followed by fetch without accounting; the live-test allowance (3/6) and the service caps (1/2) were not clearly
+  separated; credit limits and cost reporting needed to be hard.
+- **Change:** `src/metering/LiveCallGuard.ts` (exact hosts, https/default port, `redirect: "manual"` with stop-and-count,
+  pre-send call and credit caps, Tavily basic only, stop rules, upper-bound cost) and `SERVICE_LIVE_CAPS` used by `main.ts`
+  (values unchanged 1/2/1). The script uses the guard and names its allowance `LTP_V2_01_PER_REQUEST_ALLOWANCE`.
+- **Verification:** `tests/live-call-guard.test.ts` (look-alike hosts refused with zero requests sent, 302 not followed
+  and counted, caps checked before sending, stop on 401/402/403/432/433 and on a repeated 429, service caps pinned).
+- **Not done:** provider docs could not be re-read (docs hosts blocked by this container's network policy); credit
+  balances need the owner's dashboards. Live test remains NOT AUTHORIZED.
