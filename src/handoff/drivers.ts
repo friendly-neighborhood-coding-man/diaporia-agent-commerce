@@ -132,6 +132,8 @@ export interface KernelDriverOptions {
   baseUrl?: string;
   /** Hard cap on browsers this process may create. Default 3. */
   maxSessions?: number;
+  /** Live backend refuses unrestricted browser sessions. Fake HTTP may opt in for testing. */
+  enforceEgressAllowlist?: boolean;
   /** Must be true to construct: KERNEL browsers are billed. Tests use a fake fetch. */
   allowLive: boolean;
   /** Absolute wall-clock bound, independent of the provider idle timeout. Maximum 10 minutes. */
@@ -163,7 +165,8 @@ export class KernelDriver implements BrowserDriver {
     this.#key = apiKey;
     this.o = { fetchImpl: opts.fetchImpl ?? fetch, baseUrl: (opts.baseUrl ?? "https://api.onkernel.com").replace(/\/$/, ""), maxSessions: opts.maxSessions ?? 3,
       maxWallMs: Math.min(600_000, Math.max(1_000, Math.floor(opts.maxWallMs ?? 600_000))), watchdog: opts.watchdog ?? (async () => undefined),
-      journalDir: opts.journalDir ?? (opts.fetchImpl ? "" : resolve(process.cwd(), ".data/kernel-watchdogs")) };
+      journalDir: opts.journalDir ?? (opts.fetchImpl ? "" : resolve(process.cwd(), ".data/kernel-watchdogs")),
+      enforceEgressAllowlist: opts.enforceEgressAllowlist ?? !opts.fetchImpl };
     // Never send a real key to a configurable endpoint outside the official KERNEL API.
     if (!opts.fetchImpl && this.o.baseUrl !== "https://api.onkernel.com") throw new Error("Live KERNEL endpoint must be the official API host");
   }
@@ -264,6 +267,11 @@ export class KernelDriver implements BrowserDriver {
   }
 
   async open(opts: { label: string; merchantHost: string; allowedHosts: string[] | null; timeoutSeconds: number }): Promise<KernelSession> {
+    // Fail BEFORE charging for a browser. An absent list means unrestricted egress.
+    if (this.o.enforceEgressAllowlist &&
+        (!Array.isArray(opts.allowedHosts) || opts.allowedHosts.length === 0 ||
+         !opts.allowedHosts.includes(opts.merchantHost)))
+      throw new Error("Live KERNEL handoff requires a reviewed merchant/network egress allowlist");
     if (this.#created >= this.o.maxSessions) throw new KernelBudgetExceeded();
     this.#created++;
     const created = await this.api("POST", "/browsers", {
