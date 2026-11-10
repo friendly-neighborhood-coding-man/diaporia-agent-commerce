@@ -1,0 +1,853 @@
+{
+  "mode": "cloudflare",
+  "total": 66,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "untrusted-a-spoofed",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "untrusted-a-spoofed",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "172.31.250.61",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "untrusted-b-spoofed",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "untrusted-b-spoofed",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "172.31.250.62",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "untrusted-a-plain",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "untrusted-a-plain",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/mcp",
+            "xff": "172.31.250.61",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cf-client-1",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "cf-client-1",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "198.51.100.7",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cf-client-2",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "cf-client-2",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "198.51.100.8",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cf-client-ipv6",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "cf-client-ipv6",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "2001:db8:1::7",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cf-xff-only-is-ignored",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "cf-xff-only-is-ignored",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "172.31.250.50",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cf-spoof-others-stripped",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "cf-spoof-others-stripped",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "198.51.100.9",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cf-garbage-header",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "cf-garbage-header",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "172.31.250.50",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cf-list-header",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "cf-list-header",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "198.51.100.11",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "untrusted-with-cert-cf-header",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "untrusted-with-cert-cf-header",
+          "status": 200,
+          "bytes": 17
+        },
+        "upstream": [
+          {
+            "url": "/.well-known/oauth-protected-resource",
+            "xff": "172.31.250.61",
+            "host": "mcp.diaporia.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no-client-cert",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "no-client-cert",
+          "error": "ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED"
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "no-client-cert-from-cf-range",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "no-client-cert-from-cf-range",
+          "error": "ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED"
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "rogue-ca-client-cert",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "rogue-ca-client-cert",
+          "error": "ERR_SSL_TLSV1_ALERT_UNKNOWN_CA"
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /owner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /OWNER/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /OWNER/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /%6Fwner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /%6Fwner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path //owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path //owner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /./owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /./owner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /mcp/../owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /mcp/../owner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /oauth/../owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /oauth/../owner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /owner%2Fmandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /owner%2Fmandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /mcp%2F..%2Fowner%2Fmandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /mcp%2F..%2Fowner%2Fmandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /.well-known/../owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /.well-known/../owner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /paypal/webhook",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /mock-paypal/approve",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /mock-paypal/approve",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /healthz",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /healthz",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /authorize",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /authorize",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /billing/subscriptions",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /billing/subscriptions",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /handoff/start",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /handoff/start",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /operator",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /operator",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /oauth/register",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /oauth/register",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /mcp/extra",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /mcp/extra",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /mcpx",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /mcpx",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "path /oauth/token/../../owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "path /oauth/token/../../owner/mandates",
+          "status": 404,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host 127.0.0.1:8080 /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host 127.0.0.1:8080 /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host 127.0.0.1:8080 /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host 127.0.0.1:8080 /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host 127.0.0.1:8080 /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host 127.0.0.1:8080 /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host app:8080 /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host app:8080 /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host app:8080 /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host app:8080 /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host app:8080 /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host app:8080 /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host app /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host app /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host app /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host app /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host app /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host app /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host localhost /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host localhost /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host localhost /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host localhost /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host localhost /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host localhost /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host 172.31.251.20:8080 /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host 172.31.251.20:8080 /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host 172.31.251.20:8080 /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host 172.31.251.20:8080 /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host 172.31.251.20:8080 /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host 172.31.251.20:8080 /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host mcp.diaporia.test.evil.example /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host mcp.diaporia.test.evil.example /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host mcp.diaporia.test.evil.example /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host mcp.diaporia.test.evil.example /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host mcp.diaporia.test.evil.example /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host mcp.diaporia.test.evil.example /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host phase-c.diaporia.com /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host phase-c.diaporia.com /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host phase-c.diaporia.com /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host phase-c.diaporia.com /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host phase-c.diaporia.com /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host phase-c.diaporia.com /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host diaporia.com /mcp",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host diaporia.com /mcp",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host diaporia.com /owner/mandates",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host diaporia.com /owner/mandates",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "host diaporia.com /paypal/webhook",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "host diaporia.com /paypal/webhook",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "absolute-form target to app",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "absolute-form target to app",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "absolute-form target to app, allowed path",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "absolute-form target to app, allowed path",
+          "status": 421,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "sni other host",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "sni other host",
+          "error": "EPROTO"
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "plain http redirects only",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "plain http redirects only",
+          "status": 308,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "plain http allowed path redirects only",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "plain http allowed path redirects only",
+          "status": 308,
+          "bytes": 0
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "backend address unreachable from clients",
+      "ok": true,
+      "detail": {
+        "result": {
+          "name": "backend address unreachable from clients",
+          "error": "timeout"
+        },
+        "upstream": []
+      }
+    },
+    {
+      "name": "upstream received only allowlisted paths with Host mcp.diaporia.test",
+      "ok": true,
+      "detail": []
+    }
+  ]
+}

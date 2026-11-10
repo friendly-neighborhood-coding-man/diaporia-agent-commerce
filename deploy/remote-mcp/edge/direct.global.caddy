@@ -1,0 +1,2 @@
+# Edge mode "direct" (DNS-only record, recommended). No proxy is trusted: Caddy's {client_ip} is always
+# the TCP peer address, and any X-Forwarded-For / CF-Connecting-IP a client sends is ignored.

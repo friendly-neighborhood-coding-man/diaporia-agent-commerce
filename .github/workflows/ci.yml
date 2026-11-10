@@ -22,6 +22,7 @@ jobs:
       - run: npm run build
       - run: npm run demo:e2e
       - run: npm run demo:phase-c
+      - run: npm run remote:validate
       - run: npm run scan:secrets
   gitleaks:
     runs-on: ubuntu-latest

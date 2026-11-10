@@ -1,0 +1,2 @@
+# Edge mode "direct": a Let's Encrypt certificate via ACME HTTP-01 (ports 80 and 443 reachable).
+tls {$CADDY_EMAIL}

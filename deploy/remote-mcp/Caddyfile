@@ -1,0 +1,74 @@
+# DIAPORIA remote research/read-only MCP: TLS termination and path allowlist.
+# Only the MCP endpoint, OAuth endpoints and OAuth metadata are forwarded. /healthz stays internal
+# (container health check; IR-21). Every other path
+# (owner, authorize, paypal, mock-paypal, billing, handoff, operator, ...) gets 404 here, before the app,
+# which independently answers 403 for them. Cloudflare is not assumed to provide authentication.
+# Test: deploy/remote-mcp/test/edge-check.sh runs this exact file in every edge mode (Docker).
+# A Host other than MCP_HOSTNAME matches no site: Caddy returns an empty 200 and proxies nothing
+# (verified by scripts/remote/validate.ts); the app itself answers 421 for any foreign Host.
+{
+	admin off
+	# CADDY_EMAIL: ACME account contact for Let's Encrypt (production). Ignored with tls internal.
+	email {$CADDY_EMAIL:admin@invalid}
+	servers {
+		strict_sni_host on
+		# CADDY_EDGE selects how the client address is determined: direct | cloudflare | local.
+		# An unknown value has no snippet file and Caddy refuses to start.
+		import edge/{$CADDY_EDGE}.global.caddy
+	}
+}
+
+{$MCP_HOSTNAME} {
+	# Certificate source for the selected edge mode (edge/<mode>.site.caddy):
+	#   direct      Let's Encrypt via ACME (DNS-only record, ports 80/443 open), contact CADDY_EMAIL
+	#   cloudflare  Cloudflare Origin CA + mandatory Authenticated Origin Pulls (proxied record)
+	#   local       Caddy's internal CA, local HTTPS emulation only
+	import edge/{$CADDY_EDGE}.site.caddy
+
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	@allowed path /mcp /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server /oauth/authorize /oauth/token /oauth/revoke
+	handle @allowed {
+		# The app sees exactly one client address: Caddy's {client_ip}. In direct/local mode that is the
+		# TCP peer; in cloudflare mode it is CF-Connecting-IP, but only from an authenticated Cloudflare
+		# peer (edge/cloudflare.*.caddy). Client-supplied address headers never pass through, and the app
+		# trusts X-Forwarded-For only from this container's fixed backend address.
+		reverse_proxy app:8080 {
+			header_up X-Forwarded-For {client_ip}
+			# Caddy would keep these from a trusted proxy; the app ignores them, but pin them anyway.
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-Proto https
+			header_up -CF-Connecting-IP
+			header_up -True-Client-IP
+			header_up -X-Real-IP
+			header_up -Forwarded
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 30s
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				# Headers are dropped wholesale (Authorization, X-Owner-Key, Cookie, Location with codes, ...).
+				request>uri regexp "\?.*$" "?<query removed>"
+				request>headers delete
+				resp_headers delete
+			}
+		}
+	}
+}

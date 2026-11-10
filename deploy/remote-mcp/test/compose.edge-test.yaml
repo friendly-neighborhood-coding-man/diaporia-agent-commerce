@@ -1,0 +1,14 @@
+# Edge test only (test/edge-check.sh): the real compose.yaml, Caddyfile and edge snippets, with the app
+# replaced by a request-recording stub. Never used for a deployment.
+services:
+  app:
+    image: node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+    build: !reset null
+    env_file: !reset []
+    command: ["node", "/stub/upstream-stub.mjs"]
+    volumes: !override
+      - ./test:/stub:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      start_period: 5s

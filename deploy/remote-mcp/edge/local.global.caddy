@@ -1,0 +1,1 @@
+# Edge mode "local" (local HTTPS emulation only). Same trust as "direct": no proxy is trusted.

@@ -10,6 +10,7 @@ const RULES = [
   ["Private key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
   ["OpenAI/Anthropic-style key", /\bsk-(?:ant-)?[A-Za-z0-9_-]{24,}/],
   ["Generated DIAPORIA dev credential", /\bd(?:ct|ok)_[A-Za-z0-9_-]{32}\b/],
+  ["Generated DIAPORIA remote owner key", /\bdrk_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/],
 ];
 const findings = [];
 for (const f of files) {

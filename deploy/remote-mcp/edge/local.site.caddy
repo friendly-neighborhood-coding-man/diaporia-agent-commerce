@@ -1,0 +1,2 @@
+# Edge mode "local": Caddy's own internal CA. Never use on a public host.
+tls internal

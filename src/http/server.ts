@@ -32,7 +32,9 @@ export interface AppConfig {
    */
   authMode: "dev" | "public-readonly-demo" | "oauth";
   /** OAuth token lifetimes (tests). */
-  oauth?: { accessTokenTtlSec?: number; refreshTokenTtlSec?: number; codeTtlSec?: number; maxClients?: number };
+  oauth?: { accessTokenTtlSec?: number; refreshTokenTtlSec?: number; codeTtlSec?: number; maxClients?: number;
+    allowedRedirectUris?: string[]; grantMaxAgeSec?: number; maxPending?: number; registration?: "dynamic" | "closed";
+    preRegisteredClients?: import("../auth/oauth.js").PreRegisteredClient[]; bindGrantsToOwnerKey?: boolean };
   dbPath: string;
   auth: DevAuth;
   research?: CommerceResearchAdapter;
@@ -50,6 +52,20 @@ export interface AppConfig {
   service?: import("../engine/ServicePlane.js").ServicePlane | null;
   /** Browser checkout handoff (separate path; absent = disabled). */
   handoff?: Omit<import("../handoff/BrowserCheckoutHandoff.js").HandoffConfig, "baseUrl" | "enabled"> | null;
+  /**
+   * Remote deployments only (default off). strictHost: accept only the public Host/Origin of baseUrl,
+   * never 127.0.0.1:PORT or localhost:PORT, so a proxy that rewrites Host cannot reach a loopback profile.
+   */
+  strictHost?: boolean;
+  /** Remote deployments only (default off): /healthz answers only a loopback peer (the container health check). */
+  healthzLoopbackOnly?: boolean;
+  /**
+   * Remote deployments only (default empty). Socket addresses of reverse proxies whose X-Forwarded-For
+   * is trusted for rate-limit keys; the last entry (the one the proxy appended) is the client.
+   */
+  trustedProxies?: string[];
+  /** Per-minute request limits per client (defaults: 120 for /mcp per token+client, 30 for other routes per client). */
+  rateLimits?: { mcpPerMinute?: number; webPerMinute?: number; registerPerHour?: number };
 }
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -83,10 +99,12 @@ export function createApp(cfg: AppConfig): App {
   const oauth = cfg.authMode === "oauth" ? new OAuthAuthority(store, cfg.auth, { issuer: base.origin, resource: `${base.origin}/mcp`,
     offeredScopes: paymentExecutionEnabled ? [SCOPES.RESEARCH, SCOPES.READ, SCOPES.PREPARE] : [SCOPES.RESEARCH, SCOPES.READ], ...(cfg.oauth ?? {}) }, now) : null;
   if (oauth && base.protocol !== "https:" && !isLoopbackUrl(cfg.baseUrl)) throw new Error("OAuth mode requires an https PUBLIC_BASE_URL unless it is loopback");
-  const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
-  const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
-  const mcpLimiter = new RateLimiter(120, 60_000);
-  const webLimiter = new RateLimiter(30, 60_000);
+  const allowedHosts = cfg.strictHost ? [base.host] : [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
+  const allowedOrigins = cfg.strictHost ? [base.origin] : [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
+  const trustedProxies = new Set(cfg.trustedProxies ?? []);
+  const mcpLimiter = new RateLimiter(cfg.rateLimits?.mcpPerMinute ?? 120, 60_000);
+  const webLimiter = new RateLimiter(cfg.rateLimits?.webPerMinute ?? 30, 60_000);
+  const registerLimiter = cfg.rateLimits?.registerPerHour ? new RateLimiter(cfg.rateLimits.registerPerHour, 3_600_000) : null;
   const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
@@ -98,9 +116,10 @@ export function createApp(cfg: AppConfig): App {
     try {
       securityHeaders(res);
       const url = new URL(req.url ?? "/", cfg.baseUrl);
-      const ip = req.socket.remoteAddress ?? "unknown";
+      const ip = clientIp(req, trustedProxies);
       if (!allowedHosts.includes(req.headers.host ?? "")) return send(res, 421, { error: "Host not allowed" });
 
+      if (url.pathname === "/healthz" && cfg.healthzLoopbackOnly && !/^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? "")) return send(res, 404, { error: "Not found" });
       if (url.pathname === "/healthz") return send(res, 200, { ok: true, paymentExecutionEnabled, paymentEnvironment: payments.name === "PAYPAL_SANDBOX" ? "PAYPAL_SANDBOX" : "MOCK", liveMerchantCheckout: false, authMode: cfg.authMode, paymentProvider: payments.name, researchAdapter: gateway.research.name });
 
       if (url.pathname === "/mcp") {
@@ -135,7 +154,9 @@ export function createApp(cfg: AppConfig): App {
         if (req.method === "GET" && (p === "/.well-known/oauth-protected-resource" || p === "/.well-known/oauth-protected-resource/mcp"))
           return sendPublic(res, 200, oauth.protectedResourceMetadata());
         if (req.method === "GET" && p === "/.well-known/oauth-authorization-server") return sendPublic(res, 200, oauth.authorizationServerMetadata());
-        if (p === "/oauth/register" && req.method === "POST") { const out = oauth.register(await readJson(req)); return send(res, out.status, out.body); }
+        if (p === "/oauth/register" && req.method === "POST") {
+          if (registerLimiter && !registerLimiter.take(ip)) return send(res, 429, { error: "Rate limit exceeded", error_description: "Too many client registrations" });
+          const out = oauth.register(await readJson(req)); return send(res, out.status, out.body); }
         if (p === "/oauth/token" && req.method === "POST") { const out = oauth.token(new URLSearchParams(await readText(req)), header(req, "authorization")); return send(res, out.status, out.body); }
         if (p === "/oauth/revoke" && req.method === "POST") { const out = oauth.revoke(new URLSearchParams(await readText(req)), header(req, "authorization")); return send(res, out.status, out.body); }
         if (p === "/oauth/authorize" && req.method === "GET") {
@@ -346,6 +367,14 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   if (!t) return undefined;
   try { return JSON.parse(t); } catch { throw new BadJson(); }
 }
+/** Client address for rate limits: X-Forwarded-For is honoured only when the socket peer is a trusted proxy. */
+export function clientIp(req: IncomingMessage, trusted: ReadonlySet<string>): string {
+  const peer = (req.socket.remoteAddress ?? "unknown").replace(/^::ffff:/, "");
+  if (!trusted.has(peer)) return peer;
+  const xff = header(req, "x-forwarded-for");
+  const last = xff?.split(",").map((s) => s.trim()).filter(Boolean).pop();
+  return last && last.length <= 64 ? last : peer;
+}
 function header(req: IncomingMessage, name: string): string | undefined { const v = req.headers[name]; return Array.isArray(v) ? v[0] : v; }
 function sameOrigin(req: IncomingMessage, allowed: string[]): boolean { const o = req.headers.origin; return o === undefined || allowed.includes(o); }
 function securityHeaders(res: ServerResponse) {
@@ -413,7 +442,7 @@ function consentPage(p: PendingAuthorization, paymentToolsAvailable: boolean, er
   const items = p.scopes.map((s) => `<p><label><input type="checkbox" name="scope" value="${esc(s)}" checked style="width:auto"> <code>${esc(s)}</code>: ${esc(SCOPE_TEXT[s] ?? s)}${
     s === SCOPES.PREPARE && !paymentToolsAvailable ? ' <span class="muted">(not offered on this deployment: payment tools are disabled here)</span>' : ""}</label></p>`).join("");
   return page("Allow an AI client to use DIAPORIA?", `${error ? `<p class="state">${esc(error)}</p>` : ""}
-    <p>The client <b>${esc(p.clientName)}</b> (self-registered; name not verified) wants to use DIAPORIA on your behalf. After you allow it, your browser returns to <code>${esc(redirectHost)}</code>.</p>
+    <p>The client <b>${esc(p.clientName)}</b> ${p.boundUserId ? `(registered by this server's operator for account <code>${esc(p.boundUserId)}</code> only)` : "(self-registered; name not verified)"} wants to use DIAPORIA on your behalf. After you allow it, your browser returns to <code>${esc(redirectHost)}</code>.</p>
     <form method="post" action="/oauth/authorize"><input type="hidden" name="request_id" value="${esc(p.id)}"><input type="hidden" name="csrf" value="${esc(p.csrf)}">
     ${items}
     <label>Owner key (proves you are the account owner)<input name="owner_key" type="password" autocomplete="off"></label>
