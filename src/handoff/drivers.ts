@@ -7,6 +7,10 @@
  *
  * Nothing here returns cookies, CDP/WebDriver endpoints, or the live-view URL to callers other than the handoff page.
  */
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+
 export type DriverPhase = "AUTOMATION" | "HUMAN_TAKEOVER" | "OBSERVATION" | "CLOSED";
 
 export interface HumanView {
@@ -130,6 +134,10 @@ export interface KernelDriverOptions {
   maxSessions?: number;
   /** Must be true to construct: KERNEL browsers are billed. Tests use a fake fetch. */
   allowLive: boolean;
+  /** Absolute wall-clock bound, independent of the provider idle timeout. Maximum 10 minutes. */
+  maxWallMs?: number;
+  /** Offline tests can replace the detached process with a spy. */
+  watchdog?: (sessionId: string, hardWallMs: number) => Promise<void>;
 }
 
 export class KernelBudgetExceeded extends Error { constructor() { super("KERNEL browser cap reached for this process"); } }
@@ -151,9 +159,43 @@ export class KernelDriver implements BrowserDriver {
     if (!opts.allowLive) throw new Error("KernelDriver needs allowLive: true (billed browser sessions)");
     if (!apiKey || apiKey.length < 10) throw new Error("KERNEL API key missing");
     this.#key = apiKey;
-    this.o = { fetchImpl: opts.fetchImpl ?? fetch, baseUrl: (opts.baseUrl ?? "https://api.onkernel.com").replace(/\/$/, ""), maxSessions: opts.maxSessions ?? 3 };
+    this.o = { fetchImpl: opts.fetchImpl ?? fetch, baseUrl: (opts.baseUrl ?? "https://api.onkernel.com").replace(/\/$/, ""), maxSessions: opts.maxSessions ?? 3,
+      maxWallMs: Math.min(600_000, Math.max(1_000, Math.floor(opts.maxWallMs ?? 600_000))), watchdog: opts.watchdog ?? (async () => undefined) };
+    // Never send a real key to a configurable endpoint outside the official KERNEL API.
+    if (!opts.fetchImpl && this.o.baseUrl !== "https://api.onkernel.com") throw new Error("Live KERNEL endpoint must be the official API host");
   }
   get sessionsCreated() { return this.#created; }
+
+  /** Detached hard-wall-clock deletion, independent of the MCP server lifetime. */
+  private async armWatchdog(id: string): Promise<void> {
+    if (this.o.fetchImpl !== fetch) { await this.o.watchdog(id, this.o.maxWallMs); return; } // fake HTTP, no paid backend
+    const file = resolve(process.cwd(), "scripts/kernel-handoff-watchdog.mjs");
+    if (!existsSync(file)) throw new Error("KERNEL watchdog missing; refusing live handoff");
+    const child = spawn(process.execPath, [file], {
+      detached: true, stdio: "ignore", windowsHide: true,
+      env: { DIAPORIA_KERNEL_WATCHDOG_SESSION: id, DIAPORIA_KERNEL_WATCHDOG_KEY: this.#key,
+        DIAPORIA_KERNEL_WATCHDOG_DEADLINE: String(Date.now() + this.o.maxWallMs),
+        DIAPORIA_KERNEL_WATCHDOG_DIR: resolve(process.cwd(), ".data/kernel-watchdogs") },
+    });
+    await new Promise<void>((done, fail) => {
+      child.once("spawn", () => done());
+      child.once("error", () => fail(new Error("KERNEL watchdog could not start")));
+    });
+    child.unref();
+  }
+
+  /** The provider's list is paginated. A successful DELETE without verification is not sufficient. */
+  async verifyDeleted(id: string): Promise<void> {
+    if (this.o.fetchImpl !== fetch) return; // injectable fake used by offline tests
+    for (let offset = 0; offset <= 1000; offset += 100) {
+      const res = await this.api("GET", `/browsers?limit=100&offset=${offset}`, undefined, 10_000);
+      const rows = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : null;
+      if (!rows) throw new Error("KERNEL delete cannot be verified (unexpected list response)");
+      if (rows.some((b: any) => b?.session_id === id && !b?.deleted_at)) throw new Error("KERNEL browser still active after delete");
+      if (rows.length < 100) return;
+    }
+    throw new Error("KERNEL delete cannot be verified (list incomplete)");
+  }
 
   /** @internal */
   async api(method: string, path: string, body: unknown, timeoutMs: number): Promise<any> {
@@ -180,10 +222,17 @@ export class KernelDriver implements BrowserDriver {
     const live = typeof created?.browser_live_view_url === "string" ? created.browser_live_view_url : null;
     if (!id) throw new Error("KERNEL returned no session id");
     if (!live) {
-      await this.api("DELETE", `/browsers/${encodeURIComponent(id)}`, undefined, 10_000).catch(() => undefined);
+      try { await this.api("DELETE", `/browsers/${encodeURIComponent(id)}`, undefined, 10_000); await this.verifyDeleted(id); }
+      catch { throw new Error("KERNEL missing Live View; emergency DELETE not verified"); }
       throw new Error("KERNEL returned no live view URL (headful browser required)");
     }
-    return new KernelSession(this, id, live);
+    try { await this.armWatchdog(id); }
+    catch {
+      try { await this.api("DELETE", `/browsers/${encodeURIComponent(id)}`, undefined, 10_000); await this.verifyDeleted(id); }
+      catch { throw new Error("KERNEL watchdog failed AND emergency session deletion is unconfirmed"); }
+      throw new Error("KERNEL watchdog failed; session safely deleted; live handoff refused");
+    }
+    return new KernelSession(this, id, live, this.o.maxWallMs);
   }
 }
 
@@ -191,7 +240,14 @@ export class KernelSession extends PhasedSession implements BrowserSession {
   readonly provider = "KERNEL" as const;
   #id: string;
   #live: string;
-  constructor(private readonly driver: KernelDriver, id: string, live: string) { super(); this.#id = id; this.#live = live; }
+  #timer: NodeJS.Timeout;
+  #closing: Promise<void> | null = null;
+  constructor(private readonly driver: KernelDriver, id: string, live: string, hardWallMs = 600_000) {
+    super(); this.#id = id; this.#live = live;
+    // In-process first line; detached watchdog is the crash-resilient second line.
+    this.#timer = setTimeout(() => { void this.close().catch(() => undefined); }, hardWallMs);
+    this.#timer.unref();
+  }
   async run<T>(code: string, opts: { timeoutSec?: number } = {}): Promise<T> {
     this.assertRunnable();
     const sec = Math.max(5, Math.min(120, opts.timeoutSec ?? 45));
@@ -205,9 +261,16 @@ export class KernelSession extends PhasedSession implements BrowserSession {
     return { kind: "KERNEL_LIVE_VIEW", secretUrl: this.#live, frameOrigins: origin };
   }
   async close(): Promise<void> {
-    if (this.phase === "CLOSED") return;
+    if (this.#closing) return this.#closing;
+    // Fail closed immediately: even when provider deletion fails, no further automation is permitted.
     this.markClosed();
-    await this.driver.api("DELETE", `/browsers/${encodeURIComponent(this.#id)}`, undefined, 10_000).catch(() => undefined);
+    clearTimeout(this.#timer);
+    this.#closing = (async () => {
+      await this.driver.api("DELETE", `/browsers/${encodeURIComponent(this.#id)}`, undefined, 10_000);
+      await this.driver.verifyDeleted(this.#id);
+    })();
+    try { await this.#closing; }
+    catch (e) { this.#closing = null; throw e; } // caller may retry; detached watchdog also retries
   }
   /** Browser id, for out-of-process cleanup watchdogs only (not a capability: deleting needs the API key). */
   sessionIdForCleanupOnly(): string { return this.#id; }
