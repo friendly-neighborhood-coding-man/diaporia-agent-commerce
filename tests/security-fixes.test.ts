@@ -274,3 +274,89 @@ describe("WP-2 (IR-02): one purchase session pays at most once, under concurrenc
     await ai.close();
   });
 });
+
+describe("WP-3 (IR-11): reconcile never replays create-order after expiry or outside the idempotency window", () => {
+  async function timedOut(h: Harness) {
+    const m = await rawMandate(h.url, { productIdentity: SONY_BLACK, currency: "USD", maximumTotalMinor: 6000, autoUse: true });
+    const ai = await mcpClient(h.url, TOKENS.alice);
+    const { research } = await researchAndCompare(ai);
+    h.mock.createOutcomes.push("TIMEOUT_AFTER_CREATE");
+    const p = await call(ai, "prepare_checkout", prepareArgs(research.purchaseSessionId));
+    expect(p.state).toBe("UNKNOWN");
+    await ai.close();
+    return { p, mandateId: m.body.mandateId as string };
+  }
+  const reconcile = (h: Harness, cs: string) => fetch(`${h.url}/owner/checkouts/${cs}/reconcile`, { method: "POST", headers: { "X-Owner-Key": OWNER.alice } });
+  const row = (h: Harness, cs: string) => h.app.store.db.prepare("SELECT state, provider_order_id, failure_code, failure_reason, reserved_minor, create_requested_at, created_at FROM checkout_sessions WHERE id = ?").get(cs) as any;
+  const reserved = (h: Harness, m: string) => (h.app.store.db.prepare("SELECT reserved_minor FROM mandates WHERE id = ?").get(m) as any).reserved_minor as number;
+
+  it("the create attempt time is stored durably before the provider call", async () => {
+    const h = await harness();
+    const before = Date.now();
+    const { p } = await timedOut(h);
+    const r = row(h, p.checkoutSessionId);
+    expect(r.create_requested_at).toBeGreaterThanOrEqual(before);
+    expect(r.create_requested_at).toBeGreaterThanOrEqual(r.created_at);
+  });
+
+  it("an expired UNKNOWN create-timeout checkout + owner reconcile: no createOrder, stays UNKNOWN, reservation kept, audited", async () => {
+    const h = await harness();
+    const { p, mandateId } = await timedOut(h);
+    const held = reserved(h, mandateId);
+    expect(held).toBeGreaterThan(0);
+    h.clock.offsetMs += 16 * 60_000;                                       // past the 15-minute checkout expiry
+    const before = h.mock.calls.createOrder;
+    expect((await reconcile(h, p.checkoutSessionId)).status).toBe(200);
+    expect((await reconcile(h, p.checkoutSessionId)).status).toBe(200);   // repeated reconcile: still nothing
+    expect(h.mock.calls.createOrder).toBe(before);
+    const r = row(h, p.checkoutSessionId);
+    expect(r.state).toBe("UNKNOWN"); expect(r.provider_order_id).toBeNull(); expect(r.failure_code).toBe("CREATE_ORDER_TIMEOUT");
+    expect(r.failure_reason).toMatch(/outside the safe replay window/);
+    expect(reserved(h, mandateId)).toBe(held);
+    const skipped = audit(h, p.checkoutSessionId).filter((e) => e.type === "RECOVER_CREATE_SKIPPED");
+    expect(skipped.length).toBe(2); expect(skipped[0]!.data.reason).toBe("CHECKOUT_EXPIRED");
+  });
+
+  it("a non-expired checkout inside the window still recovers by idempotent replay", async () => {
+    const h = await harness();
+    const { p } = await timedOut(h);
+    h.clock.offsetMs += 60_000;
+    const before = h.mock.calls.createOrder;
+    await reconcile(h, p.checkoutSessionId);
+    expect(h.mock.calls.createOrder).toBe(before + 1);
+    expect(row(h, p.checkoutSessionId).provider_order_id).toMatch(/^MOCK/);
+    expect(audit(h, p.checkoutSessionId).map((e) => e.type)).toContain("PROVIDER_ORDER_RECOVERED");
+  });
+
+  it("an attempt older than 5 h is never replayed, even when the checkout itself has not expired", async () => {
+    const h = await harness();
+    const { p, mandateId } = await timedOut(h);
+    h.app.store.db.prepare("UPDATE checkout_sessions SET expires_at = ? WHERE id = ?").run(Date.now() + 24 * 3600_000, p.checkoutSessionId);
+    h.clock.offsetMs += 5 * 3600_000 + 60_000;
+    const before = h.mock.calls.createOrder; const held = reserved(h, mandateId);
+    await reconcile(h, p.checkoutSessionId);
+    expect(h.mock.calls.createOrder).toBe(before);
+    expect(row(h, p.checkoutSessionId).state).toBe("UNKNOWN"); expect(reserved(h, mandateId)).toBe(held);
+    expect(audit(h, p.checkoutSessionId).find((e) => e.type === "RECOVER_CREATE_SKIPPED")!.data.reason).toBe("OUTSIDE_SAFE_REPLAY_WINDOW");
+  });
+
+  it("a row from before create_requested_at existed falls back to createdAt", async () => {
+    const h = await harness();
+    const { p } = await timedOut(h);
+    h.app.store.db.prepare("UPDATE checkout_sessions SET expires_at = ?, create_requested_at = NULL WHERE id = ?").run(Date.now() + 24 * 3600_000, p.checkoutSessionId);
+    h.clock.offsetMs += 5 * 3600_000 + 60_000;
+    const before = h.mock.calls.createOrder;
+    await reconcile(h, p.checkoutSessionId);
+    expect(h.mock.calls.createOrder).toBe(before);
+    expect(audit(h, p.checkoutSessionId).find((e) => e.type === "RECOVER_CREATE_SKIPPED")!.data.createRequestedAt).toBe(row(h, p.checkoutSessionId).created_at);
+  });
+
+  it("the gateway reconcile entry point (also used by a buyer return to an UNKNOWN checkout) does not replay after expiry either", async () => {
+    const h = await harness();
+    const { p } = await timedOut(h);
+    h.clock.offsetMs += 16 * 60_000;
+    const before = h.mock.calls.createOrder;
+    await h.app.gateway.reconcile("alice", p.checkoutSessionId);
+    expect(h.mock.calls.createOrder).toBe(before);
+  });
+});

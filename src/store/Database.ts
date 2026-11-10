@@ -66,6 +66,8 @@ export class Store {
       ["provider_verified_at", "INTEGER"], ["provider_pending_reason", "TEXT"],
       // Expiry hardening: set once, durably, BEFORE the first capture request reaches the provider.
       ["capture_requested_at", "INTEGER"],
+      // IR-11 (WP-3): set once, durably, BEFORE the first create-order request reaches the provider.
+      ["create_requested_at", "INTEGER"],
     ];
     for (const [name, type] of add) if (!cols.has(name)) this.db.exec(`ALTER TABLE checkout_sessions ADD COLUMN ${name} ${type}`);
     // DF-4: a mandate created on the owner page is bound to exactly one checkout. At most one live

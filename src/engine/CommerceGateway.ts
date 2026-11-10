@@ -67,6 +67,12 @@ export type CapabilityStatus = "VERIFIED_TRUE" | "VERIFIED_FALSE" | "LISTING_CLA
 const CHECKOUT_TTL_MS = 15 * 60_000;
 /** A CAPTURE_PENDING row without a capture id older than this cannot have a provider call in flight (timeout 20 s). */
 const STUCK_CAPTURE_MS = 5 * 60_000;
+/**
+ * IR-11 (WP-3). Oldest create-order attempt that reconcile may still replay with the same PayPal-Request-Id. IR-18:
+ * PayPal's documented default PayPal-Request-Id retention is 6 h (official docs, owner's check of 2026-11-10); the
+ * actual Sandbox/live behaviour is UNVERIFIED. 5 h leaves a 1 h margin. Older attempts are never replayed.
+ */
+export const SAFE_CREATE_REPLAY_WINDOW_MS = 5 * 3600_000;
 
 /**
  * Shown to the host and the user in every checkout summary. It must name the environment that will actually run:
@@ -430,8 +436,9 @@ export class CommerceGateway {
         : this.sessions.transition(cs, "HOLD", { failureCode: decision.code, failureReason: decision.detail });
       return { checkout, decision };
     }
-    if (cs.state === "PREPARED" || cs.state === "HOLD") cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor, failureCode: null, failureReason: null });
-    else cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor });
+    const createRequestedAt = cs.createRequestedAt ?? this.now();   // durable, before the provider call (WP-3)
+    if (cs.state === "PREPARED" || cs.state === "HOLD") cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor, failureCode: null, failureReason: null, createRequestedAt });
+    else cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor, createRequestedAt });
     try {
       const order = await this.payments.createOrder(this.createOrderInput(cs));
       cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { providerOrderId: order.orderId, approvalUrl: order.approvalUrl });
@@ -468,6 +475,24 @@ export class CommerceGateway {
    */
   private async recoverTimedOutCreate(cs: CheckoutSession): Promise<CheckoutSession> {
     if (cs.state !== "UNKNOWN" || cs.providerOrderId || cs.captureId || cs.failureCode !== "CREATE_ORDER_TIMEOUT") return cs;
+    // IR-11 (WP-3). A replay is a provider WRITE. Past the checkout's expiry, or outside the idempotency window counted
+    // from the original attempt (createdAt for rows from before create_requested_at existed), the provider may treat it
+    // as a NEW order. Then nothing is sent: the checkout stays UNKNOWN and keeps its reservation (an uncertain outcome
+    // never releases authority) for manual review against the provider dashboard. No read-only lookup by request id or
+    // order id exists in the payment adapter, so none is attempted.
+    const attemptAt = cs.createRequestedAt ?? cs.createdAt;
+    const ageMs = this.now() - attemptAt;
+    const skip = cs.expiresAt <= this.now() ? "CHECKOUT_EXPIRED" : ageMs > SAFE_CREATE_REPLAY_WINDOW_MS ? "OUTSIDE_SAFE_REPLAY_WINDOW" : null;
+    if (skip) {
+      const reason = "Create-order outcome unknown and outside the safe replay window; no new provider request was sent. Check the provider dashboard.";
+      if (cs.failureReason !== reason) {
+        try { cs = this.sessions.transition(cs, "UNKNOWN", { failureReason: reason }); }
+        catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
+      }
+      this.audit.append(cs.checkoutSessionId, cs.userId, "RECOVER_CREATE_SKIPPED", { reason: skip, createRequestedAt: attemptAt, ageMs, windowMs: SAFE_CREATE_REPLAY_WINDOW_MS,
+        reservationKept: cs.reservedMinor, actor: "RECONCILE" });
+      return cs;
+    }
     try {
       const order = await this.payments.createOrder(this.createOrderInput(cs));
       cs = this.sessions.transition(cs, "UNKNOWN", { providerOrderId: order.orderId, approvalUrl: order.approvalUrl });

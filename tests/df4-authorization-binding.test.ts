@@ -198,6 +198,11 @@ describe("DF-4: owner-page authorization is bound to one checkout", () => {
     const a = await prepare(client);
     h.mock.createOutcomes.push("TIMEOUT_AFTER_CREATE");
     await authorize(a.userAuthorizationUrl);
+    // WP-3 (IR-11): the create is recovered by idempotent replay only BEFORE expiry (a replay after expiry is now never
+    // sent; tests/security-fixes.test.ts covers that). The recovered, never-approved order then closes after expiry.
+    h.clock.offsetMs = 60_000;
+    await fetch(`${h.url}/owner/checkouts/${a.checkoutSessionId}/reconcile`, { method: "POST", headers: { "X-Owner-Key": OWNER.alice } });
+    expect((db().prepare("SELECT provider_order_id p FROM checkout_sessions WHERE id = ?").get(a.checkoutSessionId) as any).p).toMatch(/^MOCK/);
     h.clock.offsetMs = 16 * 60_000;
     const r = await fetch(`${h.url}/owner/checkouts/${a.checkoutSessionId}/reconcile`, { method: "POST", headers: { "X-Owner-Key": OWNER.alice } }).then((x) => x.json() as any);
     expect(r.state).toBe("CANCELLED");
@@ -213,7 +218,10 @@ describe("DF-4: owner-page authorization is bound to one checkout", () => {
     const { research } = await researchAndCompare(client);
     h.mock.createOutcomes.push("TIMEOUT_AFTER_CREATE");
     const a = await call(client, "prepare_checkout", { purchaseSessionId: research.purchaseSessionId, offerId: "off_alpha", maximumApprovedTotalMinor: 6000, currency: "USD", quantity: 1 });
-    h.clock.offsetMs += 16 * 60_000;
+    // WP-3 (IR-11): recover the timed-out create before expiry (after expiry no replay is sent at all).
+    h.clock.offsetMs += 60_000;
+    expect((await h.app.gateway.reconcile("alice", a.checkoutSessionId)).providerOrderId).toMatch(/^MOCK/);
+    h.clock.offsetMs += 15 * 60_000;
     // Hold the owner's reconcile at its first order read (status CREATED) while the buyer approves and returns.
     const orig = h.mock.getOrder.bind(h.mock);
     let open!: () => void; const gate = new Promise<void>((r) => (open = r)); let n = 0;
