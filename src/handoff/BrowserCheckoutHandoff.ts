@@ -193,7 +193,7 @@ export class BrowserCheckoutHandoff {
       this.sessions.delete(handoffId);
     } catch {
       // Remote DELETE failure must never be silently considered cleanup.
-      const owner = this.store.db.prepare("SELECT user_id FROM browser_handoffs WHERE handoff_id=?")
+      const owner = this.store.db.prepare("SELECT user_id FROM browser_handoffs WHERE id=?")
         .get(handoffId) as { user_id: string } | undefined;
       if (owner) this.gateway.audit.append(handoffId, owner.user_id,
         "HANDOFF_CLEANUP_UNVERIFIED", { browserProvider: s.provider });
@@ -302,7 +302,7 @@ export class BrowserCheckoutHandoff {
     if (h.ownerMaxMinor === null) throw new CommerceError("INVALID_STATE", "Set your maximum on the handoff page first.");
     if (h.expiresAt <= this.now()) { await this.tick(); throw new CommerceError("SESSION_EXPIRED", "The prepared cart expired."); }
     const s = this.sessions.get(handoffId);
-    if (!s) throw new CommerceError("INVALID_STATE", "The prepared browser is no longer available; prepare again.");
+    if (!s || s.phase === "CLOSED") throw new CommerceError("INVALID_STATE", "The prepared browser is no longer available; prepare again.");
     s.pauseForHuman();
     h = this.transition(h, "HANDOFF_OPENED", { takeoverDeadline: this.now() + this.takeoverTtl });
     this.gateway.audit.append(h.handoffId, userId, "AUTOMATION_PAUSED_FOR_HUMAN", { provider: s.provider });
@@ -313,7 +313,8 @@ export class BrowserCheckoutHandoff {
   viewFor(userId: string, handoffId: string): HumanView | null {
     const h = this.get(handoffId, userId);
     if (h.state !== "HANDOFF_OPENED") return null;
-    return this.sessions.get(handoffId)?.humanView() ?? null;
+    const session = this.sessions.get(handoffId);
+    return session && session.phase !== "CLOSED" ? session.humanView() : null;
   }
 
   /** TEST/DEMO hook: the local fixture session (so a simulated human can operate it). */
@@ -390,14 +391,17 @@ export class BrowserCheckoutHandoff {
         const h = this.toHandoff(r);
         try {
           if (h.state === "HANDOFF_OPENED") {
-            if (!this.sessions.has(h.handoffId)) await this.finish(h.userId, h.handoffId, "BROWSER_SESSION_LOST");
+            if (!this.sessions.has(h.handoffId) || this.sessions.get(h.handoffId)?.phase === "CLOSED")
+              await this.finish(h.userId, h.handoffId, "BROWSER_SESSION_LOST");
             else if (h.takeoverDeadline !== null && h.takeoverDeadline <= this.now()) await this.finish(h.userId, h.handoffId, "TAKEOVER_TIMEOUT");
           } else if (h.expiresAt <= this.now()) {
             // Pre-takeover only: no human has touched the browser, so "no purchase was possible" is true.
             await this.closeSession(h.handoffId);
             this.transition(h, "EXPIRED", { failureCode: "HANDOFF_EXPIRED", failureReason: "No human took over before expiry; no purchase was possible." });
-          } else if (h.state === "HUMAN_ACTION_REQUIRED" && !this.sessions.has(h.handoffId)) {
-            // e.g. after a server restart: the prepared browser is gone, so the link must not stay live.
+          } else if (h.state === "HUMAN_ACTION_REQUIRED" &&
+              (!this.sessions.has(h.handoffId) || this.sessions.get(h.handoffId)?.phase === "CLOSED")) {
+            // Startup loss OR the independent 10-minute watchdog closed the prepared session.
+            await this.closeSession(h.handoffId);
             this.transition(h, "EXPIRED", { failureCode: "BROWSER_SESSION_LOST", failureReason: "The prepared browser is gone; prepare again." });
           }
         } catch { /* concurrent change; next tick re-reads */ }
