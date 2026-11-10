@@ -96,6 +96,22 @@ describe("KERNEL driver (offline wire test)", () => {
     for (const secret of ["LIVE_SECRET", "CDP_SECRET", "jwt=", "sk_test_kernel_key"]) expect(everything).not.toContain(secret);
   });
 
+  it("refuses unbounded paid-mode browser creation before the provider sees a call", async () => {
+    const k = fakeKernel();
+    const d = new KernelDriver("sk_test_kernel_key_000", { allowLive: true,
+      fetchImpl: k.fetchImpl, enforceEgressAllowlist: true });
+    await expect(d.open({ label: "unrestricted", merchantHost: "shop.example.org",
+      allowedHosts: null, timeoutSeconds: 90 })).rejects.toThrow(/egress allowlist/);
+    await expect(d.open({ label: "wrong-host", merchantHost: "shop.example.org",
+      allowedHosts: ["www.sandbox.paypal.com"], timeoutSeconds: 90 })).rejects.toThrow(/egress allowlist/);
+    expect(k.log).toEqual([]);
+    const s = await d.open({ label: "bounded", merchantHost: "shop.example.org",
+      allowedHosts: ["shop.example.org", "www.sandbox.paypal.com"], timeoutSeconds: 90 });
+    expect(k.log.find(e => e.method === "POST" && e.path === "/browsers")?.body.network)
+      .toEqual({ allowed_hosts: ["shop.example.org", "www.sandbox.paypal.com"] });
+    await s.close();
+  });
+
   it("arms exactly one independent watchdog and clamps the wall-clock lifetime to ten minutes", async () => {
     const k = fakeKernel();
     const armed: Array<{ id: string; ms: number }> = [];
