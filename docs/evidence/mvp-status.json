@@ -214,11 +214,11 @@
         "scenario J public HTTPS smoke not run"
       ],
       "securityBlockers": [],
-      "nextTask": "Scenario I run 3 on owner PC (separate owner go)",
+      "nextTask": "Owner review of 5 semantic-fidelity humanReview items; owner decides full Scenario I acceptance",
       "approvalRequired": [
         "use of owner PC"
       ],
-      "scenarioI": "NOT_MET: run 1 ABORTED_DF3 (2009936); run 2 FAILED_DF4 (31c5110; Claude Code, Codex, Hermes individually completed, Grok used a leftover mandate). DF-3 and DF-4 fixed offline; run 3 awaits owner go on the new commit"
+      "scenarioI": "RUN3_PASS_17_CHECKS (0d4aa8b, 2026-11-10, owner PC, MOCK, loopback): 4/4 hosts PASS 17/17, probes pass; semantic-fidelity/v1: 0 CONTRADICTED, Hermes NO_CONTRADICTION, 5 NEEDS_HUMAN_REVIEW items (Claude 1, Codex 2, Grok 2) awaiting owner decision; run 1 ABORTED_DF3, run 2 FAILED_DF4 preserved"
     }
   ],
   "dogfood": {
@@ -230,7 +230,7 @@
     "F": "PASS",
     "G": "PASS",
     "H": "PASS",
-    "I": "NOT_MET_RUN2_FAILED_DF4",
+    "I": "PASS_RUN3_17_CHECKS_PENDING_OWNER_ACCEPTANCE",
     "J": "PASS_OFFLINE_LOOPBACK",
     "K": "PASS"
   },
@@ -253,7 +253,7 @@
     },
     {
       "criterion": "four local hosts full workflow incl. status",
-      "status": "BLOCKED"
+      "status": "MET_LOCAL_MOCK_RUN3_PENDING_OWNER_ACCEPTANCE"
     },
     {
       "criterion": "remote host on authenticated HTTPS",

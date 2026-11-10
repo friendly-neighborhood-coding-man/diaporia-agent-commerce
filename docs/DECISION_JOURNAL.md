@@ -165,3 +165,38 @@ Evidence: `docs/evidence/research-eval/research-eval-2026-11-10T09-29-08-369Z.js
   - **Verdicts.** CONTRADICTED, NEEDS_HUMAN_REVIEW or NO_CONTRADICTION. There is no PASS.
   - **Tests.** tests/semantic-fidelity.test.ts has 8 tests, including the Hermes sentence (CONTRADICTED) and a check that the CLI leaves its inputs untouched.
 - **Remaining risks:** docs/RISK_REGISTER.md. No open run 3 blocker. Phase C blocker: unverified PayPal idempotency retention (R2).
+
+## 2026-11-10 · Scenario I run 3: 4/4 hosts PASS the 17 checks (MOCK, local)
+
+- **Authorization:** the owner's GO at 14:48Z, for commit 0d4aa8b, local and MOCK only. Hosts ran one at a time (Claude Code → Codex → Hermes → Grok), each finishing its whole workflow before the next began. There was one checkout per host. The owner authorized $60.00 and approved each MOCK payment in his own browser.
+- **Preflight:**
+  - exact commit and a clean tree; build and self-test PASS;
+  - a fresh `.data/scenario-i-run3` (new database, tokens and owner keys; 0 mandates or checkouts at start);
+  - run 2's two leftover mandates confirmed past `expires_at`;
+  - no earlier Scenario I server running;
+  - the server on 127.0.0.1:19991 and the proxy on 19990. 18991 was held by an unrelated leftover KERNEL-handoff server, which was left untouched. LAN access was refused.
+  - `PAYMENT_PROVIDER=mock`, with no research, evidence or PayPal credential names in the server's environment.
+- **Result:**
+  - All four hosts PASS, 17/17 each. They completed at 15:11:54Z, 15:14:00Z, 15:19:05Z and 15:29:31Z, each with one MOCK capture of 5939. No checkout expired; nothing was renewed, re-authorized or replaced.
+  - Probes `pass: true`:
+    - a request without a token returned 401;
+    - cross-host reads and cancels were refused;
+    - a repeated prepare after COMPLETED was deduplicated;
+    - $6,000 against a $60 limit was refused.
+- **Reruns:** Hermes used the one allowed launch rerun. Its first attempt hit "Gateway starting: deadline" on a cold, fresh HERMES_HOME, as in run 1. The server saw only initialize, initialized and tools/list, with no tool call. That attempt is kept as `hermes-agent.p1.attempt1.*`.
+- **Semantic Fidelity v1 (separate, non-gating):** no claim was CONTRADICTED.
+  - Hermes: NO_CONTRADICTION. It said MOCK and never Sandbox, which differs from run 2 and follows the DF-5 fix.
+  - Claude Code (1), Codex (2) and Grok (2) are NEEDS_HUMAN_REVIEW. All five flagged sentences are accurate negations, for example "No: a mock payment was captured, but the merchant never confirmed an order…". They await the owner's reviewer decision.
+  - No host claimed a merchant order, a shipment, or Sandbox.
+- **Cost:**
+  - Claude Code (claude-opus-5-5): $0.531.
+  - Grok (grok-4.7-build): $0.226.
+  - Codex (gpt-6.1-terra): 192,387 input / 1,173 output tokens, with no dollar figure reported.
+  - Hermes (haiku plugin): 132,097 tokens, with no dollar figure reported.
+- **Notes, no new defect in DIAPORIA:**
+  1. The Hermes `host` field in the matrix shows Hermes's own update-check warning, because `hermes --version` prints that first. The real version is v0.22.7; the evidence is unedited.
+  2. Hermes needs a gateway pre-warm in a fresh home; proposed as a runbook step.
+  3. Claude and Grok first offer MCP protocol 2026-07-28, get a 400, and fall back to 2025-11-25.
+  4. Grok's first phase-2 `use_tool` used an unqualified tool name and failed inside Grok before reaching the server. The server saw exactly one status call and one receipt call.
+- **Evidence:** on the owner's PC in `.data/scenario-i-run3/evidence`: `matrix.json`, the four host files and `semantic-fidelity.json`. A grep for token or key prefixes, personal email and user paths found 0 matches. It is not committed. Run 1 and run 2 are preserved; their sha256 re-check was still running at the time of writing.
+- **Acceptance:** run 3 meets the Scenario I PASS definition (4/4 hosts plus probes) for MOCK on loopback. Full acceptance is the owner's decision, after the five human-review items.
