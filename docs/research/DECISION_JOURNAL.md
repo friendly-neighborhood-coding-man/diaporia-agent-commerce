@@ -248,3 +248,10 @@ thread, reproduced every HIGH finding).
 - Publisher Terms (effective 2026-11-02) forbid publishing benchmark or evaluation results without written consent,
   training on output, and storing a significant portion. Live outputs stay private; two small live smoke files are
   already public and are left for Eric's decision (PROVIDER_COMPLIANCE_REVIEW.md).
+
+## J-27 · A fix that created an unsafe outcome, caught by the seen IW-2 rerun (5a17ee0)
+- The N-07 fix made Korean "<feature> <noun>" requests find products, but the feature word itself was never a
+  requirement, so one seen case went from a (false) HOLD to an unsafe RECOMMEND with a gate bypass. Every word before
+  the product noun that nothing else interprets is now an unrecognized must-have (English and Korean). Seen IW-2:
+  0 unsafe, 0/19 gate bypasses, 0/8 agent-resolution bypasses; IW-1.1 and the builder's seen eval unchanged.
+- Lesson: recall fixes (query translation) can remove an accidental safety net; rerun the safety probes after each.
