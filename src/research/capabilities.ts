@@ -188,3 +188,17 @@ export function productCategory(p: { category: string; title: string; research?:
   for (const c of CATEGORIES) if (c.product.test(p.title)) return c.id;
   return null;
 }
+
+/**
+ * N-07: English search nouns for Korean product words (query building only; never a category or a requirement, so
+ * nothing here can widen or narrow what counts as the right product).
+ */
+export const KO_QUERY_NOUNS: Array<[RegExp, string]> = [
+  [/전자책|이북\s*리더|e-?북/i, "e-reader"], [/밥솥/, "rice cooker"], [/전기\s*(?:포트|주전자)|커피\s*포트/, "electric kettle"], [/태블릿/, "tablet"],
+  [/스피커/, "speaker"], [/키보드/, "keyboard"], [/마우스/, "mouse"], [/공기\s*청정기/, "air purifier"], [/가습기/, "humidifier"], [/제습기/, "dehumidifier"],
+  [/선풍기/, "fan"], [/에어\s*프라이어/, "air fryer"], [/전자\s*레인지/, "microwave"], [/보조\s*배터리/, "power bank"], [/충전기/, "charger"], [/케이스/, "case"], [/파우치/, "pouch"], [/거치대/, "stand"], [/케이블/, "cable"],
+  [/카메라/, "camera"], [/프로젝터/, "projector"], [/믹서기|블렌더/, "blender"], [/토스터/, "toaster"], [/스마트\s*워치/, "smartwatch"], [/드라이기|헤어\s*드라이어/, "hair dryer"],
+];
+
+/** English product nouns (the head of a product noun phrase); multi-word ones first. Used to find what modifies them. */
+export const PRODUCT_NOUN_PHRASES = /\b(?:rice cookers?|pressure cookers?|slow cookers?|electric kettles?|air purifiers?|air fryers?|power banks?|hair dryers?|coffee (?:makers?|machines?|brewers?)|water bottles?|office chairs?|vacuum cleaners?|stick vacuums?|running shoes?|hiking boots?|e-?readers?|smart ?watch(?:es)?|sound ?bars?|head ?phones?|ear ?buds?|ear ?phones?|headsets?|laptops?|notebooks?|smartphones?|phones?|monitors?|displays?|backpacks?|daypacks?|chairs?|vacuums?|bottles?|tumblers?|flasks?|boots?|shoes?|sneakers?|tvs?|televisions?|speakers?|kettles?|blenders?|toasters?|tablets?|cameras?|routers?|keyboards?|mice|mouse|projectors?|printers?|drones?|fans?|heaters?|lamps?|purifiers?|humidifiers?|dehumidifiers?|cookers?|fryers?|microwaves?|webcams?|microphones?|chargers?|cases?|sleeves?|cables?|adapters?|stands?|blankets?|throws?|desks?|tables?|sofas?|bikes?|strollers?|toys?|watches?)\b/i;

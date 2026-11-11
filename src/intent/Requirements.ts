@@ -15,7 +15,8 @@
  * attribute (parsed separately), the brand/model, a price or a condition is not a requirement.
  */
 import { parseAttributes } from "../identity/ProductIdentityExtractor.js";
-import { requestCapabilities, requestCategory } from "../research/capabilities.js";
+import { KO_QUERY_NOUNS, PRODUCT_NOUN_PHRASES, requestCapabilities, requestCategory } from "../research/capabilities.js";
+import { GENERIC_WORDS } from "../identity/ProductIdentityExtractor.js";
 
 export type RequirementPolarity = "REQUIRED" | "EXCLUDED";
 export type RequirementStrength = "MUST" | "NICE";
@@ -84,6 +85,38 @@ function onlyRestates(phrase: string, targetWords: Set<string>): boolean {
   return !rest.trim() || NUMBERISH.test(rest);
 }
 
+/** Words that describe intent, price or quality, never a product property. */
+const MODIFIER_STOP = new Set(`buy purchase order get find me i we want need looking look for please recommend suggest show a an the some any my our new brand-new cheap cheapest cheaper
+  inexpensive affordable budget best better good great nice decent top quality reliable popular simple basic standard regular normal real genuine original authentic
+  one pair two single lowest price priced total under below around about only just also very really most least it its this that these
+  추천 추천해줘 추천해 사줘 사고 구매 주문 찾아줘 찾아 좋은 괜찮은 싼 저렴한 가성비 최저가 가장 제일 새 새것 정품 신품 하나 개 제품 상품 것 되는 있는 없는 이하 이상 정도 짜리 용 대 쓸 쓸만한`.split(/\s+/).filter(Boolean));
+
+/**
+ * N-01 (IW-2 regression): the words before the head product noun of the request's noun phrase ("IH pressure rice
+ * cooker" → IH, pressure; "IH 압력 밥솥" → IH, 압력). Only words before a recognized product noun are returned; the caller
+ * drops anything already interpreted (capabilities, attributes, the exact product, brand).
+ */
+function productModifiers(clause: string): Array<{ word: string; index: number }> {
+  const np = clause.split(CUT)[0] ?? "";
+  let head = -1;
+  const en = PRODUCT_NOUN_PHRASES.exec(np);
+  if (en) head = en.index;
+  for (const [re] of KO_QUERY_NOUNS) { const k = re.exec(np); if (k && (head < 0 || k.index < head)) head = k.index; }
+  const cat = requestCategory(np);
+  if (cat) { const c = new RegExp(cat.request.source, cat.request.flags.replace("g", "")).exec(np); if (c && (head < 0 || c.index < head)) head = c.index; }
+  if (head <= 0) return [];
+  const out: Array<{ word: string; index: number }> = [];
+  for (const t of np.slice(0, head).matchAll(/[가-힣A-Za-z0-9][가-힣A-Za-z0-9.+'’-]*/g)) {
+    const word = t[0].replace(/(?:이|가|은|는|을|를|의|도)$/, "").replace(/[’']s$/, "");
+    const lw = word.toLowerCase();
+    if (word.length < 2 && !/[가-힣]/.test(word)) continue;
+    if (MODIFIER_STOP.has(lw) || GENERIC_WORDS.has(lw) || NUMBERISH.test(word) || /\d/.test(word)) continue;
+    if (/^(?:oz|fl|gb|tb|mb|inch(?:es)?|in|ml|l|liters?|litres?|qt|cups?|pack|pk|w|watts?|mah|hz|mm|cm|kg|g|lbs?|ft|인치|리터|인분|구|와트)$/i.test(word)) continue; // units of an attribute
+    out.push({ word, index: t.index! });
+  }
+  return out;
+}
+
 /**
  * All requirements stated in `text`. `targetSpan` is the exact product phrase (its words are the product, not a
  * requirement). Structured must-haves from the caller are added as recognized MUST items (they can only add).
@@ -136,6 +169,17 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     for (const re of EN_MUST) tryPhrase(re.exec(clause), "REQUIRED");
     for (const re of KO_NOT) tryPhrase(re.exec(clause + " "), "EXCLUDED");
     for (const re of KO_MUST) tryPhrase(re.exec(clause + " "), "REQUIRED");
+    // 3. Modifiers of the product noun that nothing above interpreted ("IH 압력 밥솥": 압력, "pressure rice cooker":
+    //    pressure). A word that narrows the product is a stated requirement; it is kept as unrecognized, never dropped.
+    for (const m of productModifiers(clause)) {
+      const abs = at + m.index;
+      // Words after the start of an exact product phrase name that product ("+ Travel Case Bundle"), not a requirement.
+      if (inTarget(abs) || (targetSpan && abs >= targetSpan[0])) continue;
+      if (recognizedSpans.some(([s, e]) => s < m.index + m.word.length && e > m.index)) continue;
+      if (out.some((r) => r.source === "REQUEST_TEXT" && r.span[0] <= abs && abs < r.span[1])) continue;
+      if (tw.has(m.word.toLowerCase()) || onlyRestates(m.word, tw) || requestCapabilities(m.word).length) continue;
+      add({ key: `unrecognized:${slugOf(m.word)}`, text: m.word, span: [abs, abs + m.word.length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+    }
   }
   // Structured input can ADD requirements; it can never remove or soften one stated in the text.
   for (const id of structured.mustHave ?? []) add({ key: id, text: id, span: [0, 0], recognized: true, capability: id, polarity: "REQUIRED", strength: "MUST", source: "STRUCTURED_INPUT" });

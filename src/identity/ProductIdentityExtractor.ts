@@ -86,6 +86,8 @@ const GENERIC = new Set(`wireless wired bluetooth noise cancelling canceling noi
   e-reader e-readers ereader ereaders reader readers tv tvs television televisions speaker speakers soundbar soundbars kettle kettles blender blenders toaster
   tablet tablets camera cameras router routers keyboard keyboards mouse mice smartwatch smartwatches projector projectors printer printers drone drones
   fan fans heater heaters lamp lamps purifier purifiers humidifier humidifiers cooker cookers fryer fryers microwave dehumidifier webcam microphone mic`.split(/\s+/).filter(Boolean));
+/** Generic descriptive and category words (never a model name, never a requirement on their own). */
+export const GENERIC_WORDS: ReadonlySet<string> = GENERIC;
 /** A word after a model mention that makes it a DIFFERENT model in the same family ("Nova 9" vs "Nova 9 Pro"). */
 export const MODEL_EXTENSIONS = new Set(["pro", "max", "plus", "ultra", "mini", "lite", "air", "se", "fe", "neo", "prime", "edge", "go", "xl", "fhd", "elite", "sport", "s", "x", "ii", "iii", "iv", "2", "3", "4", "5"]);
 

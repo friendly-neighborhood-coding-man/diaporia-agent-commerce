@@ -115,3 +115,20 @@ describe("N-01 end to end: an unrecognized must-have blocks both checkout paths 
     await client.close();
   });
 });
+
+describe("N-01 (IW-2 seen regression): a word that narrows the product noun is a requirement, never dropped", () => {
+  it.each([
+    ["저소음 무선 키보드 10만원 이하", ["unrecognized:저소음"]],
+    ["quiet tower fan under $80", ["unrecognized:quiet", "unrecognized:tower"]],
+    ["gooseneck electric kettle under $100", ["unrecognized:gooseneck"]],
+    ["세라믹 내솥 전기 포트", ["unrecognized:세라믹", "unrecognized:내솥"]],
+  ])("%s → %j", (r, keys) => {
+    const i = parse(r);
+    expect([...i.unresolvedMust].sort()).toEqual([...keys].sort());
+    for (const k of keys) expect(i.requirements.find((x) => x.key === k)).toMatchObject({ recognized: false, strength: "MUST", source: "REQUEST_TEXT" });
+  });
+  it.each(["cheap wireless headphones", "the best office chair", "electric kettle under $100", "Buy Adatum Summit 24 oz bottle", "Buy the Contoso CX-500 + Travel Case Bundle", "가성비 좋은 무선 이어폰", "insulated water bottle 32 oz"])(
+    "controls (price/quality words, units, recognized capabilities, the exact product's own name): %s → nothing unrecognized", (r) => {
+      expect(parse(r).unresolvedMust).toEqual([]);
+    });
+});
