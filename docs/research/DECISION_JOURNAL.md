@@ -219,3 +219,32 @@ thread, reproduced every HIGH finding).
   Details: `docs/research/V2.1_REMEDIATION.md`.
 - **Residual.** A process that holds the owner key and forges browser headers looks the same as the human. The owner key
   must stay outside the AI host's environment.
+
+## J-22 · IW-2 N-01: requirements are kept losslessly (e016116)
+- **Root cause.** Must-haves were reduced to a fixed capability vocabulary; anything else ("it must have a lanyard
+  loop") vanished and the decision could RECOMMEND.
+- **Change.** `extractRequirements` keeps every stated requirement (span, polarity, MUST/NICE, provenance). Unrecognized
+  must-haves and every must-not are blocking gate items; only the owner can remove one. Not solved by adding words.
+
+## J-23 · IW-2 N-02/N-04/N-05: version identity (70007de)
+- Year and generation are separate axes; with several known versions and none stated, the answer is a question. An
+  undated listing never settles it. Evidence never crosses generations.
+
+## J-24 · IW-2 R-A/R-B: the human confirmation boundary (8d4b249)
+- **Root cause.** The default dev start wrote the agent token and the owner key into the same file; the agent could
+  read the key, forge headers and confirm its own proposal (reproduced on 7d1fe4f).
+- **Decision.** Separate OS principal for owner credentials (registry with hashes and public keys only, checked at
+  startup, fail closed) plus a WebAuthn-style passkey assertion with user verification for research-hold
+  confirmation. Headers are hygiene, never proof. Verified end to end with real separate OS users on the build host.
+- **Not done.** The passkey step on checkout authorization and handoff pages (R-A-1).
+
+## J-25 · IW-2 P1 and the KRW policy (78e71e2)
+- N-03 magnitude suffixes, N-06 model-less identity by provider key (before: two products shared an identity and
+  their offers mixed), N-07 English-only provider queries and accessory requests, R-C parser-based budget warning.
+- KRW: parsing and price verification are scored separately (V2.1_EVAL_PROTOCOL.md §6a). Seen eval unchanged:
+  87/90 and 81/90, unsafe prepare 0/79 and 0/75.
+
+## J-26 · Channel3 terms (2026-11-11)
+- Publisher Terms (effective 2026-11-02) forbid publishing benchmark or evaluation results without written consent,
+  training on output, and storing a significant portion. Live outputs stay private; two small live smoke files are
+  already public and are left for Eric's decision (PROVIDER_COMPLIANCE_REVIEW.md).
