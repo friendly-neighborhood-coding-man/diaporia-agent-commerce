@@ -65,7 +65,7 @@ Run the server:
 npm run dev         # http://127.0.0.1:8790/mcp, mock payments, the AI-client token is written to .data/dev-credentials.json
 ```
 
-`.data/dev-credentials.json` holds the AI client's token only. Owner credentials (owner key and passkey) are never written there: the human owner enrolls them in a protected owner registry from a separate OS account (docs/SETUP.md, "Owner confirmation"). Until then every owner page refuses, and research holds cannot be confirmed.
+Run this way (as your own account, the one your AI host also uses), the server offers research and comparison only: payment-facing operations stay disabled until DIAPORIA runs under its own OS account (docs/SETUP.md, "Service account"; V2.2). `.data/dev-credentials.json` holds the AI client's token only. Owner credentials (owner key and passkey) are never written there: the human owner enrolls them in a protected owner registry from a separate OS account (docs/SETUP.md, "Owner confirmation"). Until then every owner page refuses, and research holds cannot be confirmed.
 
 Create a spending mandate as the human owner (in a second terminal, typing your owner key when asked):
 

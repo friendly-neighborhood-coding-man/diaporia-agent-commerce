@@ -148,7 +148,7 @@ describe("R-A: the agent cannot confirm its own proposal", () => {
     const s = await held();
     const gw = h!.app.gateway;
     const p = gw.holdProposals.get(s.proposalId, "alice")!;
-    const forged = Object.freeze({ userId: "alice", binding: researchHoldBinding(p.proposalId, p.digest, "0123456789abcdef"), credentialFingerprint: "0011223344556677", method: "WEBAUTHN_USER_VERIFIED" as const });
+    const forged = Object.freeze({ userId: "alice", binding: researchHoldBinding({ userId: "alice", purchaseSessionId: s.ps, proposalId: p.proposalId, digest: p.digest, kind: p.kind, requirement: p.requirement, budgetMinor: p.budgetMinor, currency: p.currency }, "0123456789abcdef"), credentialFingerprint: "0011223344556677", method: "WEBAUTHN_USER_VERIFIED" as const });
     for (const humanProof of [undefined, forged, { ...forged }])
       expect(() => gw.confirmResearchHoldAsOwner("alice", s.proposalId, { shownDigest: p.digest, ownerSessionFingerprint: "0123456789abcdef", typedBudgetMinor: null, humanProof }))
         .toThrow(/verified human assertion/);
@@ -291,7 +291,10 @@ describe("R-A: the default dev startup writes no owner credential the AI host ca
       expect(JSON.parse(readFileSync(join(cwd, ".data/dev-credentials.json"), "utf8"))).toEqual({ clientToken: old.clientToken, userId: "demo-user" });
       const r = await fetch(`${s.url}/authorize/cs_00000000-0000-0000-0000-000000000000`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: s.url, "Sec-Fetch-Site": "same-origin" },
         body: new URLSearchParams({ action: "review", ownerKey: old.ownerKey }).toString() });
-      expect(r.status).toBe(401);
+      // V2.2 WP-2: the default same-account dev startup is not isolated from the AI host, so the owner pages are
+      // disabled entirely (403); the old owner key is refused either way.
+      expect([401, 403]).toContain(r.status);
+      expect(s.out()).toMatch(/service isolation NOT established/);
       expect(existsSync(join(cwd, ".data/dev-credentials.json"))).toBe(true);
     } finally { s.stop(); }
   }, 30_000);

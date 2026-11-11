@@ -4,7 +4,7 @@
  * side sees only the public key (OwnerRegistry entry), exactly as with a real authenticator.
  */
 import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
-import { OwnerConfirmationBoundary, type OwnerRegistry, type OwnerAuthenticator } from "../../src/auth/OwnerConfirmation.js";
+import { OwnerConfirmationBoundary, researchHoldBinding, type OwnerRegistry, type OwnerAuthenticator } from "../../src/auth/OwnerConfirmation.js";
 
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest();
 
@@ -54,13 +54,18 @@ export function passkeyStep(reviewHtml: string) {
 }
 
 /**
- * In-process tests of the gateway's owner method: the simulated human's passkey answers a challenge from a test-only
- * boundary, and the boundary returns the proof object that confirmResearchHoldAsOwner requires.
+ * In-process tests of the gateway's owner method: the simulated human's passkey answers a challenge from the gateway's
+ * own boundary (a test-only in-process boundary is installed on gateways built without one), and the boundary returns
+ * the proof object that confirmResearchHoldAsOwner requires. The binding covers this proposal's exact change.
  */
-export function inProcessHumanProof(userId: "alice" | "bob", binding: string) {
-  const b = testBoundary("http://127.0.0.1:1");
+export function inProcessHumanProof(gw: any, userId: "alice" | "bob", proposalId: string, reviewSessionFingerprint: string) {
+  if (!gw.config.ownerConfirmation?.status.established) gw.config.ownerConfirmation = testBoundary("http://127.0.0.1:1");
+  const b: OwnerConfirmationBoundary = gw.config.ownerConfirmation;
+  const p = gw.holdProposals.get(proposalId, userId);
+  const binding = researchHoldBinding({ userId, purchaseSessionId: p.purchaseSessionId, proposalId, digest: p.digest, kind: p.kind, requirement: p.requirement, budgetMinor: p.budgetMinor, currency: p.currency }, reviewSessionFingerprint);
   const challenge = b.newChallenge(userId, binding);
-  const v = b.verifyAssertion(userId, binding, PASSKEYS[userId].assert(challenge, { origin: "http://127.0.0.1:1", rpId: "127.0.0.1" }));
+  const origin = (b as any).origins[0] as string;
+  const v = b.verifyAssertion(userId, binding, PASSKEYS[userId].assert(challenge, { origin, rpId: b.rpId }));
   if (!v.ok) throw new Error(v.reason);
   return v.proof;
 }

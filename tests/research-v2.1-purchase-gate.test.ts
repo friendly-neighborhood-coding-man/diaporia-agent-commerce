@@ -36,7 +36,7 @@ function ownerResolve(gw: any, args: any) {
   expect(gw.purchaseReadiness(gw.sessions.getPurchaseSession(args.purchaseSessionId, "alice"), null).open.length).toBeGreaterThan(0);
   const digest = gw.holdProposals.get(p.proposalId, "alice").digest;
   // R-A: the owner also verifies with their passkey; the proof is bound to this proposal, digest and review session.
-  const humanProof = inProcessHumanProof("alice", researchHoldBinding(p.proposalId, digest, "0123456789abcdef"));
+  const humanProof = inProcessHumanProof(gw, "alice", p.proposalId, "0123456789abcdef");
   const c = gw.confirmResearchHoldAsOwner("alice", p.proposalId, { shownDigest: digest, ownerSessionFingerprint: "0123456789abcdef", typedBudgetMinor: args.budgetMinor ?? null, humanProof });
   return { state: gw.sessions.getPurchaseSession(args.purchaseSessionId, "alice").state, ...c };
 }

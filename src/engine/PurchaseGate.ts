@@ -29,6 +29,7 @@
  */
 import type { Decision } from "../decision/DecisionEngine.js";
 import type { StatedRequirement } from "../intent/Requirements.js";
+import type { StoredAssertion } from "../auth/OwnerConfirmation.js";
 
 export const GATE_VERSION = "purchase-gate-v1";
 const REQUIREMENT_CODES = new Set(["MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "MUST_HAVE_UNVERIFIED", "MUST_HAVE_CONTRADICTED", "VERIFICATION_LIMIT_REACHED", "ATTRIBUTE_UNKNOWN"]);
@@ -52,7 +53,14 @@ export interface GateResolution {
   humanVerification?: "WEBAUTHN_USER_VERIFIED";
   /** Short fingerprint of the authenticator credential that made the assertion. */
   credentialFingerprint?: string;
+  /** V2.2 WP-2: the assertion itself, re-verified against the registry public key at every gate check. */
+  assertion?: StoredAssertion;
 }
+/**
+ * V2.2 WP-2 (H-2): decides whether a stored owner resolution is genuine. The gateway passes one that re-verifies the
+ * stored passkey assertion against the protected registry. Strings alone never suffice in production.
+ */
+export type ResolutionVerifier = (r: GateResolution) => boolean;
 const ownerConfirmed = (r: GateResolution) => r.confirmation === "CONFIRMED_BY_OWNER" && typeof r.proposalId === "string" && /^OWNER_SESSION:/.test(r.actor ?? "")
   && r.humanVerification === "WEBAUTHN_USER_VERIFIED" && typeof r.credentialFingerprint === "string" && r.credentialFingerprint.length > 0;
 export interface PurchaseGate {
@@ -88,9 +96,9 @@ export interface GateReadiness { ready: boolean; open: string[]; effectiveBudget
  * Whether `productId` may proceed to a payment preparation. A missing gate on a V2 session, or a product the research
  * never assessed, is NOT ready (fail closed). `legacy` = a V1-engine session (no decision exists; V1 rules apply).
  */
-export function gateReadiness(gate: PurchaseGate | null | undefined, productId: string | null, sessionBudgetMinor: number | null, legacy: boolean): GateReadiness {
+export function gateReadiness(gate: PurchaseGate | null | undefined, productId: string | null, sessionBudgetMinor: number | null, legacy: boolean, verify?: ResolutionVerifier): GateReadiness {
   if (legacy) return { ready: true, open: [], effectiveBudgetMinor: sessionBudgetMinor, budgetSource: "SESSION" };
-  const owned = (gate?.resolutions ?? []).filter(ownerConfirmed);
+  const owned = (gate?.resolutions ?? []).filter((r) => ownerConfirmed(r) && (!verify || verify(r)));
   const confirmed = [...owned].reverse().find((r) => r.kind === "CONFIRM_BUDGET");
   const effectiveBudgetMinor = confirmed ? confirmed.budgetMinor : sessionBudgetMinor;
   const budgetSource = confirmed ? "USER_CONFIRMED" as const : "SESSION" as const;
@@ -108,14 +116,14 @@ export function gateReadiness(gate: PurchaseGate | null | undefined, productId: 
 }
 
 /** Appends an audited resolution. Throws on anything that is not a resolvable open item. */
-export function resolveGate(gate: PurchaseGate, r: Omit<GateResolution, "at"> & { at?: string }, now: number, sessionCurrency: string): PurchaseGate {
+export function resolveGate(gate: PurchaseGate, r: Omit<GateResolution, "at"> & { at?: string }, now: number, sessionCurrency: string, verify?: ResolutionVerifier): PurchaseGate {
   if (!ownerConfirmed({ ...r, at: "" } as GateResolution)) throw new Error("Only an owner-confirmed proposal can resolve a research hold.");
   if (r.currency !== sessionCurrency) throw new Error(`Resolution currency ${r.currency} does not match the session currency ${sessionCurrency}`);
   if (r.kind === "CONFIRM_BUDGET") {
     if (!gate.budgetConflict) throw new Error("There is no unresolved budget in this session; research again to change the budget.");
     if (r.budgetMinor === null || !Number.isSafeInteger(r.budgetMinor) || r.budgetMinor <= 0) throw new Error("budgetMinor must be a positive integer of minor units");
   } else {
-    const dropped = new Set(gate.resolutions.filter(ownerConfirmed).filter((x) => x.kind === "DROP_REQUIREMENT").map((x) => x.requirement));
+    const dropped = new Set(gate.resolutions.filter((x) => ownerConfirmed(x) && (!verify || verify(x))).filter((x) => x.kind === "DROP_REQUIREMENT").map((x) => x.requirement));
     const open = new Set(Object.values(gate.products).flatMap((p) => p.requirements.map((q) => q.key)).filter((k) => !dropped.has(k)));
     if (!r.requirement || !open.has(r.requirement)) throw new Error(`No open requirement ${r.requirement ?? "(none)"} in this session`);
   }
@@ -127,9 +135,9 @@ export type RequirementStatus = "VERIFIED" | "VIOLATED" | "CONTRADICTED" | "UNVE
  * N-01 requirement ledger for one product: each stated requirement with its span, whether it was recognized, and its
  * current status (verified, contradicted, still open, or explicitly removed by the human owner).
  */
-export function requirementLedger(gate: PurchaseGate | null | undefined, productId: string | null) {
+export function requirementLedger(gate: PurchaseGate | null | undefined, productId: string | null, verify?: ResolutionVerifier) {
   const p = gate && productId ? gate.products[productId] : undefined;
-  const removed = new Set((gate?.resolutions ?? []).filter(ownerConfirmed).filter((r) => r.kind === "DROP_REQUIREMENT").map((r) => r.requirement));
+  const removed = new Set((gate?.resolutions ?? []).filter((r) => ownerConfirmed(r) && (!verify || verify(r))).filter((r) => r.kind === "DROP_REQUIREMENT").map((r) => r.requirement));
   return (gate?.stated ?? []).map((r) => {
     const key = `must:${r.key}`;
     let status: RequirementStatus;

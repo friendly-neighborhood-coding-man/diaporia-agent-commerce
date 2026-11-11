@@ -27,14 +27,29 @@ export interface BoundaryStatus { established: boolean; source: "REGISTRY_FILE" 
 const b64u = (b: Buffer) => b.toString("base64url");
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest();
 const VERIFIED = new WeakSet<object>();
+/**
+ * V2.2 WP-2 (H-2): the assertion as the authenticator produced it, stored with the resolution so that every later
+ * gate check can verify the signature again against the registry's public key. A database row alone (strings such
+ * as CONFIRMED_BY_OWNER) is never trusted: without a signature over a challenge derived from exactly this
+ * resolution's content, the resolution does not count.
+ */
+export interface StoredAssertion { credentialId: string; clientDataJSON: string; authenticatorData: string; signature: string; nonce: string }
 /** Proof object that only this module can mint: a verified, user-verified assertion bound to one challenge. */
-export interface VerifiedHumanAssertion { readonly userId: string; readonly binding: string; readonly credentialFingerprint: string; readonly method: "WEBAUTHN_USER_VERIFIED" }
-/** The challenge binding of a research-hold confirmation: one proposal, the digest shown, one owner review session. */
-export const researchHoldBinding = (proposalId: string, digest: string, reviewSessionFingerprint: string) => `research-hold|${proposalId}|${digest}|${reviewSessionFingerprint}`;
+export interface VerifiedHumanAssertion { readonly userId: string; readonly binding: string; readonly credentialFingerprint: string; readonly method: "WEBAUTHN_USER_VERIFIED"; readonly stored: StoredAssertion }
+/**
+ * The challenge binding of a research-hold confirmation (V2.2): the owner, the purchase session, the proposal and its
+ * digest, the exact change (kind, requirement, budget, currency) and the owner review session. The gate recomputes it
+ * from the stored resolution, so a valid assertion cannot be copied onto another session, requirement or amount.
+ */
+export interface ResearchHoldBindingInput { userId: string; purchaseSessionId: string; proposalId: string; digest: string; kind: string; requirement: string | null; budgetMinor: number | null; currency: string }
+export const researchHoldBinding = (p: ResearchHoldBindingInput, reviewSessionFingerprint: string) =>
+  `research-hold-v2|${createHash("sha256").update(JSON.stringify([p.userId, p.purchaseSessionId, p.proposalId, p.digest, p.kind, p.requirement, p.budgetMinor, p.currency, reviewSessionFingerprint])).digest("hex")}`;
+/** The challenge an authenticator signs: derived from the binding and a server nonce, so it can be recomputed later. */
+const challengeFor = (binding: string, nonce: string) => b64u(sha(`${binding}|${nonce}`));
 export const isVerifiedHumanAssertion = (x: unknown): x is VerifiedHumanAssertion => typeof x === "object" && x !== null && VERIFIED.has(x);
 
 export class OwnerConfirmationBoundary {
-  private readonly challenges = new Map<string, { userId: string; binding: string; expiresAt: number }>();
+  private readonly challenges = new Map<string, { userId: string; binding: string; nonce: string; expiresAt: number }>();
   private readonly counters = new Map<string, number>();
   private constructor(readonly status: BoundaryStatus, private readonly registry: OwnerRegistry | null, readonly rpId: string, private readonly origins: string[], private readonly now: () => number) {}
 
@@ -51,7 +66,7 @@ export class OwnerConfirmationBoundary {
   }
 
   /** Production: the registry file administered by another OS principal. Fails closed with the reason. */
-  static fromRegistryFile(path: string | undefined, o: { cwd: string; dataDir: string; rpId: string; origins: string[]; uid?: number | null; stat?: (p: string) => Stats; read?: (p: string) => string; now?: () => number }) {
+  static fromRegistryFile(path: string | undefined, o: { cwd: string; dataDir: string; rpId: string; origins: string[]; uid?: number | null; untrustedUids?: number[]; stat?: (p: string) => Stats; read?: (p: string) => string; now?: () => number }) {
     const fail = (reason: string) => OwnerConfirmationBoundary.unavailable(reason, o.rpId, o.origins, o.now);
     if (!path) return fail("DIAPORIA_OWNER_REGISTRY is not set: no protected human authenticator is configured");
     if (!isAbsolute(path)) return fail("the owner registry path must be absolute");
@@ -65,12 +80,16 @@ export class OwnerConfirmationBoundary {
     if (!st.isFile()) return fail("the owner registry must be a regular file (not a symbolic link)");
     if (st.uid === uid) return fail("the owner registry file is owned by the server's own OS user; it must be administered by a separate OS principal");
     if ((st.mode & 0o022) !== 0) return fail("the owner registry file is group- or world-writable");
+    // V2.2 WP-2: the AI host's own account must not administer it either (it could enroll its own passkey).
+    const untrusted = o.untrustedUids ?? [];
+    if (untrusted.includes(st.uid)) return fail("the owner registry file is owned by an AI host account; it must be administered by a separate OS principal (for example root)");
     // Every directory above it too: a directory the server's user owns (or anyone can write without the sticky bit)
     // would let an agent running as that user rename it and put its own registry in place.
     for (let d = dirname(abs); ; d = dirname(d)) {
       let ds: Stats;
       try { ds = stat(d); } catch { return fail(`cannot inspect the owner registry directory ${d}`); }
       if (ds.uid === uid) return fail(`the owner registry directory ${d} is owned by the server's own OS user; it must be administered by a separate OS principal`);
+      if (untrusted.includes(ds.uid)) return fail(`the owner registry directory ${d} is owned by an AI host account`);
       if ((ds.mode & 0o022) !== 0 && (ds.mode & 0o1000) === 0) return fail(`the owner registry directory ${d} is group- or world-writable`);
       if (dirname(d) === d) break;
     }
@@ -92,8 +111,9 @@ export class OwnerConfirmationBoundary {
   /** A single-use challenge bound to `binding` (e.g. proposal id + digest + review session). */
   newChallenge(userId: string, binding: string, ttlMs = 10 * 60_000): string {
     for (const [k, v] of this.challenges) if (v.expiresAt <= this.now()) this.challenges.delete(k);
-    const c = b64u(randomBytes(32));
-    this.challenges.set(c, { userId, binding, expiresAt: this.now() + ttlMs });
+    const nonce = b64u(randomBytes(32));
+    const c = challengeFor(binding, nonce);
+    this.challenges.set(c, { userId, binding, nonce, expiresAt: this.now() + ttlMs });
     return c;
   }
 
@@ -122,9 +142,32 @@ export class OwnerConfirmationBoundary {
     try { good = verifySig("sha256", Buffer.concat([ad, sha(cdj)]), createPublicKey({ key: Buffer.from(cred.publicKeySpki, "base64"), format: "der", type: "spki" }), sig); } catch { good = false; }
     if (!good) return { ok: false, reason: "signature does not verify" };
     if (count > 0) this.counters.set(cred.credentialId, count);
-    const proof: VerifiedHumanAssertion = Object.freeze({ userId, binding, credentialFingerprint: sha(cred.credentialId).toString("hex").slice(0, 16), method: "WEBAUTHN_USER_VERIFIED" as const });
+    const stored: StoredAssertion = Object.freeze({ credentialId: a.credentialId, clientDataJSON: a.clientDataJSON, authenticatorData: a.authenticatorData, signature: a.signature, nonce: ch.nonce });
+    const proof: VerifiedHumanAssertion = Object.freeze({ userId, binding, credentialFingerprint: sha(cred.credentialId).toString("hex").slice(0, 16), method: "WEBAUTHN_USER_VERIFIED" as const, stored });
     VERIFIED.add(proof);
     return { ok: true, proof };
+  }
+
+  /**
+   * V2.2 WP-2: re-verifies a stored assertion at gate time (no challenge consumption, no counter: the assertion is
+   * historical). It must be a user-verified ES256 assertion by an authenticator enrolled for `userId` in the protected
+   * registry, over the challenge derived from `binding` and the stored nonce, for an allowed origin and this rpId.
+   */
+  verifyStored(userId: string, binding: string, s: StoredAssertion | undefined | null): { ok: true; credentialFingerprint: string } | { ok: false; reason: string } {
+    if (!this.status.established) return { ok: false, reason: `human confirmation unavailable: ${this.status.reason}` };
+    if (!s || typeof s !== "object" || [s.credentialId, s.clientDataJSON, s.authenticatorData, s.signature, s.nonce].some((x) => typeof x !== "string" || !x)) return { ok: false, reason: "no stored assertion" };
+    const cred = this.authenticatorsFor(userId).find((c) => c.credentialId === s.credentialId);
+    if (!cred) return { ok: false, reason: "unknown authenticator for this owner" };
+    let client: { type?: string; challenge?: string; origin?: string; crossOrigin?: boolean }; let cdj: Buffer, ad: Buffer, sig: Buffer;
+    try { cdj = Buffer.from(s.clientDataJSON, "base64url"); ad = Buffer.from(s.authenticatorData, "base64url"); sig = Buffer.from(s.signature, "base64url"); client = JSON.parse(cdj.toString("utf8")); }
+    catch { return { ok: false, reason: "malformed stored assertion" }; }
+    if (client.type !== "webauthn.get" || client.challenge !== challengeFor(binding, s.nonce)) return { ok: false, reason: "the stored assertion is not bound to this resolution" };
+    if (!client.origin || !this.origins.includes(client.origin) || client.crossOrigin) return { ok: false, reason: "assertion origin not allowed" };
+    if (ad.length < 37 || !ad.subarray(0, 32).equals(sha(this.rpId))) return { ok: false, reason: "wrong relying party" };
+    if ((ad[32]! & 0x01) === 0 || (ad[32]! & 0x04) === 0) return { ok: false, reason: "user presence and user verification are both required" };
+    let good = false;
+    try { good = verifySig("sha256", Buffer.concat([ad, sha(cdj)]), createPublicKey({ key: Buffer.from(cred.publicKeySpki, "base64"), format: "der", type: "spki" }), sig); } catch { good = false; }
+    return good ? { ok: true, credentialFingerprint: sha(cred.credentialId).toString("hex").slice(0, 16) } : { ok: false, reason: "signature does not verify" };
   }
 }
 

@@ -55,6 +55,13 @@ export interface AppConfig {
    * = unavailable: no research hold can be confirmed (fail closed).
    */
   ownerConfirmation?: OwnerConfirmationBoundary;
+  /**
+   * V2.2 WP-2 (H-2): whether the service runs under its own OS principal, separate from the AI host, with its data,
+   * code and configuration protected from the AI host (src/security/ServiceIsolation.ts). src/main.ts always passes it;
+   * when it is not established, every payment-facing operation is disabled (fail closed). Embedded test apps that
+   * construct createApp directly may omit it.
+   */
+  serviceIsolation?: { established: boolean; reason: string };
   /** Browser checkout handoff (separate path; absent = disabled). */
   handoff?: Omit<import("../handoff/BrowserCheckoutHandoff.js").HandoffConfig, "baseUrl" | "enabled"> | null;
 }
@@ -74,11 +81,12 @@ export function createApp(cfg: AppConfig): App {
   const payments = cfg.payments ? cfg.payments(cfg.baseUrl) : new MockPayPalProvider(cfg.baseUrl);
   const mockPayPal = payments instanceof MockPayPalProvider ? payments : null;
   // Payment flows run only with per-user dev tokens on a loopback-only deployment.
-  const paymentExecutionEnabled = (cfg.authMode === "dev" || cfg.authMode === "oauth") && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
+  const paymentExecutionEnabled = (cfg.authMode === "dev" || cfg.authMode === "oauth") && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl) && cfg.serviceIsolation?.established !== false;
   // Managed mode needs production authentication, which does not exist yet. Only an explicit loopback simulation may run it.
   if (cfg.service?.mode === "managed" && !(cfg.service.managedSimulation === true && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl)))
     throw new Error("Managed mode requires production authentication (not implemented). Only managedSimulation on loopback is allowed.");
-  const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled,
+  const ownerConfirmation = cfg.ownerConfirmation ?? OwnerConfirmationBoundary.unavailable("no protected owner confirmation boundary is configured on this server", new URL(cfg.baseUrl).hostname, [new URL(cfg.baseUrl).origin], now);
+  const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled, ownerConfirmation, serviceIsolation: cfg.serviceIsolation ?? null,
     ...(cfg.merchantIdentity ? { merchantIdentity: cfg.merchantIdentity } : {}), sandboxPlatformPayeeId: cfg.sandboxPlatformPayeeId ?? null,
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
     ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service: cfg.service ?? null }, now);
@@ -99,7 +107,7 @@ export function createApp(cfg: AppConfig): App {
   const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number; csId: string; summaryHash: string; previewMinor?: number }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
   const researchHoldRoutes = createResearchHoldRoutes({ gateway, verifyOwnerKey: (k, client) => cfg.auth.verifyOwnerKey(k, client), ownerKeyLimited: (client) => cfg.auth.ownerKeyLimited(client),
-    confirmation: cfg.ownerConfirmation ?? OwnerConfirmationBoundary.unavailable("no protected owner confirmation boundary is configured on this server", base.hostname, [base.origin], now),
+    confirmation: ownerConfirmation,
     now, secureCookies: base.protocol === "https:",
     sameOriginForm: (req) => sameOriginStrict(req, allowedOrigins), readText });
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",

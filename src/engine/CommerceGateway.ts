@@ -32,10 +32,10 @@ import { canonicalVariant } from "../identity/ProductIdentityExtractor.js";
 import { runResearchV2, type PlannerLimits } from "../research/ResearchPlannerV2.js";
 import type { SearchPage, ProductSearchQuery } from "../research/CommerceResearchAdapter.js";
 import type { RankingWeights } from "../decision/weights.js";
-import { gateFromDecision, gateReadiness, requirementLedger, resolveGate, type PurchaseGate } from "./PurchaseGate.js";
+import { gateFromDecision, gateReadiness, requirementLedger, resolveGate, type PurchaseGate, type ResolutionVerifier } from "./PurchaseGate.js";
 import { priceProvenance } from "./QuotePromotion.js";
 import { ResearchHoldProposals } from "./ResearchHoldProposals.js";
-import { isVerifiedHumanAssertion, researchHoldBinding } from "../auth/OwnerConfirmation.js";
+import { isVerifiedHumanAssertion, researchHoldBinding, type OwnerConfirmationBoundary } from "../auth/OwnerConfirmation.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -67,6 +67,16 @@ export interface GatewayConfig {
   /** Research V2 planner limits (smaller than, and in addition to, the usage-ledger caps) and ranking weights. */
   researchLimits?: Partial<PlannerLimits>;
   rankingWeights?: RankingWeights | null;
+  /**
+   * V2.2 WP-2: the owner confirmation boundary. Every gate check re-verifies each stored owner resolution's passkey
+   * assertion against it. Absent (or not established) = no stored resolution counts (fail closed).
+   */
+  ownerConfirmation?: OwnerConfirmationBoundary | null;
+  /**
+   * V2.2 WP-2: the OS-principal isolation of the service from the AI host (src/security/ServiceIsolation.ts). When it
+   * is given and not established, checkout preparation is refused on every path, the external-merchant link included.
+   */
+  serviceIsolation?: { established: boolean; reason: string } | null;
 }
 
 export type ReconcileSource = "MANUAL" | "STARTUP" | "WEBHOOK" | "RETURN";
@@ -455,7 +465,7 @@ export class CommerceGateway {
       lowestPayPalCheckoutableOffer: comparison.lowestPayPalCheckoutable ? publicOffer(comparison.lowestPayPalCheckoutable, this.research.isMock) : null,
       holdReasons, disclosure: comparison.disclosure, dataSource: this.dataSource(), paymentEffect: "NONE" as const,
       purchaseReadiness: { ready: readiness.ready, open: readiness.open, budgetMinor: readiness.effectiveBudgetMinor, budgetSource: readiness.budgetSource },
-      requirementStatus: requirementLedger((ps.research?.purchaseGate ?? null) as PurchaseGate | null, productId),
+      requirementStatus: requirementLedger((ps.research?.purchaseGate ?? null) as PurchaseGate | null, productId, this.resolutionVerifier(ps)),
       // V2.1 Phase 3: which number is a search-time listing price and which is a merchant-verified total.
       priceProvenance: ps.research?.decision ? priceProvenance({ productId, currency: ps.intent.currency, objective: (ps.intent as { objective?: string }).objective ?? null,
         ranking: (ps.research.decision as { ranking?: Array<{ productId: string; eligible: boolean; price: { lowestListingMinor: number | null; merchantDomain: string | null } }> }).ranking ?? null,
@@ -466,7 +476,37 @@ export class CommerceGateway {
   /** V2.1 research-to-purchase binding (see PurchaseGate). V1-engine sessions carry no decision and keep V1 rules. */
   purchaseReadiness(ps: PurchaseSession, productId: string | null) {
     const legacy = !ps.research?.decision;
-    return gateReadiness((ps.research?.purchaseGate ?? null) as PurchaseGate | null, productId, ps.intent.budgetMinor, legacy);
+    return gateReadiness((ps.research?.purchaseGate ?? null) as PurchaseGate | null, productId, ps.intent.budgetMinor, legacy, this.resolutionVerifier(ps));
+  }
+
+  /**
+   * V2.2 WP-2 (H-2): a stored owner resolution counts only if its passkey assertion verifies again, now, against the
+   * protected owner registry, over the challenge derived from this session, this owner and exactly this change. A row
+   * written into the database by anyone else (strings such as CONFIRMED_BY_OWNER) does not count.
+   */
+  resolutionVerifier(ps: PurchaseSession): ResolutionVerifier {
+    const boundary = this.config.ownerConfirmation ?? null;
+    return (r) => {
+      if (!boundary) return false;
+      const fpr = /^OWNER_SESSION:(.+)$/.exec(r.actor ?? "")?.[1];
+      if (!fpr) return false;
+      const binding = researchHoldBinding({ userId: ps.userId, purchaseSessionId: ps.purchaseSessionId, proposalId: r.proposalId, digest: r.proposalDigest, kind: r.kind,
+        requirement: r.requirement, budgetMinor: r.budgetMinor, currency: r.currency }, fpr);
+      const v = boundary.verifyStored(ps.userId, binding, r.assertion);
+      return v.ok && v.credentialFingerprint === r.credentialFingerprint;
+    };
+  }
+
+  /**
+   * V2.2 WP-2 (H-2): without OS-principal isolation from the AI host, the AI host could rewrite this service's database
+   * or code, so no stored decision can be trusted: every payment-preparing path is refused (fail closed).
+   */
+  assertServiceIsolated(subjectId: string, userId: string, path: string) {
+    const iso = this.config.serviceIsolation;
+    if (iso && !iso.established) {
+      this.audit.append(subjectId, userId, "PURCHASE_GATE_BLOCKED", { path, open: [`Service isolation not established: ${iso.reason}`] });
+      throw new CommerceError("PAYMENT_DISABLED", "Checkout preparation is disabled: this DIAPORIA service does not run under its own OS account separate from the AI host (docs/SETUP.md, \"Service account\").", { isolation: iso.reason });
+    }
   }
 
   /** Throws unless the session's chosen product has no unresolved research requirement. Used by every payment-preparing path. */
@@ -535,7 +575,8 @@ export class CommerceGateway {
   confirmResearchHoldAsOwner(userId: string, proposalId: string, o: { shownDigest: string; ownerSessionFingerprint: string; typedBudgetMinor: number | null; humanProof?: unknown }) {
     const proof = o.humanProof;
     const pre = this.holdProposals.get(proposalId, userId);
-    if (pre && (!isVerifiedHumanAssertion(proof) || proof.userId !== userId || proof.binding !== researchHoldBinding(pre.proposalId, o.shownDigest, o.ownerSessionFingerprint))) {
+    if (pre && (!isVerifiedHumanAssertion(proof) || proof.userId !== userId || proof.binding !== researchHoldBinding({ userId, purchaseSessionId: pre.purchaseSessionId, proposalId: pre.proposalId,
+      digest: o.shownDigest, kind: pre.kind, requirement: pre.requirement, budgetMinor: pre.budgetMinor, currency: pre.currency }, o.ownerSessionFingerprint))) {
       // Recorded outside the transaction so that the refusal stays in the audit trail.
       this.audit.append(pre.purchaseSessionId, userId, "RESEARCH_HOLD_CONFIRMATION_REFUSED", { proposalId: pre.proposalId, digest: pre.digest, reason: "NO_VERIFIED_HUMAN_ASSERTION" });
       throw new CommerceError("FORBIDDEN", "Owner confirmation needs a verified human assertion (passkey with user verification) for this proposal.");
@@ -552,8 +593,10 @@ export class CommerceGateway {
       const actor = `OWNER_SESSION:${o.ownerSessionFingerprint}`;
       let next: PurchaseGate;
       try { next = resolveGate(gate, { kind: p.kind, requirement: p.requirement, budgetMinor: p.budgetMinor, currency: p.currency, actor, confirmation: "CONFIRMED_BY_OWNER", proposalId: p.proposalId, proposalDigest: p.digest, agentText: p.agentText,
-        humanVerification: proof.method, credentialFingerprint: proof.credentialFingerprint }, this.now(), ps.intent.currency); }
+        humanVerification: proof.method, credentialFingerprint: proof.credentialFingerprint, assertion: proof.stored }, this.now(), ps.intent.currency, this.resolutionVerifier(ps)); }
       catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }
+      // V2.2 WP-2: the resolution must verify the way every later gate check will verify it (stored assertion).
+      if (!this.resolutionVerifier(ps)(next.resolutions[next.resolutions.length - 1]!)) throw new CommerceError("FORBIDDEN", "The passkey assertion does not verify against the protected owner registry for this change.");
       if (!this.holdProposals.decide(p.proposalId, userId, "CONFIRMED", actor)) throw new CommerceError("INVALID_STATE", "The proposal was already decided or has expired.");
       ps = this.sessions.updatePurchaseSession(ps, "HOLD", { research: { ...ps.research, purchaseGate: next }, comparison: null });
       const res = next.resolutions[next.resolutions.length - 1]!;
@@ -580,6 +623,7 @@ export class CommerceGateway {
    */
   async prepareCheckout(userId: string, input: { purchaseSessionId: string; offerId: string; maximumApprovedTotalMinor: number; currency: string; quantity: number }, actor = "MCP_TOKEN:unknown") {
     const ps = this.livePurchaseSession(input.purchaseSessionId, userId);
+    this.assertServiceIsolated(ps.purchaseSessionId, userId, "prepare_checkout");
     if (ps.state !== "OFFER_VERIFIED" || !ps.comparison || !ps.lockedIdentity) throw new CommerceError("INVALID_STATE", `Session is ${ps.state}; compare offers and obtain a verified offer first.`);
     const readiness = this.assertPurchaseReady(ps, userId, "prepare_checkout");
     if (!isMinor(input.maximumApprovedTotalMinor) || input.maximumApprovedTotalMinor <= 0) throw new CommerceError("INVALID_INPUT", "maximumApprovedTotalMinor must be a positive integer of minor units");

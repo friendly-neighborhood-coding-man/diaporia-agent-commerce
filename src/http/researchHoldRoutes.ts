@@ -93,7 +93,8 @@ export function createResearchHoldRoutes(o: { gateway: CommerceGateway; verifyOw
       sessions.set(sid, { userId, proposalId, digest: view.proposal.digest, csrf, expiresAt: Math.min(o.now() + REVIEW_TTL_MS, view.proposal.expiresAt) });
       res.setHeader("Set-Cookie", `dac_hold=${sid}; HttpOnly; SameSite=Strict; Path=/research-holds; Max-Age=600${o.secureCookies ? "; Secure" : ""}`);
       const human = o.confirmation.canConfirm(userId)
-        ? { challenge: o.confirmation.newChallenge(userId, researchHoldBinding(proposalId, view.proposal.digest, fp(sid)), REVIEW_TTL_MS), rpId: o.confirmation.rpId,
+        ? { challenge: o.confirmation.newChallenge(userId, researchHoldBinding({ userId, purchaseSessionId: view.proposal.purchaseSessionId, proposalId, digest: view.proposal.digest, kind: view.proposal.kind,
+            requirement: view.proposal.requirement, budgetMinor: view.proposal.budgetMinor, currency: view.proposal.currency }, fp(sid)), REVIEW_TTL_MS), rpId: o.confirmation.rpId,
             credentialIds: o.confirmation.authenticatorsFor(userId).map((a) => a.credentialId), nonce: randomBytes(16).toString("base64url") }
         : { unavailable: o.confirmation.status.established ? "no passkey is enrolled for this owner in the owner registry" : o.confirmation.status.reason };
       return send(res, 200, "Review the proposed change", reviewBody(view.proposal, view.session, csrf, human), "nonce" in human ? human.nonce : undefined);
@@ -126,7 +127,8 @@ export function createResearchHoldRoutes(o: { gateway: CommerceGateway; verifyOw
           o.gateway.rejectResearchHoldAsOwner(sess.userId, proposalId, { shownDigest: sess.digest, ownerSessionFingerprint: fp(sid!) });
           return send(res, 200, "Proposal rejected", "<p>Nothing was changed. The research requirement stays open. You can return to your AI assistant.</p>");
         }
-        const v = o.confirmation.verifyAssertion(sess.userId, researchHoldBinding(proposalId, sess.digest, fp(sid!)), {
+        const v = o.confirmation.verifyAssertion(sess.userId, researchHoldBinding({ userId: sess.userId, purchaseSessionId: view.proposal.purchaseSessionId, proposalId, digest: sess.digest,
+          kind: view.proposal.kind, requirement: view.proposal.requirement, budgetMinor: view.proposal.budgetMinor, currency: view.proposal.currency }, fp(sid!)), {
           credentialId: form.get("credentialId") ?? "", clientDataJSON: form.get("clientDataJSON") ?? "", authenticatorData: form.get("authenticatorData") ?? "", signature: form.get("signature") ?? "" });
         if (!v.ok) return send(res, 401, "Not verified", `<p>Your passkey did not verify (${esc(v.reason)}). Nothing was changed. Review the proposal again.</p>`);
         o.gateway.confirmResearchHoldAsOwner(sess.userId, proposalId, { shownDigest: sess.digest, ownerSessionFingerprint: fp(sid!), typedBudgetMinor: typed, humanProof: v.proof });

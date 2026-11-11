@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkServiceIsolation, parseAiHostUids } from "./security/ServiceIsolation.js";
 import { OwnerConfirmationBoundary } from "./auth/OwnerConfirmation.js";
 import { createApp, isLoopbackUrl } from "./http/server.js";
 import { ALL_CLIENT_SCOPES, DevAuth, randomSecret } from "./auth/devAuth.js";
@@ -18,6 +20,8 @@ import { randomBytes } from "node:crypto";
 import { configureHandoffFromEnv } from "./handoff/config.js";
 import { SERVICE_LIVE_CAPS, SERVICE_LIVE_RETRY } from "./metering/LiveCallGuard.js";
 
+// V2.2 WP-2: every file this process creates (database, WAL/SHM, credentials) is private to the service account.
+process.umask(0o077);
 const env = process.env;
 const host = env.HOST ?? "127.0.0.1";
 const port = Number(env.PORT ?? 8790);
@@ -27,11 +31,31 @@ const provider = (env.PAYMENT_PROVIDER ?? "mock").toLowerCase();
 
 const auth = DevAuth.fromEnv(env);
 const dbPath = env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite";
+const dataDir = dbPath === ":memory:" ? resolve(".data") : dirname(resolve(dbPath));
+mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+const servicePath = env.DIAPORIA_DB_PATH === ":memory:" ? ":memory:" : (env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite").replace(/\.sqlite$/, "") + "-service.sqlite";
+const uid = typeof process.getuid === "function" ? process.getuid() : null;
+let passwdText = ""; try { passwdText = readFileSync("/etc/passwd", "utf8"); } catch { /* not a Unix host */ }
+const aiHostUids = parseAiHostUids(env.DIAPORIA_AI_HOST_UIDS, () => passwdText).uids;
 // R-A: the human-confirmation boundary. Owner credentials (owner-key hashes and passkey PUBLIC keys) come only from an
-// owner registry file administered by a different OS principal than this server; nothing the server or the AI host can
-// read lets anyone confirm. Fails closed (research-hold confirmation unavailable) when the boundary cannot be checked.
+// owner registry file administered by a different OS principal than this server (and than the AI host); nothing the
+// server or the AI host can read lets anyone confirm. Fails closed when the boundary cannot be checked.
 const ownerConfirmation = OwnerConfirmationBoundary.fromRegistryFile(env.DIAPORIA_OWNER_REGISTRY, {
-  cwd: process.cwd(), dataDir: dbPath === ":memory:" ? resolve(".data") : dirname(resolve(dbPath)), rpId: new URL(baseUrl).hostname, origins: [new URL(baseUrl).origin] });
+  cwd: process.cwd(), dataDir, rpId: new URL(baseUrl).hostname, origins: [new URL(baseUrl).origin], untrustedUids: aiHostUids });
+// V2.2 WP-2 (H-2): payment-facing operations need the service to run under its own OS account, separate from the AI
+// host, with its database, WAL/SHM, data directory, code and configuration out of the AI host's reach.
+let codeRoot = dirname(fileURLToPath(import.meta.url));
+while (!existsSync(join(codeRoot, "package.json")) && dirname(codeRoot) !== codeRoot) codeRoot = dirname(codeRoot);
+const files = (p: string) => p === ":memory:" ? [] : [resolve(p), resolve(p) + "-wal", resolve(p) + "-shm", resolve(p) + "-journal"];
+const serviceIsolation = checkServiceIsolation({ uid, aiHostUids: env.DIAPORIA_AI_HOST_UIDS, dataDir, dataFiles: [...files(dbPath), ...files(servicePath), resolve(".data/dev-credentials.json")],
+  codeRoot, execPath: process.execPath, registryEstablished: ownerConfirmation.status.established, registryReason: ownerConfirmation.status.reason, passwd: () => passwdText });
+if (serviceIsolation.established) console.log(`[diaporia] service isolation: established (${serviceIsolation.reason}; ${serviceIsolation.inspected} code entries checked)`);
+else {
+  console.warn("[diaporia] service isolation NOT established, so payment-facing operations (checkout preparation, browser handoff, owner pages) are DISABLED. Research and comparison still work. Reasons:");
+  for (const f of serviceIsolation.failures) console.warn(`[diaporia]   - ${f}`);
+  console.warn("[diaporia] Set up the dedicated service account: docs/SETUP.md, \"Service account (required for payment-facing operations)\".");
+}
+for (const w of serviceIsolation.warnings) console.warn(`[diaporia] isolation warning: ${w}`);
 for (const v of ownerConfirmation.ownerKeyVerifiers()) auth.addOwnerKeyHash(v.sha256, v.userId);
 console.log(ownerConfirmation.status.established
   ? `[diaporia] owner confirmation: protected owner registry (${ownerConfirmation.status.reason})`
@@ -66,7 +90,6 @@ if (authMode === "dev" && !isLoopbackUrl(baseUrl)) {
 
 // ---- Service plane: metering, evidence routing, deployment mode, billing ----
 const deploymentMode = env.DIAPORIA_DEPLOYMENT_MODE === "managed" ? "managed" : "community";
-const servicePath = env.DIAPORIA_DB_PATH === ":memory:" ? ":memory:" : (env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite").replace(/\.sqlite$/, "") + "-service.sqlite";
 const serviceStore = new Store(servicePath);
 const byok = env.EVIDENCE_PROVIDERS === "byok" && env.TAVILY_API_KEY;
 const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY ? new Channel3ResearchAdapter(env.CHANNEL3_API_KEY, { retry: { ...SERVICE_LIVE_RETRY } }) : null;
@@ -98,7 +121,7 @@ const app = createApp({
   ...(handoff ? { handoff: handoff.config } : {}),
   ...(liveCatalog ? { research: liveCatalog } : {}),
   host, port, baseUrl, authMode, auth,
-  webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath, ownerConfirmation,
+  webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath, ownerConfirmation, serviceIsolation: { established: serviceIsolation.established, reason: serviceIsolation.reason },
   payments: (url) => provider === "paypal_sandbox"
     ? new PayPalSandboxProvider({ clientId: env.PAYPAL_CLIENT_ID ?? "", clientSecret: env.PAYPAL_CLIENT_SECRET ?? "", env: env.PAYPAL_ENV ?? "SANDBOX" })
     : new MockPayPalProvider(url),
