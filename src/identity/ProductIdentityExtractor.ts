@@ -12,9 +12,11 @@
  * Nothing here invents a SKU: Channel3 has no SKU/GTIN field (docs/research/PROVIDER_CONTRACTS.md).
  */
 export type ProductKind = "STANDALONE" | "BUNDLE" | "ACCESSORY";
-export type AttributeAxis = "color" | "memory" | "storage" | "capacity" | "size" | "pack" | "year";
+export type AttributeAxis = "color" | "memory" | "storage" | "capacity" | "size" | "pack" | "year" | "generation";
 export type VariantAttributes = Partial<Record<AttributeAxis, string>>;
-export const AXES: AttributeAxis[] = ["color", "memory", "storage", "capacity", "size", "pack", "year"];
+export const AXES: AttributeAxis[] = ["color", "memory", "storage", "capacity", "size", "pack", "year", "generation"];
+/** Version axes (N-02): identity attributes that distinguish releases of one model, independent of the model name. */
+export const VERSION_AXES: AttributeAxis[] = ["year", "generation"];
 
 /**
  * Model year (V21-02): "(2025)", "2025 model/edition/version/release", "model year 2025", "2025년형", "'25 model", or a
@@ -39,6 +41,29 @@ export function modelYear(text: string): string | null {
 /** The model string without a trailing model-year token ("Drift 15 2024" → "Drift 15"). */
 export const stripYear = (model: string | null): string | null => model ? (model.replace(/\s*\(?\b20[0-3]\d\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, "").trim() || model) : model;
 
+/**
+ * Product generation (N-02): "(2nd Gen)", "2nd generation", "Gen 2", "second-gen", "2세대". Value is the number ("2").
+ * A generation is an identity attribute like the model year, never part of the model name.
+ */
+const ORDINAL_WORDS: Record<string, string> = { first: "1", second: "2", third: "3", fourth: "4", fifth: "5", sixth: "6" };
+const GEN_PATTERNS: RegExp[] = [/\b(\d{1,2})(?:st|nd|rd|th)[- ]?gen(?:eration)?\b/i, /\bgen(?:eration)?[- ]?(\d{1,2})\b/i, /(\d{1,2})\s*세대/,
+  /\b(first|second|third|fourth|fifth|sixth)[- ]gen(?:eration)?\b/i];
+export function modelGeneration(text: string): string | null {
+  const t = text.normalize("NFKC");
+  for (const re of GEN_PATTERNS) { const m = re.exec(t); if (m) return ORDINAL_WORDS[m[1]!.toLowerCase()] ?? String(Number(m[1])); }
+  return null;
+}
+/** Every generation a text names (for evidence attribution). */
+export function generationsIn(text: string): Set<string> {
+  const out = new Set<string>(); const t = text.normalize("NFKC");
+  for (const re of GEN_PATTERNS) for (const m of t.matchAll(new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"))) out.add(ORDINAL_WORDS[m[1]!.toLowerCase()] ?? String(Number(m[1])));
+  return out;
+}
+/** The model string without a trailing generation marker ("Buds 2nd Gen" → "Buds"). */
+export const stripGeneration = (model: string | null): string | null => model
+  ? (model.replace(/\s*\(?\s*(?:\d{1,2}(?:st|nd|rd|th)[- ]?gen(?:eration)?|gen(?:eration)?[- ]?\d{1,2}|(?:first|second|third|fourth|fifth|sixth)[- ]gen(?:eration)?|\d{1,2}\s*세대)\s*\)?\s*$/i, "").trim() || model) : model;
+const stripVersion = (m: string | null) => stripYear(stripGeneration(stripYear(m)));
+
 /** English colour words plus Korean equivalents (normalized to the English name). */
 export const COLOR_WORDS: Record<string, string> = Object.fromEntries([
   ...["black", "white", "blue", "silver", "gray", "grey", "graphite", "red", "green", "pink", "beige", "midnight", "purple", "violet", "lavender", "orange",
@@ -57,7 +82,10 @@ const GENERIC = new Set(`wireless wired bluetooth noise cancelling canceling noi
   unisex coffee maker brewer programmable insulated water bottle tumbler flask office chair chairs gaming monitor display screen backpack daypack bag cordless stick
   vacuum cleaner robot with and for the a an in of by from to new used refurbished renewed edition version model series usb-c usb hdmi led lcd oled hd uhd
   replacement spare case cover charger adapter cable strap stand mount filter pads pad cushions cushion carafe protector bundle kit combo set pack lumbar support
-  waterproof water-resistant lightweight portable smart premium classic original official stainless steel plastic glass leather mesh ergonomic compact`.split(/\s+/).filter(Boolean));
+  waterproof water-resistant lightweight portable smart premium classic original official stainless steel plastic glass leather mesh ergonomic compact
+  e-reader e-readers ereader ereaders reader readers tv tvs television televisions speaker speakers soundbar soundbars kettle kettles blender blenders toaster
+  tablet tablets camera cameras router routers keyboard keyboards mouse mice smartwatch smartwatches projector projectors printer printers drone drones
+  fan fans heater heaters lamp lamps purifier purifiers humidifier humidifiers cooker cookers fryer fryers microwave dehumidifier webcam microphone mic`.split(/\s+/).filter(Boolean));
 /** A word after a model mention that makes it a DIFFERENT model in the same family ("Nova 9" vs "Nova 9 Pro"). */
 export const MODEL_EXTENSIONS = new Set(["pro", "max", "plus", "ultra", "mini", "lite", "air", "se", "fe", "neo", "prime", "edge", "go", "xl", "fhd", "elite", "sport", "s", "x", "ii", "iii", "iv", "2", "3", "4", "5"]);
 
@@ -99,6 +127,8 @@ export function parseAttributes(text: string): VariantAttributes {
   }
   const year = modelYear(t);
   if (year) out.year = year;
+  const gen = modelGeneration(t);
+  if (gen) out.generation = gen;
   const pack = /\b(\d+)[- ]?(?:pack|pk|count|ct)\b|\bpack of (\d+)\b|\bset of (\d+)\b|\b(twin)[- ]pack\b|(\d+)\s?개입/i.exec(t);
   if (pack) out.pack = pack[4] ? "2" : (pack[1] ?? pack[2] ?? pack[3] ?? pack[5])!;
   return out;
@@ -117,7 +147,7 @@ export function attributesFromVariant(variant: string | null): VariantAttributes
   const out: VariantAttributes = {};
   if (!variant) return out;
   for (const part of variant.replace(/ BUNDLE$/, "").replace(/^ACCESSORY [^/]*\/?\s*/, "").split(" / ")) {
-    const m = /^(memory|storage|capacity|size|pack|year)=(.+)$/.exec(part.trim());
+    const m = /^(memory|storage|capacity|size|pack|year|generation)=(.+)$/.exec(part.trim());
     if (m) out[m[1] as AttributeAxis] = m[2]!; else if (part.trim() && part.trim() !== "UNSPECIFIED") out.color = part.trim();
   }
   return out;
@@ -189,7 +219,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
     const num = modelNumberToken(target);
     const named = namedModelAfter(target, tb);
     const noun = (nounMatch?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, "");
-    return { brand, model: stripYear(num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
+    return { brand, model: stripVersion(num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
       attributes: { ...parseAttributes(head), ...(parseAttributes(target).capacity ? { capacity: parseAttributes(target).capacity } : {}) }, titleCondition };
   }
   const kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
@@ -201,7 +231,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
     model = named && normalizeKey(named).includes(normalizeKey(num)) ? named : num; basis = "MODEL_NUMBER";
     if (named && normalizeKey(named).includes(normalizeKey(num)) && named.split(" ").length > 1) basis = "NAMED_MODEL";
   } else if (named) { model = named; basis = "NAMED_MODEL"; }
-  return { brand, model: stripYear(model), modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
+  return { brand, model: stripVersion(model), modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
 }
 
 /**
@@ -220,15 +250,18 @@ export function familyKey(brand: string | null, model: string | null): string {
  * True when `text` mentions exactly this model: separator-tolerant, and not followed by a family extension
  * ("Nova 9" does not match "Nova 9 Pro"; "CX-500" does not match "CX-5000").
  */
-export function mentionsExactModel(text: string, model: string): boolean {
+export function mentionsExactModel(text: string, model: string, own: { generation?: string | null } = {}): boolean {
   const body = model.replace(/[^A-Za-z0-9]/g, "").split("").map((ch) => escapeRe(ch)).join("[- ]?");
   if (!body) return false;
   const re = new RegExp(`(^|[^A-Za-z0-9])${body}(?=$|[^A-Za-z0-9])`, "gi");
-  const own = new Set(model.toLowerCase().split(/[^a-z0-9]+/));
+  const ownWords = new Set(model.toLowerCase().split(/[^a-z0-9]+/));
   for (const m of text.matchAll(re)) {
     const after = text.slice((m.index ?? 0) + m[0].length).trimStart();
     const next = /^[-\s(]*([A-Za-z0-9가-힣]+)/.exec(after)?.[1]?.toLowerCase();
-    if (next && isModelExtension(next) && !own.has(next)) continue;
+    // N-02: this product's own generation marker right after the model ("Buds (2nd Gen)" for generation 2) is not a
+    // different model; any other generation marker is.
+    if (next && own.generation && modelGeneration(after.slice(0, 24).replace(/^[-\s(]*/, "")) === own.generation && /^[-\s(]*(?:\d{1,2}(?:st|nd|rd|th)|gen|generation|first|second|third|fourth|fifth|sixth|\d{1,2}\s*세대)/i.test(after)) return true;
+    if (next && isModelExtension(next) && !ownWords.has(next)) continue;
     return true;
   }
   return false;

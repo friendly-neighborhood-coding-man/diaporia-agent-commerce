@@ -1,5 +1,5 @@
 import type { CatalogProduct, Condition, MerchantOffer, ProductIdentity } from "../domain/types.js";
-import { AXES, attributesFromVariant, extractIdentity, familyKey, normalizeKey, type AttributeAxis, type ProductKind, type VariantAttributes } from "./ProductIdentityExtractor.js";
+import { AXES, VERSION_AXES, attributesFromVariant, extractIdentity, familyKey, normalizeKey, type AttributeAxis, type ProductKind, type VariantAttributes } from "./ProductIdentityExtractor.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 
 /**
@@ -96,6 +96,21 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
     }
     const asked = stated.map((a) => `${a} ${intent.attributes[a]}`).join(", ");
     return { status: "NOT_FOUND", code: "ATTRIBUTE_NOT_FOUND", reason: `No listing of this model has ${asked}. Available: ${[...new Set(kindOk.map((f) => f.product.identity.variant ?? "unspecified"))].join("; ")}.`, siblingToCheck: sibling, excluded };
+  }
+
+  // N-02: several known versions (model years or generations) of this model and the request names none → ask. A listing
+  // that states no version counts as a distinct, unknown version: it never resolves the ambiguity by itself.
+  for (const axis of VERSION_AXES) {
+    if (intent.attributes[axis]) continue;
+    const values = new Map<string, ProductFacts>();
+    for (const f of attrOk) { const v = f.attributes[axis] ?? "unknown"; if (!values.has(v)) values.set(v, f); }
+    if (values.size > 1) {
+      const label = axis === "year" ? "model years" : "generations";
+      const shown = [...values.keys()].map((v) => (v === "unknown" ? `a listing that states no ${axis === "year" ? "year" : "generation"}` : axis === "year" ? v : `generation ${v}`));
+      return { status: "AMBIGUOUS", differingAxes: [axis], excluded,
+        options: [...values.entries()].map(([v, f]) => ({ productId: f.product.productId, identity: { ...f.product.identity, condition: intent.condition }, differing: { [axis]: v } })),
+        question: `Several ${label} of this model are listed (${shown.join(", ")}). Which ${axis === "year" ? "model year" : "generation"} should be purchased?` };
+    }
   }
 
   // Condition and availability.

@@ -1,5 +1,5 @@
 import type { CatalogProduct, EvidenceKind } from "../domain/types.js";
-import { mentionsExactModel, normalizeKey, parseAttributes, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
+import { generationsIn, mentionsExactModel, normalizeKey, parseAttributes, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
 import { factsOf } from "../identity/ProductResolverV2.js";
 import { clauseStatement } from "../research/capabilities.js";
 import { jaccard, registrableDomain, shingles, hostOf, type SourceClass, type SourceRegistry } from "./SourceRegistry.js";
@@ -123,7 +123,8 @@ export function namesOtherProduct(text: string, product: CatalogProduct): boolea
     return true;
   }
   // A family extension of this model ("Nova 9 Pro" for "Nova 9"): the loose name is present but the exact model is not.
-  if (model && keyOf(text).includes(keyOf(model)) && !mentionsExactModel(text, model)) return true;
+  const gen = factsOf(product).attributes.generation;
+  if (model && keyOf(text).includes(keyOf(model)) && !mentionsExactModel(text, model, { generation: gen && gen !== "CONFLICT" ? gen : null })) return true;
   return false;
 }
 
@@ -139,7 +140,9 @@ export function namesOtherProduct(text: string, product: CatalogProduct): boolea
 export function statementFrom(hit: { title: string; snippet: string }, product: CatalogProduct, capability: string): { value: boolean; quote: string } | null {
   const model = product.identity.model;
   const text = `${hit.title}. ${hit.snippet}`;
-  const namesThis = (t: string) => !!model && mentionsExactModel(t, model) && (/\d/.test(model) || brandWithModel(t, product));
+  const genAttr = factsOf(product).attributes.generation;
+  const generation = genAttr && genAttr !== "CONFLICT" ? genAttr : null;
+  const namesThis = (t: string) => !!model && mentionsExactModel(t, model, { generation }) && (/\d/.test(model) || brandWithModel(t, product));
   if (model) { if (!namesThis(text)) return null; }
   else {
     // No model: the brand plus at least two title words must appear (weak attribution; still needs a counted source).
@@ -154,7 +157,12 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   if (facts.attributes.year === "CONFLICT") return null;
   const hitYears = modelYearsIn(text, model);
   if (year ? !hitYears.has(year) : hitYears.size > 0) return null;
-  const otherYearInHit = !!year && [...hitYears].some((y) => y !== year);
+  // N-02: generations follow the same rules as model years.
+  if (genAttr === "CONFLICT") return null;
+  const hitGens = generationsIn(text);
+  if (generation ? !hitGens.has(generation) : hitGens.size > 0) return null;
+  const otherGenInHit = !!generation && [...hitGens].some((g) => g !== generation);
+  const otherYearInHit = (!!year && [...hitYears].some((y) => y !== year)) || otherGenInHit;
   const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product) || otherYearInHit;
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
   const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+/));
@@ -163,7 +171,9 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     if (OTHER_GENERATION.test(clause)) continue;
     const clauseYears = modelYearsIn(clause, model);
     if ([...clauseYears].some((y) => y !== year)) continue;
-    const clauseNamesThis = namesThis(clause) && (!otherYearInHit || clauseYears.has(year!));
+    const clauseGens = generationsIn(clause);
+    if ([...clauseGens].some((g) => g !== generation)) continue;
+    const clauseNamesThis = namesThis(clause) && (!otherYearInHit || (!!year && clauseYears.has(year)) || (!!generation && clauseGens.has(generation)));
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product)) continue;
     if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
     const said = parseAttributes(clause);

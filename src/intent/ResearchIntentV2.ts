@@ -195,6 +195,14 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   const attrText = target && targetSpan ? text.slice(targetSpan[0]) : text;
   const attributes: VariantAttributes = { ...parseAttributes(attrText.split(/\s+(?:under|below|budget|less than)\b/i)[0]!) };
   if (input.exactProduct?.variant) attributes.color = input.exactProduct.variant;
+  // N-04: a model year or generation written right before the brand ("a 2023 Pagewell Lumen 7", "2nd gen Arden Buds").
+  if (target && targetSpan) {
+    const lead = text.slice(Math.max(0, targetSpan[0] - 24), targetSpan[0]);
+    const y = /(?<![\d$€£₩.,])(20[0-3]\d)(?:\s*(?:model|edition|년형))?\s+$/i.exec(lead);
+    if (!attributes.year && y && Number(y[1]) >= 2005) attributes.year = y[1]!;
+    const g = /(?:\b(\d{1,2})(?:st|nd|rd|th)[- ]?gen(?:eration)?|\b(first|second|third|fourth|fifth|sixth)[- ]gen(?:eration)?|(\d{1,2})\s*세대)\s+$/i.exec(lead);
+    if (!attributes.generation && g) attributes.generation = g[1] ? String(Number(g[1])) : g[3] ? String(Number(g[3])) : ({ first: "1", second: "2", third: "3", fourth: "4", fifth: "5", sixth: "6" } as Record<string, string>)[g[2]!.toLowerCase()]!;
+  }
   // A capacity of the TARGET product the accessory fits ("carafe for the Brewmaster 12-cup") is an attribute of the accessory.
   const excludeBundles = /\bstandalone\b|\bno bundles?\b|\bwithout (?:a )?bundle\b|\bnot (?:a )?bundle\b|번들 제외|단품/i.test(text);
 
