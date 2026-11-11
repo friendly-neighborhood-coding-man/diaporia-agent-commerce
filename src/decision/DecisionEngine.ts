@@ -106,6 +106,7 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
   const holdReasons: string[] = [];
   let state: DecisionState;
   if (intent.budgetConflict) { state = "HOLD"; holdReasons.push(`Budget currency conflict (${intent.budgetConflict}): confirm the budget in ${intent.currency} before research can rank by budget.`); }
+  else if (intent.budgetUnresolved) { state = "HOLD"; holdReasons.push(`Budget unresolved (${intent.budgetUnresolved}): confirm the amount and currency before research can rank by budget.`); }
   else if (o.exactFailure) { state = "HOLD"; holdReasons.push(o.exactFailure); }
   else if (best && best.r.eligible && best.r.blockers.length === 0) state = "RECOMMEND";
   else if (best && best.r.eligible) state = "INVESTIGATE";

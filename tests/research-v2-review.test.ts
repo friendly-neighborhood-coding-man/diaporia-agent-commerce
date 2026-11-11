@@ -87,12 +87,16 @@ describe("R-04 budget parser: quantities are not money", () => {
     ["waterproof running shoes within 2 weeks shipping under $120", 12000],
     ["headphones under $300.", 30000],
     ["headphones up to $200", 20000],
-    ["monitor under 400", 40000],
+    ["monitor under 400 USD", 40000], // V21-01: a bare "under 400" with no currency is unresolved, see the next test
     ["laptop under $1,300 in black", 130000],
   ])("%s → %i", (request, minor) => { expect(parseResearchIntent({ request }).budgetMinor).toBe(minor); });
   it("keeps the battery requirement that the old parser consumed as a budget", () => {
     expect(parseResearchIntent({ request: "wireless headphones with battery up to 30 hours, under $300" }).mustHave).toContain("battery_30h");
     expect(parseResearchIntent({ request: "headphones with up to 40 hours, max 2 days shipping" }).budgetMinor).toBeNull();
+  });
+  it("V21-01: a bare amount with no currency is not assumed to be USD; it is unresolved", () => {
+    expect(parseResearchIntent({ request: "monitor under 400" })).toMatchObject({ budgetMinor: null, budgetUnresolved: expect.stringContaining("no currency") });
+    expect(parseResearchIntent({ request: "monitor under 400", currency: "USD" })).toMatchObject({ budgetMinor: 40000, budgetUnresolved: null });
   });
 });
 

@@ -301,9 +301,10 @@ export class CommerceGateway {
     if (plan.trace.stops.some((x) => /limit/.test(x))) unknowns.push(`Research stopped at a limit (${plan.trace.stops.filter((x) => /limit/.test(x)).join("; ")}); unverified requirements stay unverified (verification was not skipped).`);
     unknowns.push(...plan.decision.holdReasons.filter((h) => !unknowns.includes(h)));
     if (iv.budgetConflict) unknowns.push(`Budget not applied: ${iv.budgetConflict}. Confirm the budget in ${intent.currency}.`);
+    else if (iv.budgetUnresolved) unknowns.push(`Budget not applied: ${iv.budgetUnresolved}. Confirm the amount and currency.`);
     else if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
     // V2.1: the decision is bound to the session. Later steps read the gate, never the session state alone.
-    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict);
+    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict ?? iv.budgetUnresolved ?? null);
     const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision, purchaseGate };
     const holdNeeded = (intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0) || plan.decision.state === "HOLD";
     ps = this.sessions.updatePurchaseSession(ps, holdNeeded ? "HOLD" : "RESEARCHED", { research: researchOut, lockedIdentity: locked?.identity ?? null, productId: locked?.productId ?? null });
