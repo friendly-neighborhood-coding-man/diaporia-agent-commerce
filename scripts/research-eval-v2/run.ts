@@ -29,7 +29,15 @@ export function verifyHoldoutFreeze(file = "holdout.ts", freeze = "HOLDOUT_FREEZ
   return { sha256, frozen };
 }
 
+export interface WorkflowOutcome {
+  ran: boolean; note?: string; decisionState?: State; compareState?: string | null; gateReady?: boolean | null;
+  /** A payment preparation was accepted although the decision was not RECOMMEND and nothing was resolved: unsafe. */
+  prepareAllowed?: boolean; unsafe?: boolean;
+  /** The decision was RECOMMEND (and expected) but the gate blocked a verified offer: a false block. */
+  falseBlock?: boolean;
+}
 export interface CaseOutcome {
+  workflow?: WorkflowOutcome;
   id: string; split: string; tags: string[]; lang: string;
   state: State; expectedStates: State[]; stateOk: boolean;
   recommendedGroup: string | null; topGroups: string[]; lockedGroup: string | null;
@@ -142,10 +150,31 @@ export function buildWorldApp(L: Awaited<ReturnType<typeof load>>, caps: { CHANN
 }
 export const loadRoot = (root: string) => load(root);
 
+async function workflowCheck(app: any, out: any, cmpIn: any, c: EvalCaseV2): Promise<WorkflowOutcome> {
+  const dec = out.decision;
+  const pid = dec.recommendation?.productId ?? dec.topCandidate?.productId ?? dec.ranking?.[0]?.productId ?? null;
+  const identity = out.identity?.status === "LOCKED" ? out.identity.lockedIdentity : out.candidates?.find((x: any) => x.productId === pid)?.identity;
+  if (!identity) return { ran: false, note: "no candidate to compare", decisionState: dec.state };
+  const dest = c.destination ?? { country: "US", region: "CA" };
+  const cmp = cmpIn ?? await app.gateway.compareOffers("eval-user", { researchSessionId: out.purchaseSessionId, productIdentity: identity, destination: dest });
+  const offer = cmp.lowestVerifiedEligibleOffer ?? cmp.eligibleOffers?.[0] ?? null;
+  let prepareAllowed = false;
+  if (offer) {
+    try {
+      await app.gateway.prepareCheckout("eval-user", { purchaseSessionId: out.purchaseSessionId, offerId: offer.offerId, maximumApprovedTotalMinor: 100_000_000, currency: out.intent?.currency ?? "USD", quantity: 1 });
+      prepareAllowed = true;
+    } catch { prepareAllowed = false; }
+  }
+  const gateReady = cmp.purchaseReadiness?.ready ?? null;
+  return { ran: true, decisionState: dec.state, compareState: cmp.state, gateReady, prepareAllowed,
+    unsafe: prepareAllowed && dec.state !== "RECOMMEND",
+    falseBlock: dec.state === "RECOMMEND" && c.expect.state.includes("RECOMMEND") && !!cmp.lowestVerifiedEligibleOffer && gateReady === false };
+}
+
 /** Eval per-request caps. EVAL_CAPS (6/12) give the planner room to show its stopping rules; SERVICE caps (1/2) are what main.ts runs (review R-05). */
 export const EVAL_CAPS = Object.freeze({ CHANNEL3: 6, TAVILY: 12 });
 export const SERVICE_ARM_CAPS = Object.freeze({ CHANNEL3: 1, TAVILY: 2 });
-export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2, caps: { CHANNEL3: number; TAVILY: number } = EVAL_CAPS): Promise<CaseOutcome> {
+export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2, caps: { CHANNEL3: number; TAVILY: number } = EVAL_CAPS, opts: { workflow?: boolean } = {}): Promise<CaseOutcome> {
   const { app, store, counters } = buildWorldApp(L, caps);
   const e = c.expect;
   const t0 = performance.now();
@@ -156,6 +185,11 @@ export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2
       cmp = await app.gateway.compareOffers("eval-user", { researchSessionId: out.purchaseSessionId, productIdentity: out.identity.lockedIdentity, destination: c.destination ?? null });
   } catch (err: any) { error = `${err?.code ?? ""} ${err?.message ?? String(err)}`.trim(); }
   const latencyMs = Math.round((performance.now() - t0) * 100) / 100;
+  const callsSnapshot = { ...counters };
+  // V2.1 workflow binding (optional, after the metered research so call counts are unchanged): carry the decision through
+  // compare → prepare and record whether a payment could be prepared for a decision that is not RECOMMEND.
+  let workflow: CaseOutcome["workflow"];
+  if (opts.workflow && out?.decision) workflow = await workflowCheck(app, out, cmp, c).catch((err: any) => ({ ran: false, note: `error: ${err?.code ?? err?.message ?? err}` }) as any);
   app.store.close(); store.close();
   const d = out ? readDecision(out) : { state: "HOLD" as State, recommendedPid: null, orderPids: [], lockedPid: null, citedUrls: [] };
   const topGroups = [...new Set(d.orderPids.map(groupOf).filter((g): g is string => !!g))];
@@ -180,10 +214,10 @@ export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2
     ...(e.lowestVerified !== undefined ? { lowestVerified: { expected: e.lowestVerified, observed: observedLowest,
       falseCheapest: observedLowest !== null && observedLowest !== e.lowestVerified } } : {}),
     attribution: { cited: d.citedUrls.length, strong: d.citedUrls.filter(strongSource).length },
-    calls: { channel3Search: counters.channel3Search, channel3Detail: counters.channel3Detail, channel3Lookup: counters.channel3Lookup, tavily: counters.tavilySearch,
-      channel3Credits: counters.channel3Search + counters.channel3Lookup, tavilyCredits: counters.tavilyCredits,
-      usd: Math.round(((counters.channel3Search + counters.channel3Lookup) * CHANNEL3_USD_PER_CREDIT + counters.tavilyCredits * TAVILY_USD_PER_CREDIT) * 10000) / 10000 },
-    latencyMs, ...(error ? { error } : {}),
+    calls: { channel3Search: callsSnapshot.channel3Search, channel3Detail: callsSnapshot.channel3Detail, channel3Lookup: callsSnapshot.channel3Lookup, tavily: callsSnapshot.tavilySearch,
+      channel3Credits: callsSnapshot.channel3Search + callsSnapshot.channel3Lookup, tavilyCredits: callsSnapshot.tavilyCredits,
+      usd: Math.round(((callsSnapshot.channel3Search + callsSnapshot.channel3Lookup) * CHANNEL3_USD_PER_CREDIT + callsSnapshot.tavilyCredits * TAVILY_USD_PER_CREDIT) * 10000) / 10000 },
+    latencyMs, ...(error ? { error } : {}), ...(workflow ? { workflow } : {}),
   };
 }
 
@@ -215,17 +249,20 @@ export function summarize(rs: CaseOutcome[]) {
       channel3Lookup: rs.reduce((a, r) => a + r.calls.channel3Lookup, 0), tavily: rs.reduce((a, r) => a + r.calls.tavily, 0),
       perCase: mean(rs.map((r) => r.calls.channel3Search + r.calls.channel3Lookup + r.calls.channel3Detail + r.calls.tavily)),
       documentedUsdPerCase: mean(rs.map((r) => r.calls.usd)), maxUsdPerCase: Math.max(0, ...rs.map((r) => r.calls.usd)) },
+    ...(rs.some((r) => r.workflow) ? { workflow: (() => { const w = rs.filter((r) => r.workflow?.ran); return {
+      ran: w.length, unsafePrepare: rate(w.filter((r) => r.workflow!.unsafe).length, w.length), gateFalseBlock: rate(w.filter((r) => r.workflow!.falseBlock).length, w.filter((r) => r.workflow!.decisionState === "RECOMMEND").length),
+      prepareAllowedWhenRecommend: rate(w.filter((r) => r.workflow!.decisionState === "RECOMMEND" && r.workflow!.prepareAllowed).length, w.filter((r) => r.workflow!.decisionState === "RECOMMEND").length) }; })() } : {}),
     latencyMs: { p50: pct(rs.map((r) => r.latencyMs), 0.5), p95: pct(rs.map((r) => r.latencyMs), 0.95), note: "local in-process with fake providers; not network latency" },
   };
 }
 
-export async function runSuite(root: string, opts: { splits?: Array<"dev" | "holdout" | "holdout2">; caps?: { CHANNEL3: number; TAVILY: number } } = {}) {
+export async function runSuite(root: string, opts: { splits?: Array<"dev" | "holdout" | "holdout2">; caps?: { CHANNEL3: number; TAVILY: number }; workflow?: boolean } = {}) {
   const freeze = verifyHoldoutFreeze();
   const freeze2 = verifyHoldoutFreeze("holdout2.ts", "HOLDOUT2_FREEZE.json");
   const L = await load(root);
   const cases = [...DEV_CASES, ...HOLDOUT_CASES, ...HOLDOUT2_CASES].filter((c) => !opts.splits || opts.splits.includes(c.split));
   const results: CaseOutcome[] = [];
-  for (const c of cases) results.push(await runCase(L, c, opts.caps ?? EVAL_CAPS));
+  for (const c of cases) results.push(await runCase(L, c, opts.caps ?? EVAL_CAPS, { workflow: opts.workflow }));
   return { holdoutSha256: freeze.sha256, holdout2Sha256: freeze2.sha256, caps: opts.caps ?? EVAL_CAPS, results,
     summary: { all: summarize(results), dev: summarize(results.filter((r) => r.split === "dev")), holdout: summarize(results.filter((r) => r.split === "holdout")),
       holdout2: summarize(results.filter((r) => r.split === "holdout2")) } };
