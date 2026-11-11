@@ -119,3 +119,28 @@ describe("V2.3 structural guard (words nothing interpreted)", () => {
     await client.close();
   });
 });
+
+describe("V2.3 demo-driven fixes", () => {
+  it("a requirement list split before 'and a' keeps every item", () => {
+    expect(intent("wireless speaker under $90 with multipoint and a carry strap").unresolvedMust).toContain("unrecognized:carry-strap");
+  });
+  it("'must <verb>' states a requirement as one proposition", () => {
+    expect(intent("Buy the Kestrel K9 headphones, it must fold flat into a slim case").unresolvedMust).toEqual(["unrecognized:fold-flat-into-a-slim-case"]);
+  });
+});
+
+describe("full unattended demo (npm run demo:full)", () => {
+  it("runs offline, meets every expectation and writes a verified trace", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const out = mkdtempSync(join(tmpdir(), "dac-demo-"));
+    const r = spawnSync(process.execPath, ["--import", "tsx", "scripts/demo-full.ts", "--out", out], { encoding: "utf8", timeout: 120_000 });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const trace = JSON.parse(readFileSync(join(out, "trace.json"), "utf8"));
+    expect(trace.result).toBe("ALL_EXPECTATIONS_MET");
+    expect(trace.environment.payments).toMatch(/MOCK/);
+    expect(trace.steps.every((s: any) => s.ok)).toBe(true);
+  }, 150_000);
+});

@@ -5,6 +5,8 @@ export type UntrustedFlag = "INSTRUCTION_LIKE" | "PAYMENT_INSTRUCTION" | "AUTHOR
 const RULES: Array<[UntrustedFlag, RegExp]> = [
   ["INSTRUCTION_LIKE", /\b(ignore|disregard|override)\b.{0,30}\b(previous|prior|all|above|system)\b/i],
   ["INSTRUCTION_LIKE", /\b(ai|llm|assistant|agent)s?\b.{0,20}\b(must|should|call|execute|run)\b/i],
+  ["INSTRUCTION_LIKE", /\b(ignore|disregard|override|forget)\b.{0,30}\b(instructions?|rules|guidelines|prompt)\b/i],
+  ["PAYMENT_INSTRUCTION", /\b(send|wire|transfer|make|route)\s+(?:the\s+|your\s+|all\s+)?(payments?|money|funds)\s+(?:directly\s+)?to\b/i],
   ["PAYMENT_INSTRUCTION", /\b(approve|authori[sz]e|charge|capture|pay|transfer|prepare_checkout|checkout)\b.{0,60}(\$\s?\d|\d{3,}|minor)/i],
   ["AUTHORIZATION_CLAIM", /\b(pre-?approved|already approved|user (has )?(approved|authori[sz]ed|consented))\b/i],
   ["ROLE_MARKUP", /(<\/?(system|tool|assistant)>|^\s*(system|assistant)\s*:|system notice)/im],

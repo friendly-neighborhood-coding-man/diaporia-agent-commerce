@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "demo:e2e": "tsx scripts/demo-e2e.ts",
+    "demo:full": "tsx scripts/demo-full.ts",
     "mandate:create": "tsx scripts/create-mandate.ts",
     "scan:secrets": "node scripts/secret-scan.mjs",
     "preflight:sandbox": "tsx scripts/sandbox-preflight.ts",

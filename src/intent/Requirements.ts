@@ -49,6 +49,8 @@ const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|pref
 /** English triggers whose following words state a requirement. Group 1 = the requirement phrase. */
 const EN_MUST = [
   /\b(?:must|has to|have to|needs? to|got to|should)\s+(?:have|has|support|include|come with|offer|feature|provide|be|use|work with|do)\s+(.+)/i,
+  // V2.3: any other verb after must/has to/needs to states a requirement ("it must fold flat into a slim case").
+  /\b(?:must|has to|have to|needs to|need to|got to)\s+(?!(?:have|has|support|include|come|offer|feature|provide|be|use|work|do|not|never|cost|ship|arrive)\b)([a-z][a-z-]*\s+.+)/i,
   /\b(?:i\s+)?(?:need|require)s?\s+(?:it\s+to\s+(?:have|support|be)\s+)?(?!to\b)(.+)/i,
   /\b(?:only if it|as long as it)\s+(?:has|supports|includes|is|comes with)\s+(.+)/i,
   /\b(?:with|featuring|that has|that have|which has|that supports?|which supports?|that comes with|that includes)\s+(.+)/i,
@@ -150,6 +152,7 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     if (same.strength === "NICE" && r.strength === "MUST") Object.assign(same, r); // MUST wins over NICE for the same item
   };
   let offset = 0;
+  let prevTriggered = false;
   for (const clause of text.split(/(?<=[,;.!?])\s*|\s+(?=but\b)|\s+and\s+(?=(?:a|an|the|it|ideally|preferably|must|should|with|without|no)\b)|\s+(?=(?:그리고|하지만)\s)/i)) {
     if (!clause.trim()) continue;
     const at = Math.max(0, text.indexOf(clause, offset)); offset = at + clause.length;
@@ -195,19 +198,21 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       const relStart = pIdx >= 0 ? pIdx : rawStart;
       const abs = at + relStart;
       if (inTarget(abs)) return;
-      // Covered by a recognized capability inside the phrase → already handled above.
-      if (recognizedSpans.some(([s, e]) => s < relStart + phrase.length && e > relStart)) return;
-      if (requestCapabilities(phrase).length) return;
-      if (onlyRestates(phrase, tw)) return;
-      // V2.3: "Wi-Fi 7 and 10 Gb Ethernet" states two requirements; each is verified on its own (a page stating one of
-      // them must not verify a joined phrase, and a joined phrase is rarely written verbatim by any source).
+      // V2.3: "Wi-Fi 7 and 10 Gb Ethernet", "multipoint and a lanyard loop" state several requirements; each is handled
+      // on its own (a recognized capability in one part never swallows an unfamiliar requirement in another, and a page
+      // stating one part must not verify a joined phrase).
       const parts: Array<{ text: string; at: number }> = [];
       for (const m of phrase.matchAll(/[^,]+?(?=\s+(?:and|plus|&)\s+|,\s*|$)/g)) {
-        const tx = m[0].replace(/^\s*(?:and|plus|&)\s+/i, "").trim();
+        const tx = clean(m[0].replace(/^\s*(?:and|plus|&)\s+/i, "").trim());
         if (tx) parts.push({ text: tx, at: phrase.indexOf(tx, m.index!) });
       }
       const pieces = parts.length > 1 && parts.every((x) => x.text.split(/\s+/).length <= 5) ? parts : [{ text: phrase, at: 0 }];
       for (const piece of pieces) {
+        const rel = relStart + piece.at;
+        // Covered by a recognized capability inside the piece → already handled above.
+        if (recognizedSpans.some(([s, e]) => s < rel + piece.text.length && e > rel)) continue;
+        if (requestCapabilities(piece.text).length) continue;
+        if (onlyRestates(piece.text, tw)) continue;
         const a = abs + piece.at;
         const key = `${polarity === "EXCLUDED" ? "not" : "unrecognized"}:${slugOf(piece.text)}`;
         const decorative = polarity === "REQUIRED" && isDecorative(piece.text);
@@ -234,6 +239,14 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     }
     for (const re of EN_NOT) tryPhrase(re.exec(clause), "EXCLUDED");
     for (const re of EN_MUST) tryPhrase(re.exec(clause), "REQUIRED");
+    // V2.3: "with multipoint and a lanyard loop" is split before "and a"; the second part continues the requirement
+    // list of the clause before it, so it is a requirement too (never silently dropped).
+    const triggered = EN_MUST.some((re) => re.test(clause));
+    if (!triggered && prevTriggered && /^\s*(?:a|an|the)\s+[a-z]/i.test(clause)) {
+      const fake = Object.assign([clause, clause.replace(/[,;.!?]\s*$/, "")], { index: 0, input: clause }) as unknown as RegExpExecArray;
+      tryPhrase(fake, "REQUIRED");
+    }
+    prevTriggered = triggered || (prevTriggered && /^\s*(?:a|an|the)\s/i.test(clause));
     for (const re of KO_NOT) tryPhrase(re.exec(clause + " "), "EXCLUDED");
     for (const re of KO_MUST) tryPhrase(re.exec(clause + " "), "REQUIRED");
     // 3. Modifiers of the product noun that nothing above interpreted ("IH 압력 밥솥": 압력, "pressure rice cooker":
