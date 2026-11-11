@@ -33,6 +33,7 @@ import { runResearchV2, type PlannerLimits } from "../research/ResearchPlannerV2
 import type { SearchPage, ProductSearchQuery } from "../research/CommerceResearchAdapter.js";
 import type { RankingWeights } from "../decision/weights.js";
 import { gateFromDecision, gateReadiness, resolveGate, type PurchaseGate } from "./PurchaseGate.js";
+import { priceProvenance } from "./QuotePromotion.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -443,6 +444,10 @@ export class CommerceGateway {
       lowestPayPalCheckoutableOffer: comparison.lowestPayPalCheckoutable ? publicOffer(comparison.lowestPayPalCheckoutable, this.research.isMock) : null,
       holdReasons, disclosure: comparison.disclosure, dataSource: this.dataSource(), paymentEffect: "NONE" as const,
       purchaseReadiness: { ready: readiness.ready, open: readiness.open, budgetMinor: readiness.effectiveBudgetMinor, budgetSource: readiness.budgetSource },
+      // V2.1 Phase 3: which number is a search-time listing price and which is a merchant-verified total.
+      priceProvenance: ps.research?.decision ? priceProvenance({ productId, currency: ps.intent.currency, objective: (ps.intent as { objective?: string }).objective ?? null,
+        ranking: (ps.research.decision as { ranking?: Array<{ productId: string; eligible: boolean; price: { lowestListingMinor: number | null; merchantDomain: string | null } }> }).ranking ?? null,
+        lowest: comparison.lowestVerifiedEligible }) : null,
     };
   }
 
