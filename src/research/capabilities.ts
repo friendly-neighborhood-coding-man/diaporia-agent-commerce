@@ -76,9 +76,12 @@ export function propositionWords(id: string): string[] {
  * manufacturer-statable property ("lanyard loop", "HDMI 2.1", "warm light"). Manufacturer text alone never verifies it;
  * independent evidence (two expert groups) is required.
  */
-const PERFORMANCE_WORDS = /^(?:quiet(?:er|est)?|silent|comfortable|comfy|durable|sturdy|reliable|fast(?:er)?|quick|powerful|strong|accurate|precise|loud(?:er)?|clear(?:er)?|crisp|easy|simple|intuitive|good|great|excellent|best|better|long[- ]?lasting|lasting|efficient|effective|stable|smooth|responsive|bright(?:er)?|sharp|rich|warm(?:-sounding)?|deep|punchy|light-?weight|portable|safe|healthy|kid[- ]?friendly|beginner[- ]?friendly|ergonomic|premium|high[- ]?quality|well[- ]?made|performs?|performance|조용|조용한|편안|편안한|편한|튼튼|튼튼한|내구성|빠른|강력|강력한|정확|정확한|좋은|가벼운|부드러운|선명한)$/i;
+const PERFORMANCE_WORDS = /^(?:quiet(?:er|est)?|silent|comfortable|comfy|durable|sturdy|reliable|fast(?:er)?|quick|powerful|strong|accurate|precise|loud(?:er)?|clear(?:er)?|crisp|easy|simple|intuitive|good|great|excellent|best|better|long[- ]?lasting|lasting|efficient|effective|stable|smooth|responsive|bright(?:er)?|sharp|rich|warm-sounding|deep|punchy|light-?weight|portable|safe|healthy|kid[- ]?friendly|beginner[- ]?friendly|ergonomic|premium|high[- ]?quality|well[- ]?made|performs?|performance|조용|조용한|편안|편안한|편한|튼튼|튼튼한|내구성|빠른|강력|강력한|정확|정확한|좋은|가벼운|부드러운|선명한)$/i;
 export function isPerformanceClaim(id: string): boolean {
-  return id.startsWith(PROPOSITION_PREFIX) && propositionWords(id).some((w) => PERFORMANCE_WORDS.test(w));
+  if (!id.startsWith(PROPOSITION_PREFIX)) return false;
+  const ws = propositionWords(id);
+  // "warm" alone is a sound judgement; "warm light" / "warm white" is a stated property (V2.3).
+  return ws.some((w) => PERFORMANCE_WORDS.test(w)) || (ws.length === 1 && /^warm$/i.test(ws[0]!));
 }
 /** The evidence capability behind a requirement key: `not:<cap>` asks for the absence of <cap> (a known capability or a proposition). */
 export function evidenceCapabilityOf(key: string): string {

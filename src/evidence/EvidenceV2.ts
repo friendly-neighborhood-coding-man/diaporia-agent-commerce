@@ -71,7 +71,7 @@ const NOT_ENTITY = new Set(("the a an it its it's this that these those they the
   "tv pc hz khz db mah mm am pm january february march april may june july august september october november december jan feb mar apr jun jul aug sep sept oct nov dec " +
   "monday tuesday wednesday thursday friday saturday sunday english korean us uk eu " +
   "uhd hdr hdr10 oled qled lcd led ips va tn hdmi dp displayport pd rgb ssd hdd ram cpu gpu os ai bt nfc gps hepa bpa uv ac dc lb lbs oz ml kg cm ft fps " +
-  "4k 8k fhd qhd wqhd ppi nits srgb dci-p3 vesa thunderbolt kvm ethernet lan wpa ghz mhz w v power delivery gan quick charge fast charging pps french turkish italian american european japanese celsius fahrenheit").split(/\s+/));
+  "4k 8k fhd qhd wqhd ppi nits srgb dci-p3 vesa thunderbolt kvm ethernet lan wpa ghz mhz w v power delivery gan quick charge fast charging pps french turkish italian american european japanese celsius fahrenheit gb tb mb kb gbe gbps mbps kbps mesh").split(/\s+/));
 const isEntityToken = (tok: string, own: Set<string>) => {
   const t = tok.replace(/[’']s$/, "");
   const l = t.toLowerCase();
@@ -217,7 +217,7 @@ export function modelYearsIn(text: string, model: string | null): Set<string> {
   return out;
 }
 /** Phrases that point at another generation or year of the same model ("last year's model", "the predecessor"). */
-const OTHER_GENERATION = /\b(?:last year'?s|previous(?:[- ]gen(?:eration)?| model| version| year)|prior (?:model|generation|version)|older (?:model|version)|predecessor|outgoing model|earlier model|next[- ]gen(?:eration)?|successor|upcoming model)\b|작년\s*(?:모델|형)|전작|구형|이전\s*(?:세대|모델)|후속\s*(?:작|모델)|신형/i;
+const OTHER_GENERATION = /\b(?:last year'?s|previous(?:[- ]gen(?:eration)?| model| version| year)|prior (?:model|generation|version)|older (?:model|version)|predecessor|outgoing model|earlier model|next[- ]gen(?:eration)?|successor|upcoming model|(?:newer|older|later|earlier|recent|some|select|certain|other|premium|higher[- ]end|future)\s+(?:editions?|versions?|models?|generations?|variants?|trims?|revisions?))\b|작년\s*(?:모델|형)|전작|구형|이전\s*(?:세대|모델)|후속\s*(?:작|모델)|신형/i;
 
 /** The brand immediately before the model ("Northwind Aero"), separator- and case-tolerant. */
 function brandWithModel(text: string, product: CatalogProduct): boolean {

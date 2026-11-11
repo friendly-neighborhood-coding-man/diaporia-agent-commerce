@@ -73,6 +73,11 @@ describe("V2.3 identity and attribution", () => {
     expect(statementFrom({ title: "Brisk 65W GaN charger", snippet: "Brisk 65W GaN laptop charger: two ports, 65 W maximum output." }, p, "unrecognized:140w")).toBeNull();
     expect(statementFrom({ title: "Brisk 140W GaN charger", snippet: "Brisk 140W GaN laptop charger: four ports and 140 W USB-C Power Delivery." }, p, "unrecognized:140w")).toMatchObject({ value: true });
   });
+  it("a clause about other editions is not attributed to this listing", () => {
+    const title = "Quillon Nook 6 E-Reader, 8GB";
+    const p: any = { productId: "z", title, identity: { ...extractIdentity(title, "Quillon"), variant: null }, description: null, capabilities: [], offers: [] };
+    expect(statementFrom({ title: "Quillon Nook 6 family", snippet: "The Quillon Nook 6 is the 6-inch e-reader. Newer editions add a warm light." }, p, "unrecognized:warm-light")).toBeNull();
+  });
   it("'per dose' is not reported speech; units and cooking styles are not other products", () => {
     const title = "Marlow MG-7 Coffee Grinder";
     const p: any = { productId: "y", title, identity: { ...extractIdentity(title, "Marlow"), variant: null }, description: null, capabilities: [], offers: [] };

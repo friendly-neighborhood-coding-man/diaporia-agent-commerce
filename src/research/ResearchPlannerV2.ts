@@ -171,7 +171,8 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
     // Spending order (review R-09): free hard checks first; for the lowest-price objective, cheapest first (so a cheaper
     // eligible candidate is never left unchecked behind a pricier one); otherwise a catalog-text PRIOR (how many
     // must-haves the listing itself claims; used only to decide where to spend, never as evidence), then price.
-    const prior = (p: CatalogProduct) => intent.mustHave.filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length;
+    // V2.3: unfamiliar MUST propositions count toward the prior too ("Wi-Fi 7" in a router's title): ordering only.
+    const prior = (p: CatalogProduct) => [...intent.mustHave, ...propCaps.filter((x) => !x.startsWith("not:"))].filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length;
     const pre = pool.map((p) => ({ p, pe: preEligible(intent, { product: p, offers: offers.get(p.productId) ?? [] }, lock), prior: prior(p) }))
       .filter((x) => x.pe.eligible)
       .sort((a, b) => a.pe.blockersBeforeEvidence.length - b.pe.blockersBeforeEvidence.length
@@ -205,7 +206,7 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   const inputs: CandidateInput[] = pool.map((p) => {
     const v = verdicts.get(p.productId) ?? (d.router?.policy === "v2" ? fixtureVerdicts(p, caps) : Object.fromEntries(caps.map((c) => [c, v1Verdict(p, c, null)])));
     return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, mustCaps), nice: pick(v, intent.niceToHave),
-      listingClaims: intent.mustHave.filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length, notChecked: notChecked.get(p.productId) ?? (verdicts.has(p.productId) ? [] : caps.filter((c) => !v[c] || v[c]!.status === "UNVERIFIED")), limitReached };
+      listingClaims: [...intent.mustHave, ...propCaps.filter((x) => !x.startsWith("not:"))].filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length, notChecked: notChecked.get(p.productId) ?? (verdicts.has(p.productId) ? [] : caps.filter((c) => !v[c] || v[c]!.status === "UNVERIFIED")), limitReached };
   });
   const exactFailure = exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
   const decision = decide(intent, inputs, { exactLock: lock, exactFailure, weights: d.weights ?? null, now: d.now() });

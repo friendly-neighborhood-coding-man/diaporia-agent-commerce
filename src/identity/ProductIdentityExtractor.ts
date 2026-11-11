@@ -270,7 +270,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
   // ("HR-6 IH rice cooker" is the HR-6; "P20 GaN charger" is the P20). Family extensions (Pro, Max, Gen 2) still are.
   if (named && num) {
     const ws = named.split(" ");
-    if (normalizeKey(ws[0]!) === normalizeKey(num)) { let k = ws.length; while (k > 1 && TECH_SUFFIX.test(ws[k - 1]!)) k--; named = ws.slice(0, k).join(" "); }
+    if (normalizeKey(ws[0]!) === normalizeKey(num)) { const k = ws.findIndex((w, i) => i > 0 && TECH_SUFFIX.test(w)); if (k > 0) named = ws.slice(0, k).join(" "); }
   }
   let model: string | null = null; let basis: ExtractedIdentity["modelBasis"] = "NONE";
   if (num) {
