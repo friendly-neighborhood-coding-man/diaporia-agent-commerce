@@ -147,13 +147,23 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     if (!product.identity.brand || !text.toLowerCase().includes(product.identity.brand.toLowerCase()) || words.filter((w) => text.toLowerCase().includes(w)).length < 3) return null;
   }
   const comparisonPage = COMPARISON_TITLE.test(hit.title);
-  const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product);
   const facts = factsOf(product);
+  // Model year (V21-03). A dated product counts only a page that names its year; a page naming another year counts only
+  // a clause that names this year and no other. An undated product never counts a year-qualified page (fail closed).
+  const year = facts.attributes.year && facts.attributes.year !== "CONFLICT" ? facts.attributes.year : null;
+  if (facts.attributes.year === "CONFLICT") return null;
+  const hitYears = modelYearsIn(text, model);
+  if (year ? !hitYears.has(year) : hitYears.size > 0) return null;
+  const otherYearInHit = !!year && [...hitYears].some((y) => y !== year);
+  const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product) || otherYearInHit;
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
   const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+/));
   for (const clause of clauses) {
     if (/\|/.test(clause) || /\?\s*$/.test(clause)) continue; // table rows and questions are not statements
-    const clauseNamesThis = namesThis(clause);
+    if (OTHER_GENERATION.test(clause)) continue;
+    const clauseYears = modelYearsIn(clause, model);
+    if ([...clauseYears].some((y) => y !== year)) continue;
+    const clauseNamesThis = namesThis(clause) && (!otherYearInHit || clauseYears.has(year!));
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product)) continue;
     if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
     const said = parseAttributes(clause);
@@ -164,6 +174,27 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   }
   return null;
 }
+
+/**
+ * Model years a text attributes to a model (V21-03): "(2025)", "2025 model/edition", "model year 2025", "2025년형",
+ * "'25 model", or a year written right next to the model name ("Quill 13 2024", "the 2024 Quill 13"). A calendar date
+ * ("updated March 2025") is not a model year.
+ */
+export function modelYearsIn(text: string, model: string | null): Set<string> {
+  const t = text.normalize("NFKC");
+  const out = new Set<string>();
+  const add = (y: string) => { const v = y.length === 2 ? `20${y}` : y; if (Number(v) >= 2005 && Number(v) <= 2035) out.add(v); };
+  for (const re of [/\((20[0-3]\d)\)/g, /\bmodel year\s*(20[0-3]\d)\b/gi, /\b(20[0-3]\d)\s*(?:model|edition|version|release)\b/gi, /(20[0-3]\d)\s*년\s*형/g, /'(\d{2})\s*(?:model|edition)\b/gi])
+    for (const m of t.matchAll(re)) add(m[1]!);
+  if (model) {
+    const esc = model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*");
+    for (const m of t.matchAll(new RegExp(`${esc}[\\s,-]*(?:'(\\d{2})|(20[0-3]\\d))(?![\\d.,%]|\\s*(?:\\$|usd|원|mah|w\\b|hours?))`, "gi"))) add((m[1] ?? m[2])!);
+    for (const m of t.matchAll(new RegExp(`(?<![\\w$.,])(20[0-3]\\d)\\s+(?:[A-Z][\\w&-]*\\s+)?${esc}(?=$|[^A-Za-z0-9])`, "gi"))) add(m[1]!);
+  }
+  return out;
+}
+/** Phrases that point at another generation or year of the same model ("last year's model", "the predecessor"). */
+const OTHER_GENERATION = /\b(?:last year'?s|previous(?:[- ]gen(?:eration)?| model| version| year)|prior (?:model|generation|version)|older (?:model|version)|predecessor|outgoing model|earlier model|next[- ]gen(?:eration)?|successor|upcoming model)\b|작년\s*(?:모델|형)|전작|구형|이전\s*(?:세대|모델)|후속\s*(?:작|모델)|신형/i;
 
 /** The brand immediately before the model ("Northwind Aero"), separator- and case-tolerant. */
 function brandWithModel(text: string, product: CatalogProduct): boolean {
