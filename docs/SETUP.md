@@ -21,7 +21,7 @@ npm run demo:quote      # discovery → Shopify cart estimate (synthetic fixture
 ## 2. Local MCP server for Claude Code
 
 ```bash
-npm run dev             # http://127.0.0.1:8790/mcp; dev credentials are written to .data/dev-credentials.json (gitignored)
+npm run dev             # http://127.0.0.1:8790/mcp; the AI-client token is written to .data/dev-credentials.json (gitignored)
 ```
 
 Write `mcp.json` with the `clientToken` from `.data/dev-credentials.json`:
@@ -36,11 +36,35 @@ claude -p "Use the diaporia tools to research 'Buy Sony WH-CH720N Black, never e
 
 Interactive use also works with `claude mcp add --transport http diaporia http://127.0.0.1:8790/mcp --header "Authorization: Bearer <clientToken>"`.
 
-The owner (not the AI) creates spending limits:
+The owner (not the AI) creates spending limits, typing the owner key when asked:
 
 ```bash
 npm run mandate:create -- --brand Sony --model WH-CH720N --variant Black --sku WHCH720N/B --max 60.00
 ```
+
+### Owner confirmation (separate OS account + passkey)
+
+The AI host can read everything the server's OS user can read, including `.data/` and the server's environment. So
+owner credentials live in an **owner registry file administered by a different OS account**, and confirming a research
+hold also needs a **passkey with user verification** (fingerprint, face or PIN) on the owner's own device. The server
+holds owner-key hashes and passkey public keys only.
+
+1. Create a separate OS account for the owner (for example `diaporia-owner`), or use an administrator account. The
+   server and the AI host keep running as your normal account.
+2. As that account, create a registry outside the DIAPORIA folder, readable but not writable by the server, e.g.
+   `sudo mkdir -p /etc/diaporia && sudo npx tsx scripts/owner-enroll.ts --registry /etc/diaporia/owners.json --user demo-user --new-owner-key`.
+   The owner key is printed once; keep it yourself.
+3. Start the server with `DIAPORIA_OWNER_REGISTRY=/etc/diaporia/owners.json PUBLIC_BASE_URL=http://localhost:8790 npm run dev`
+   (passkeys need a host name, not an IP address).
+4. Open `http://localhost:8790/research-holds/passkey-setup` in your browser, create a passkey for `demo-user`, and
+   enroll the printed JSON as the owner account: `sudo npx tsx scripts/owner-enroll.ts --registry /etc/diaporia/owners.json --add-passkey '<JSON>'`.
+   Restart the server.
+
+The server checks at startup that the registry and every directory above it are outside its working tree and data
+directory, are not owned by its own OS user and are not writable by others. If any check fails, or
+`DIAPORIA_OWNER_REGISTRY` is unset, it logs `owner confirmation UNAVAILABLE: <reason>` and no research hold can be
+confirmed (fail closed). `DIAPORIA_OWNER_KEYS` still works for owner keys but puts them in the server's environment,
+where a same-user process can read them; research-hold confirmation still needs the passkey either way.
 
 ## 3. Real research providers (optional, paid by you)
 

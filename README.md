@@ -62,10 +62,12 @@ npm run demo:subscription  # managed subscription billing against a fake PayPal:
 Run the server:
 
 ```bash
-npm run dev         # http://127.0.0.1:8790/mcp, mock payments, dev credentials written to .data/dev-credentials.json
+npm run dev         # http://127.0.0.1:8790/mcp, mock payments, the AI-client token is written to .data/dev-credentials.json
 ```
 
-Create a spending mandate as the human owner (in a second terminal):
+`.data/dev-credentials.json` holds the AI client's token only. Owner credentials (owner key and passkey) are never written there: the human owner enrolls them in a protected owner registry from a separate OS account (docs/SETUP.md, "Owner confirmation"). Until then every owner page refuses, and research holds cannot be confirmed.
+
+Create a spending mandate as the human owner (in a second terminal, typing your owner key when asked):
 
 ```bash
 npm run mandate:create -- --brand Sony --model WH-CH720N --variant Black --sku WHCH720N/B --max 60.00

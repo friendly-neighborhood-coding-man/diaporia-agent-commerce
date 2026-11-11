@@ -5,6 +5,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { OWNER, TOKENS, CA, call, callError, mcpClient, startHarness, type Harness } from "./helpers.js";
+import { PASSKEYS, passkeyStep, type SimulatedPasskey } from "./helpers/humanAuthenticator.js";
 
 const LUMEN = { brand: "Lumen", model: "Q3", variant: "Black", condition: "new", sku: "LUM-Q3-B" };
 const REQ = "Buy Lumen Q3 Black wireless headphones, never exceed $150.";
@@ -26,8 +27,9 @@ const recompare = (client: any, ps: string) => call(client, "compare_purchase_of
 
 /** The simulated HUMAN owner: a separate browser-like client that holds the owner key; the MCP client never has it. */
 class OwnerPage {
-  cookie = ""; csrf = "";
-  constructor(readonly url: string) {}
+  cookie = ""; csrf = ""; step: ReturnType<typeof passkeyStep> = null;
+  /** R-A: the simulated human's passkey (private key held here, never by the MCP client). */
+  constructor(readonly url: string, readonly passkey: SimulatedPasskey | null = PASSKEYS.alice) {}
   async post(form: Record<string, string>, o: { origin?: string | null; cookie?: string | null } = {}) {
     const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
     if (o.origin !== null) headers.Origin = o.origin ?? new URL(this.url).origin;
@@ -39,10 +41,15 @@ class OwnerPage {
     const html = await r.text();
     const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1];
     if (csrf) this.csrf = csrf;
+    const step = passkeyStep(html);
+    if (step) this.step = step;
     return { status: r.status, html, setCookie: sc };
   }
   review(ownerKey: string) { return this.post({ action: "review", ownerKey }); }
-  confirm(extra: Record<string, string> = {}) { return this.post({ action: "confirm", csrf: this.csrf, acknowledge: "yes", ...extra }); }
+  confirm(extra: Record<string, string> = {}) {
+    const a = this.passkey && this.step ? this.passkey.assert(this.step.challenge, { origin: new URL(this.url).origin, rpId: this.step.rpId }) : {};
+    return this.post({ action: "confirm", csrf: this.csrf, acknowledge: "yes", ...a, ...extra });
+  }
 }
 
 describe("V21-04 reproduction: the agent's own text never clears a gate item", () => {

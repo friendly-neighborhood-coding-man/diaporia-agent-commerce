@@ -9,6 +9,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildWorldApp, loadRoot } from "../scripts/research-eval-v2/run.js";
 import { gateReadiness, resolveGate, requirementKey, type PurchaseGate } from "../src/engine/PurchaseGate.js";
+import { researchHoldBinding } from "../src/auth/OwnerConfirmation.js";
+import { inProcessHumanProof } from "./helpers/humanAuthenticator.js";
 
 const L = await loadRoot(new URL("..", import.meta.url).pathname);
 const CA = { country: "US", region: "CA" };
@@ -33,7 +35,9 @@ function ownerResolve(gw: any, args: any) {
   expect(p.status).toBe("PENDING_OWNER_CONFIRMATION");
   expect(gw.purchaseReadiness(gw.sessions.getPurchaseSession(args.purchaseSessionId, "alice"), null).open.length).toBeGreaterThan(0);
   const digest = gw.holdProposals.get(p.proposalId, "alice").digest;
-  const c = gw.confirmResearchHoldAsOwner("alice", p.proposalId, { shownDigest: digest, ownerSessionFingerprint: "0123456789abcdef", typedBudgetMinor: args.budgetMinor ?? null });
+  // R-A: the owner also verifies with their passkey; the proof is bound to this proposal, digest and review session.
+  const humanProof = inProcessHumanProof("alice", researchHoldBinding(p.proposalId, digest, "0123456789abcdef"));
+  const c = gw.confirmResearchHoldAsOwner("alice", p.proposalId, { shownDigest: digest, ownerSessionFingerprint: "0123456789abcdef", typedBudgetMinor: args.budgetMinor ?? null, humanProof });
   return { state: gw.sessions.getPurchaseSession(args.purchaseSessionId, "alice").state, ...c };
 }
 const events = (gw: any, out: any) => gw.audit.timeline([out.purchaseSessionId], "alice").map((e: any) => ({ type: e.type, data: e.data }));
@@ -207,7 +211,8 @@ describe("PurchaseGate unit rules", () => {
     expect(gateReadiness(gate, "q", 100, false).ready).toBe(false);
     expect(gateReadiness(null, null, 100, true)).toMatchObject({ ready: true, effectiveBudgetMinor: 100, budgetSource: "SESSION" });
   });
-  const owner = { actor: "OWNER_SESSION:0123456789abcdef", confirmation: "CONFIRMED_BY_OWNER" as const, proposalId: "rhp_x", proposalDigest: "d", agentText: "fine" };
+  const owner = { actor: "OWNER_SESSION:0123456789abcdef", confirmation: "CONFIRMED_BY_OWNER" as const, proposalId: "rhp_x", proposalDigest: "d", agentText: "fine",
+    humanVerification: "WEBAUTHN_USER_VERIFIED" as const, credentialFingerprint: "00112233aabbccdd" };
   it("a resolution is appended, never replaces, and CONFIRM_BUDGET needs an unresolved budget", () => {
     const r = resolveGate(gate, { kind: "DROP_REQUIREMENT", requirement: "must:anc", budgetMinor: null, currency: "USD", ...owner }, 0, "USD");
     expect(gate.resolutions).toHaveLength(0);
@@ -223,6 +228,12 @@ describe("PurchaseGate unit rules", () => {
     // A resolution injected without owner confirmation (e.g. an old V2.1 row) does not open the gate.
     const injected: PurchaseGate = { ...gate, resolutions: [{ ...agentMade, at: "2026-11-10T00:00:00Z" }] };
     expect(gateReadiness(injected, "p", null, false).ready).toBe(false);
+    // R-A: an owner-session resolution without a verified human assertion (e.g. an owner-key-only row written by
+    // 7d1fe4f) is refused and, if stored, ignored.
+    const { humanVerification: _h, credentialFingerprint: _c, ...ownerKeyOnly } = owner;
+    expect(() => resolveGate(gate, { kind: "DROP_REQUIREMENT", requirement: "must:anc", budgetMinor: null, currency: "USD", ...ownerKeyOnly }, 0, "USD")).toThrow(/owner-confirmed/);
+    const ownerKeyOnlyRow: PurchaseGate = { ...gate, resolutions: [{ kind: "DROP_REQUIREMENT", requirement: "must:anc", budgetMinor: null, currency: "USD", ...ownerKeyOnly, at: "2026-11-10T00:00:00Z" }] };
+    expect(gateReadiness(ownerKeyOnlyRow, "p", null, false).ready).toBe(false);
     const legacy: PurchaseGate = { ...gate, resolutions: [{ kind: "DROP_REQUIREMENT", requirement: "must:anc", budgetMinor: null, currency: "USD", at: "", actor: "MCP_TOKEN:abc", note: "user said ok" } as any] };
     expect(gateReadiness(legacy, "p", null, false).ready).toBe(false);
   });

@@ -35,6 +35,7 @@ import type { RankingWeights } from "../decision/weights.js";
 import { gateFromDecision, gateReadiness, requirementLedger, resolveGate, type PurchaseGate } from "./PurchaseGate.js";
 import { priceProvenance } from "./QuotePromotion.js";
 import { ResearchHoldProposals } from "./ResearchHoldProposals.js";
+import { isVerifiedHumanAssertion, researchHoldBinding } from "../auth/OwnerConfirmation.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -500,7 +501,7 @@ export class CommerceGateway {
   /** The open gate item a proposal would resolve; throws INVALID_INPUT for anything that is not open and resolvable. */
   private openItemFor(gate: PurchaseGate, ps: PurchaseSession, kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT", requirement: string | null, budgetMinor: number | null, currency: string) {
     // The same validation the owner confirmation applies, run now so that an impossible proposal is never shown.
-    try { resolveGate(gate, { kind, requirement, budgetMinor, currency, actor: "OWNER_SESSION:validate", confirmation: "CONFIRMED_BY_OWNER", proposalId: "validate", proposalDigest: "", agentText: "" }, this.now(), ps.intent.currency); }
+    try { resolveGate(gate, { kind, requirement, budgetMinor, currency, actor: "OWNER_SESSION:validate", confirmation: "CONFIRMED_BY_OWNER", proposalId: "validate", proposalDigest: "", agentText: "", humanVerification: "WEBAUTHN_USER_VERIFIED", credentialFingerprint: "validate" }, this.now(), ps.intent.currency); }
     catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }
     if (kind === "CONFIRM_BUDGET") return { code: "BUDGET_UNRESOLVED", detail: gate.budgetConflict!, productId: null, sessionBudgetMinor: ps.intent.budgetMinor };
     const entries = Object.entries(gate.products).filter(([, p]) => p.requirements.some((q) => q.key === requirement));
@@ -521,25 +522,38 @@ export class CommerceGateway {
   /**
    * Owner page only. Confirms a PENDING, unexpired proposal of this owner whose digest equals the one the owner was
    * shown, and appends an owner-confirmed resolution. Single use. Never reachable from an MCP tool.
+   *
+   * R-A: requires `humanProof`, a VerifiedHumanAssertion that only src/auth/OwnerConfirmation.ts can mint (a WebAuthn-
+   * style assertion with user verification by an authenticator enrolled in the protected owner registry), bound to
+   * exactly this proposal, its digest and the owner review session. The owner key alone never confirms.
    */
-  confirmResearchHoldAsOwner(userId: string, proposalId: string, o: { shownDigest: string; ownerSessionFingerprint: string; typedBudgetMinor: number | null }) {
+  confirmResearchHoldAsOwner(userId: string, proposalId: string, o: { shownDigest: string; ownerSessionFingerprint: string; typedBudgetMinor: number | null; humanProof?: unknown }) {
+    const proof = o.humanProof;
+    const pre = this.holdProposals.get(proposalId, userId);
+    if (pre && (!isVerifiedHumanAssertion(proof) || proof.userId !== userId || proof.binding !== researchHoldBinding(pre.proposalId, o.shownDigest, o.ownerSessionFingerprint))) {
+      // Recorded outside the transaction so that the refusal stays in the audit trail.
+      this.audit.append(pre.purchaseSessionId, userId, "RESEARCH_HOLD_CONFIRMATION_REFUSED", { proposalId: pre.proposalId, digest: pre.digest, reason: "NO_VERIFIED_HUMAN_ASSERTION" });
+      throw new CommerceError("FORBIDDEN", "Owner confirmation needs a verified human assertion (passkey with user verification) for this proposal.");
+    }
     return this.store.transaction(() => {
       const p = this.holdProposals.get(proposalId, userId);
       if (!p) throw new CommerceError("NOT_FOUND", "Proposal not found.");
       if (p.digest !== o.shownDigest) throw new CommerceError("INVALID_STATE", "The proposal is not the one that was reviewed.");
+      if (!isVerifiedHumanAssertion(proof)) throw new CommerceError("FORBIDDEN", "Owner confirmation needs a verified human assertion.");
       if (p.kind === "CONFIRM_BUDGET" && o.typedBudgetMinor !== p.budgetMinor) throw new CommerceError("INVALID_INPUT", "The typed budget does not match the proposed budget.");
       let ps = this.livePurchaseSession(p.purchaseSessionId, userId);
       const gate = (ps.research?.purchaseGate ?? null) as PurchaseGate | null;
       if (!gate || !["RESEARCHED", "OFFER_VERIFIED", "HOLD"].includes(ps.state)) throw new CommerceError("INVALID_STATE", "The purchase session can no longer be changed.");
       const actor = `OWNER_SESSION:${o.ownerSessionFingerprint}`;
       let next: PurchaseGate;
-      try { next = resolveGate(gate, { kind: p.kind, requirement: p.requirement, budgetMinor: p.budgetMinor, currency: p.currency, actor, confirmation: "CONFIRMED_BY_OWNER", proposalId: p.proposalId, proposalDigest: p.digest, agentText: p.agentText }, this.now(), ps.intent.currency); }
+      try { next = resolveGate(gate, { kind: p.kind, requirement: p.requirement, budgetMinor: p.budgetMinor, currency: p.currency, actor, confirmation: "CONFIRMED_BY_OWNER", proposalId: p.proposalId, proposalDigest: p.digest, agentText: p.agentText,
+        humanVerification: proof.method, credentialFingerprint: proof.credentialFingerprint }, this.now(), ps.intent.currency); }
       catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }
       if (!this.holdProposals.decide(p.proposalId, userId, "CONFIRMED", actor)) throw new CommerceError("INVALID_STATE", "The proposal was already decided or has expired.");
       ps = this.sessions.updatePurchaseSession(ps, "HOLD", { research: { ...ps.research, purchaseGate: next }, comparison: null });
       const res = next.resolutions[next.resolutions.length - 1]!;
       this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_HOLD_CONFIRMED_BY_OWNER", { proposalId: p.proposalId, digest: p.digest, kind: res.kind, requirement: res.requirement,
-        budgetMinor: res.budgetMinor, currency: res.currency, actor, originalItem: p.item, proposedBy: p.proposedBy });
+        budgetMinor: res.budgetMinor, currency: res.currency, actor, originalItem: p.item, proposedBy: p.proposedBy, humanVerification: res.humanVerification, credentialFingerprint: res.credentialFingerprint });
       return { resolution: res, readiness: this.purchaseReadiness(ps, ps.productId) };
     });
   }

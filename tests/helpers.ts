@@ -5,6 +5,8 @@ import { createApp, type App, type AppConfig } from "../src/http/server.js";
 import { ALL_CLIENT_SCOPES, DevAuth } from "../src/auth/devAuth.js";
 import { MockPayPalProvider } from "../src/payment/MockPayPalProvider.js";
 import type { ProductIdentity } from "../src/domain/types.js";
+import { PASSKEYS, passkeyStep, testBoundary, type SimulatedPasskey } from "./helpers/humanAuthenticator.js";
+export { PASSKEYS } from "./helpers/humanAuthenticator.js";
 
 export const TOKENS = {
   alice: "dct_alice_test_token_000000000000",
@@ -32,7 +34,8 @@ export async function startHarness(overrides: Partial<AppConfig> = {}): Promise<
   const port = (probe.address() as AddressInfo).port;
   await new Promise<void>((r) => probe.close(() => r()));
   const baseUrl = overrides.baseUrl ?? `http://127.0.0.1:${port}`;
-  const app = createApp({ host: "127.0.0.1", port, baseUrl, authMode: "dev", dbPath: ":memory:", auth, now, ...overrides });
+  // R-A: the simulated humans' passkeys (public keys only on the server side) form the test-only owner boundary.
+  const app = createApp({ host: "127.0.0.1", port, baseUrl, authMode: "dev", dbPath: ":memory:", auth, now, ownerConfirmation: testBoundary(baseUrl, now), ...overrides });
   await new Promise<void>((r) => app.server.listen(port, "127.0.0.1", r));
   return { app, url: `http://127.0.0.1:${port}`, clock, mock: app.mockPayPal!, close: () => new Promise((r) => app.server.close(() => r())) };
 }
@@ -93,7 +96,7 @@ export async function researchAndCompare(client: Client, request = "Buy Sony WH-
  * V21-04: plays the HUMAN owner on the research-hold confirmation page (owner key → review session cookie + CSRF →
  * explicit confirmation), like a browser would. The MCP client never holds the owner key; only this simulated human does.
  */
-export async function ownerConfirmsHold(ownerConfirmationUrl: string, ownerKey: string, form: Record<string, string> = {}) {
+export async function ownerConfirmsHold(ownerConfirmationUrl: string, ownerKey: string, form: Record<string, string> = {}, o: { passkey?: SimulatedPasskey | null } = {}) {
   const origin = new URL(ownerConfirmationUrl).origin;
   const post = (body: Record<string, string>, cookie = "") => fetch(ownerConfirmationUrl, { method: "POST", redirect: "manual",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: new URLSearchParams(body).toString() });
@@ -102,6 +105,10 @@ export async function ownerConfirmsHold(ownerConfirmationUrl: string, ownerKey: 
   if (review.status !== 200) return { status: review.status, reviewHtml, html: reviewHtml };
   const cookie = (review.headers.get("set-cookie") ?? "").split(";")[0]!;
   const csrf = /name="csrf" value="([^"]+)"/.exec(reviewHtml)?.[1] ?? "";
-  const r = await post({ action: "confirm", csrf, acknowledge: "yes", ...form }, cookie);
+  // R-A: the human verifies with their passkey (user verification) on the challenge the page shows.
+  const passkey = o.passkey === undefined ? (ownerKey === OWNER.bob ? PASSKEYS.bob : PASSKEYS.alice) : o.passkey;
+  const step = passkeyStep(reviewHtml);
+  const assertion = passkey && step ? passkey.assert(step.challenge, { origin, rpId: step.rpId }) : {};
+  const r = await post({ action: "confirm", csrf, acknowledge: "yes", ...assertion, ...form }, cookie);
   return { status: r.status, reviewHtml, html: await r.text() };
 }

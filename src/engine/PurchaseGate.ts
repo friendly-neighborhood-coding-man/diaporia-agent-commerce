@@ -24,7 +24,8 @@
  *
  * V21-04: a resolution exists only when the human owner confirmed an agent's proposal on the owner confirmation page
  * (`confirmation: "CONFIRMED_BY_OWNER"`, ResearchHoldProposals). gateReadiness ignores any other resolution (fail
- * closed), and resolveGate refuses one.
+ * closed), and resolveGate refuses one. R-A: an owner confirmation counts only with a verified human assertion
+ * (humanVerification), never from the owner key alone.
  */
 import type { Decision } from "../decision/DecisionEngine.js";
 import type { StatedRequirement } from "../intent/Requirements.js";
@@ -43,8 +44,17 @@ export interface GateResolution {
   proposalDigest: string;
   /** The AI agent's explanation from the proposal: agent-provided, never the owner's words. */
   agentText: string;
+  /**
+   * R-A: how the human was verified. Only a WebAuthn-style assertion with user verification, made by an authenticator
+   * enrolled in the protected owner registry, counts (src/auth/OwnerConfirmation.ts). A resolution recorded without it
+   * (for example by an earlier owner-key-only version) stays in the audit trail but is ignored by the gate.
+   */
+  humanVerification?: "WEBAUTHN_USER_VERIFIED";
+  /** Short fingerprint of the authenticator credential that made the assertion. */
+  credentialFingerprint?: string;
 }
-const ownerConfirmed = (r: GateResolution) => r.confirmation === "CONFIRMED_BY_OWNER" && typeof r.proposalId === "string" && /^OWNER_SESSION:/.test(r.actor ?? "");
+const ownerConfirmed = (r: GateResolution) => r.confirmation === "CONFIRMED_BY_OWNER" && typeof r.proposalId === "string" && /^OWNER_SESSION:/.test(r.actor ?? "")
+  && r.humanVerification === "WEBAUTHN_USER_VERIFIED" && typeof r.credentialFingerprint === "string" && r.credentialFingerprint.length > 0;
 export interface PurchaseGate {
   version: typeof GATE_VERSION;
   decisionState: Decision["state"];
