@@ -108,3 +108,76 @@ thread, reproduced every HIGH finding).
   caps (87/90), which shows the corpus cannot see these defects.
 - **Still open:** new independently written frozen cases (multi-product snippets, look-alike domains, quantity phrases,
   service caps) before the next clean number; provider docs re-check and credit balances (owner).
+
+## J-13 · V2.1 Phase 1: the research decision was advisory (root cause) → PurchaseGate
+- **Root cause.** Three independent gaps lined up. (1) The purchase session state ignored `decision.state`: a HOLD
+  decision (for example a 30만원 budget with currency USD) left the session RESEARCHED. (2) `compare_purchase_offers`
+  set OFFER_VERIFIED whenever any offer had a verified quote, without looking at research requirements. (3)
+  `prepare_checkout` and `prepare_browser_checkout` trusted the session state and comparison. The browser handoff did not
+  even require OFFER_VERIFIED. On top of that, a budget in another currency became "no budget", so the verifier applied no
+  budget at all.
+- **Reproduced.** The probe showed decision HOLD, session RESEARCHED, compare OFFER_VERIFIED and prepare reaching the
+  handoff. "Over-ear headphones under $60" (INVESTIGATE, unverified must-have) also reached prepare. On the 90 seen eval
+  cases, the new workflow check against 04662bd allows a payment preparation for a non-RECOMMEND decision in 13/79 cases
+  (eval caps) and 14/75 (service caps).
+- **Change.**
+  - `src/engine/PurchaseGate.ts` is stored on the session at research time. Per product it holds hard violations, which
+    are never resolvable in the session, and open requirements (an unverified or contradicted must-have, the
+    verification limit, an unconfirmed attribute), plus the budget conflict.
+  - A decision of HOLD now puts the session in HOLD. Compare stays read-only but cannot reach OFFER_VERIFIED while
+    anything is open.
+  - Both prepare paths re-check the gate and fail closed on a missing gate, an unknown version or an unassessed product.
+  - `resolve_research_hold` (PREPARE scope) appends the user's CONFIRM_BUDGET or DROP_REQUIREMENT with actor, time and the
+    user's words. The original item stays, the comparison is cleared, and the confirmed budget is what the verifier
+    enforces.
+- **Verification.** 15 end-to-end tests (`tests/research-v2.1-purchase-gate.test.ts`), a Phase C handoff refusal test,
+  and 0/79 and 0/75 unsafe prepares on the seen corpus.
+- **Changed existing tests.** Two tool-list assertions gain `resolve_research_hold`. The Phase C Lumen flow now records
+  the user's clarification for its unverified "wireless" must-have before the handoff. This is a behaviour change Eric
+  should see: a Scenario-I-style rerun of that request on this branch now holds at compare until the user clarifies.
+- **Residual.** The MCP host conveys the user's words, so the server cannot prove a clarification came from the user. It
+  is the same trust level as the research request itself, and it never grants spending authority: the mandate and the
+  buyer approval are still required. The owner review page does not yet show dropped requirements.
+
+## J-14 · V2.1 Phase 2: attribution generalized beyond the starter lists
+- **Root cause.** R-01/R-02 were fixed against named examples. Unlisted brands, word-like models ("Aero"), several
+  products in one clause, version suffixes (Gen 2, Mk II, 프로), reported speech, Korean text, user content on brand
+  domains, short syndicated quotes, ownership changes and stale registries all still passed or were unhandled.
+- **Reproduced.** 45 adversarial regressions (`tests/research-v2.1-attribution.test.ts`); 22 failed before the fix.
+- **Change.**
+  - Snippet-level detection of unknown capitalized entities, with a feature, service, unit and heading allowlist.
+  - A word-like model needs its brand next to it.
+  - Version and Hangul suffixes count as different models.
+  - Reported speech disqualifies its whole sentence.
+  - Korean capability statements, read with tight negation, and Hangul brand names.
+  - USER_FORUM is checked before MANUFACTURER and EXPERT_REVIEW for UGC hosts and paths.
+  - A declared source kind on catalog claims counts only if the registry confirms it.
+  - Short quotes are compared by their whole normalized text.
+  - Per-domain validity windows.
+  - A registry older than 365 days registers nothing.
+- **Verification.** The eval is unchanged at both cap sets, with the same three and nine misses as 04662bd.
+- **Residual.** A single unknown brand word that only starts a sentence ("Zorvex has multipoint.") is not detected.
+  Unknown all-caps brands are detected, so they fail closed. Korean unknown brands are detected only if they are listed.
+
+## J-15 · V2.1 Phase 3: listing price vs merchant-verified total
+- **Finding.** No research text presents a listing price as a total. The gap was the hand-over: compare showed listing and
+  quote side by side without provenance, and without saying that other research candidates were never quoted.
+- **Change.** The QuotePromotion policy P1–P4 and `priceProvenance` on compare, documented in
+  `docs/research/V2.1_PRICE_TERMINOLOGY.md`. It is descriptive only; the verifier and the gate still enforce. No mandate
+  or capture code was touched.
+
+## J-16 · V2.1 Phase 4: protocol, frozen runner, workflow metric
+- `docs/research/V2.1_EVAL_PROTOCOL.md`, `scripts/research-eval-v2/frozen.ts` (sha256 pins for cases and world, and a
+  FIRST_RUN/SEEN ledger), and a `--workflow` metric.
+- The independent IW-1.1 set is frozen by the reviewer and runs with the reviewer's own harness and world. My frozen-r1
+  runner is therefore a dev tool only, not independent evidence. The builder has not read the IW-1.1 cases.
+- Interface note for the reviewer's runner: `/mnt/project-files/agent-commerce-research-v2/v2.1/IW1-INTERFACE-NOTE.md`.
+  It points out that only `sources.officialDomains` is read.
+
+## J-17 · V2.1 Phase 5: LTP-V2-01 readiness (not run)
+- **Guard.** It stops on unexpected billing (this replaces charge-and-continue), on an uncertain Tavily cost, on an
+  undocumented Channel3 locale (before sending) and on an unexpected response shape. It reports per arm.
+- **Script.** The run is a testable function. A contract-age preflight refuses after 14 days.
+- **Offline dry run.** Fake providers at the real hostnames; every HTTP call accounted; $0.375 upper bound.
+- **Not re-verified.** The docs hosts are DNS-blocked from the cloud again, so the contracts were not re-verified. Live
+  is still NOT AUTHORIZED.
