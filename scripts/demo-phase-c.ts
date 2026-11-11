@@ -45,7 +45,7 @@ let exitCode = 0;
 try {
   console.log(`Phase C test merchant (MOCK) at ${merchant.origin}; DIAPORIA at ${url}`);
   say(1, "research_purchase + compare_purchase_offers for the fictional Lumen Q3 (fixture catalog)");
-  const research = await call("research_purchase", { request: "Buy Lumen Q3 Black wireless headphones, never exceed $150.", currency: "USD" });
+  const research = await call("research_purchase", { request: "Buy Lumen Q3 Black headphones, never exceed $150.", currency: "USD" });
   await call("compare_purchase_offers", { researchSessionId: research.purchaseSessionId, productIdentity: { brand: "Lumen", model: "Q3", variant: "Black", condition: "new", sku: "LUM-Q3-B" }, destination: { country: "US", region: "CA" } });
   say(2, "prepare_browser_checkout (off_lumen_q3) → recipe fills the merchant cart and stops before payment");
   const p = await call("prepare_browser_checkout", { purchaseSessionId: research.purchaseSessionId, offerId: "off_lumen_q3", quantity: 1, maximumApprovedTotalMinor: 12000, currency: "USD" });
