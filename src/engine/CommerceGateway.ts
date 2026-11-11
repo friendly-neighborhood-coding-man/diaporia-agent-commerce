@@ -733,6 +733,7 @@ export class CommerceGateway {
     cs = this.expireIfNeeded(cs);
     if (!["PREPARED", "APPROVAL_REQUIRED", "HOLD"].includes(cs.state) || cs.providerOrderId) throw new CommerceError("INVALID_STATE", `Checkout is ${cs.state}; payment cannot be started.`);
     if (!this.config.paymentExecutionEnabled) throw new CommerceError("PAYMENT_DISABLED", "Payment execution is disabled on this deployment.");
+    this.assertServiceIsolated(cs.checkoutSessionId, cs.userId, "startPayment"); // V22-08: also when lost after startup
     const decision = this.policy.reserve(mandateId, { userId: cs.userId, checkoutSessionId: cs.checkoutSessionId, productIdentity: cs.identity, merchantId: cs.merchantId,
       currency: cs.currency, quantity: cs.quantity, totalMinor: cs.totalMinor });
     this.audit.append(cs.checkoutSessionId, cs.userId, decision.allowed ? "MANDATE_RESERVED" : "MANDATE_REJECTED", { mandateId, code: decision.code, totalMinor: cs.totalMinor, actor });

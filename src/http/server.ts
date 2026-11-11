@@ -178,7 +178,7 @@ export function createApp(cfg: AppConfig): App {
         }
       }
       // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
-      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff|research-holds)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
+      if ((!paymentExecutionEnabled || cfg.serviceIsolation?.established === false) && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff|research-holds)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
       // ---- Owner API (human-held owner key; AI client tokens cannot reach this) ----
       if (url.pathname === "/owner/mandates" && req.method === "POST") {

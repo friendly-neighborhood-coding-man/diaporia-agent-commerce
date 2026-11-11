@@ -47,8 +47,23 @@ const ownerConfirmation = OwnerConfirmationBoundary.fromRegistryFile(env.DIAPORI
 let codeRoot = dirname(fileURLToPath(import.meta.url));
 while (!existsSync(join(codeRoot, "package.json")) && dirname(codeRoot) !== codeRoot) codeRoot = dirname(codeRoot);
 const files = (p: string) => p === ":memory:" ? [] : [resolve(p), resolve(p) + "-wal", resolve(p) + "-shm", resolve(p) + "-journal"];
-const serviceIsolation = checkServiceIsolation({ uid, aiHostUids: env.DIAPORIA_AI_HOST_UIDS, dataDir, dataFiles: [...files(dbPath), ...files(servicePath), resolve(".data/dev-credentials.json")],
+const isolationInput = () => ({ uid, aiHostUids: env.DIAPORIA_AI_HOST_UIDS, dataDir, dataFiles: [...files(dbPath), ...files(servicePath), resolve(".data/dev-credentials.json")],
   codeRoot, execPath: process.execPath, registryEstablished: ownerConfirmation.status.established, registryReason: ownerConfirmation.status.reason, passwd: () => passwdText });
+const serviceIsolation = checkServiceIsolation(isolationInput());
+// V2.3 (V22-08): the boundary is re-checked while running, not only at startup. If it is lost (for example a loosened
+// data directory), payment-facing operations are disabled from then on until a restart re-establishes it.
+const isolationState = { established: serviceIsolation.established, reason: serviceIsolation.reason };
+if (serviceIsolation.established) {
+  const recheck = setInterval(() => {
+    const now = checkServiceIsolation(isolationInput());
+    if (!now.established && isolationState.established) {
+      isolationState.established = false; isolationState.reason = `lost while running: ${now.failures.join("; ") || now.reason}`;
+      console.warn(`[diaporia] service isolation LOST while running; payment-facing operations are now DISABLED until restart. ${isolationState.reason}`);
+      clearInterval(recheck);
+    }
+  }, Number(env.DIAPORIA_ISOLATION_RECHECK_MS ?? 60_000));
+  recheck.unref();
+}
 if (serviceIsolation.established) console.log(`[diaporia] service isolation: established (${serviceIsolation.reason}; ${serviceIsolation.inspected} code entries checked)`);
 else {
   console.warn("[diaporia] service isolation NOT established, so payment-facing operations (checkout preparation, browser handoff, owner pages) are DISABLED. Research and comparison still work. Reasons:");
@@ -121,7 +136,7 @@ const app = createApp({
   ...(handoff ? { handoff: handoff.config } : {}),
   ...(liveCatalog ? { research: liveCatalog } : {}),
   host, port, baseUrl, authMode, auth,
-  webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath, ownerConfirmation, serviceIsolation: { established: serviceIsolation.established, reason: serviceIsolation.reason },
+  webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath, ownerConfirmation, serviceIsolation: isolationState,
   payments: (url) => provider === "paypal_sandbox"
     ? new PayPalSandboxProvider({ clientId: env.PAYPAL_CLIENT_ID ?? "", clientSecret: env.PAYPAL_CLIENT_SECRET ?? "", env: env.PAYPAL_ENV ?? "SANDBOX" })
     : new MockPayPalProvider(url),
