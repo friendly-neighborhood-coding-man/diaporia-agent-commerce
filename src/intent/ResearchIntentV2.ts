@@ -1,6 +1,6 @@
 import type { Condition, IntentMode } from "../domain/types.js";
 import { parseDecimalToMinor, type Currency } from "../domain/money.js";
-import { extractIdentity, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
+import { ACCESSORY_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { extractRequirements, type StatedRequirement } from "./Requirements.js";
@@ -40,6 +40,12 @@ export interface ResearchIntentV2 {
   moneyAmbiguities: MoneyAmbiguity[];
   /** Exact-product target (exact mode) or family hint (discovery with a named model). */
   target: { brand: string | null; model: string | null; modelBasis: "MODEL_NUMBER" | "NAMED_MODEL" | "NONE"; kind: ProductKind; accessoryNoun: string | null; sku?: string | null } | null;
+  /**
+   * V2.2 WP-3 (H-3): the model number the user asked for, when the request names one (the exact target's model number,
+   * or a model token written right before a product noun: "AP-400 air purifier", "AP-400 공기청정기"). A listing that does
+   * not mention exactly this model is never eligible, in discovery as well as in exact mode.
+   */
+  requestedModel?: string | null;
   /** Variant attributes the user stated (colour, size, capacity, storage, memory, pack). */
   attributes: VariantAttributes;
   /** Requested condition; `conditionStated` false means "new" was assumed. */
@@ -156,7 +162,16 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     const ex = extractIdentity(clause.replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand);
     const model = input.exactProduct?.model ?? ex.model;
     if (model) {
-      target = { brand: brandHit.brand, model, modelBasis: input.exactProduct?.model ? "MODEL_NUMBER" : ex.modelBasis, kind: ex.kind, accessoryNoun: ex.accessoryNoun };
+      // V2.2 WP-3: "Ostra AP-400 replacement filter" asks for the filter, not the purifier. An accessory noun that ends
+      // the product phrase after the model (or "replacement"/"spare" right after it) makes the request an accessory.
+      let kind = ex.kind; let accessoryNoun = ex.accessoryNoun;
+      if (kind === "STANDALONE" && ex.model) {
+        const at = clause.toLowerCase().indexOf(ex.model.toLowerCase());
+        const tail = at >= 0 ? clause.slice(at + ex.model.length).split(/[,;]|\s+(?:with|for|that|which|it|must|should|needs?|has|have)\b/i)[0]!.trim() : "";
+        const end = new RegExp(`(?:^|\\s)(${ACCESSORY_NOUN.source.replace(/^\\b\(|\)\\b$/g, "")})e?s?\\s*$`, "i").exec(tail);
+        if (tail && (end || /^(?:replacement|spare)\b/i.test(tail))) { kind = "ACCESSORY"; accessoryNoun = (end?.[1] ?? ACCESSORY_NOUN.exec(tail)?.[1] ?? "part").toLowerCase().replace(/\s+/g, " "); }
+      }
+      target = { brand: brandHit.brand, model, modelBasis: input.exactProduct?.model ? "MODEL_NUMBER" : ex.modelBasis, kind, accessoryNoun };
       const mi = text.toLowerCase().indexOf(model.toLowerCase());
       targetSpan = mi >= 0 ? [Math.min(brandHit.index, mi), mi + model.length] : [brandHit.index, brandHit.index + brandHit.brand.length];
     }
@@ -235,11 +250,19 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       fallback = null;
     }
   }
+  // V2.2 WP-3: the requested model number (see the field). A model token right before a product noun counts too.
+  let requestedModel: string | null = target?.modelBasis === "MODEL_NUMBER" && target.model && modelNumberToken(target.model) ? target.model : null;
+  if (!requestedModel && !input.exactProduct?.sku) {
+    const nouns = [PRODUCT_NOUN_PHRASES.source.replace(/^\\b/, ""), ...KO_QUERY_NOUNS.map(([re]) => re.source)].join("|");
+    const m = new RegExp(`(?:^|[\\s(])([A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*)\\s*(?:${nouns})`, "i").exec(money.parse.masked);
+    const tok = m ? modelNumberToken(m[1]!) : null;
+    if (tok && tok === m![1]!.toUpperCase()) { requestedModel = m![1]!; assumptions.push(`Model ${m![1]} is named in the request: only listings of exactly that model are eligible.`); }
+  }
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
   return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
-    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target,
+    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }

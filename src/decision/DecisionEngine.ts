@@ -1,6 +1,6 @@
 import type { CatalogProduct, MerchantOffer } from "../domain/types.js";
 import type { Currency } from "../domain/money.js";
-import { AXES, normalizeKey, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
+import { AXES, mentionsExactModel, normalizeKey, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
 import { factsOf } from "../identity/ProductResolverV2.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import type { CapabilityVerdict } from "../evidence/EvidenceV2.js";
@@ -23,7 +23,7 @@ export const DECISION_ENGINE_VERSION = "decision-v2.0.0";
 export const BUDGET_HEADROOM = 0.9;
 
 export type DecisionState = "RECOMMEND" | "INVESTIGATE" | "HOLD";
-export type Disqualifier = "CATEGORY_MISMATCH" | "NOT_STANDALONE" | "BUNDLE_EXCLUDED" | "ATTRIBUTE_MISMATCH" | "CONDITION_MISMATCH" | "OVER_BUDGET" | "BELOW_STATED_RANGE" | "UNAVAILABLE" | "MUST_HAVE_FALSE" | "NOT_LOCKED_IDENTITY";
+export type Disqualifier = "CATEGORY_MISMATCH" | "NOT_STANDALONE" | "BUNDLE_EXCLUDED" | "ATTRIBUTE_MISMATCH" | "CONDITION_MISMATCH" | "OVER_BUDGET" | "BELOW_STATED_RANGE" | "UNAVAILABLE" | "MUST_HAVE_FALSE" | "NOT_LOCKED_IDENTITY" | "NOT_REQUESTED_MODEL";
 export type Blocker = "MUST_HAVE_UNRECOGNIZED" | "MUST_NOT_UNVERIFIABLE" | "MUST_HAVE_UNVERIFIED" | "MUST_HAVE_CONTRADICTED" | "VERIFICATION_LIMIT_REACHED" | "PRICE_NOT_IN_REQUESTED_CURRENCY" | "BUDGET_TIGHT" | "AVAILABILITY_UNKNOWN" | "CONDITION_UNCONFIRMED" | "ATTRIBUTE_UNKNOWN";
 
 export interface CandidateInput {
@@ -157,6 +157,10 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   const p = c.product; const f = factsOf(p);
   const dq: RankedCandidate["disqualifiers"] = []; const bl: RankedCandidate["blockers"] = [];
   if (lock && p.productId !== lock.productId) dq.push({ code: "NOT_LOCKED_IDENTITY", detail: "not the locked exact product" });
+  // V2.2 WP-3 (H-3): a listing of another model (AP-250 for an AP-400 request) is never eligible, locked or not.
+  const wanted = intent.requestedModel;
+  if (wanted && !(normalizeKey(p.identity.model ?? "") === normalizeKey(wanted) || mentionsExactModel(p.title, wanted, { generation: f.attributes.generation ?? null })))
+    dq.push({ code: "NOT_REQUESTED_MODEL", detail: `not model ${wanted} (listing: ${p.identity.model || "model not stated"})` });
   if (!lock) {
     const cat = productCategory(p);
     if (intent.category && cat && cat !== intent.category) dq.push({ code: "CATEGORY_MISMATCH", detail: `category ${cat}, requested ${intent.category}` });

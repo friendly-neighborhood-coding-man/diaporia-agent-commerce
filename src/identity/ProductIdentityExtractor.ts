@@ -91,7 +91,7 @@ export const GENERIC_WORDS: ReadonlySet<string> = GENERIC;
 /** A word after a model mention that makes it a DIFFERENT model in the same family ("Nova 9" vs "Nova 9 Pro"). */
 export const MODEL_EXTENSIONS = new Set(["pro", "max", "plus", "ultra", "mini", "lite", "air", "se", "fe", "neo", "prime", "edge", "go", "xl", "fhd", "elite", "sport", "s", "x", "ii", "iii", "iv", "2", "3", "4", "5"]);
 
-const ACCESSORY_NOUN = /\b(case|cover|sleeve|skin|charger|adapter|power supply|cable|cord|ear ?pads?|ear ?cushions?|ear ?tips|cushions?|carafe|strap|band|screen protector|protector|stand|mount|dock|filter|replacement battery|battery pack|remote|lid|brush head|bag|pouch|parts?|kit for)\b/i;
+export const ACCESSORY_NOUN = /\b(case|cover|sleeve|skin|charger|adapter|power supply|cable|cord|ear ?pads?|ear ?cushions?|ear ?tips|cushions?|carafe|strap|band|screen protector|protector|stand|mount|dock|filter|replacement battery|battery pack|remote|lid|brush head|bag|pouch|parts?|kit for)\b/i;
 export const BUNDLE_RE = /\bw\/|\bbundle\b|\bkit\b|\bcombo\b|\b\d+[- ]?(?:pack|pk|count|ct)\b|\bpack of \d+\b|\bset of \d+\b|\btwin[- ]pack\b|\s\+\s|\bwith (?:travel |carrying |charging |protective )?(?:case|charger|stand|dock|bag)\b/i;
 
 export function normalizeKey(s: string): string {
@@ -179,7 +179,24 @@ export interface ExtractedIdentity {
   titleCondition: "refurbished" | "used" | "open_box" | null;
 }
 
-/** Named model phrase: words after the brand up to the first generic word, attribute or punctuation (max 4 words). */
+/**
+ * Product nouns, single and multi-word ("air purifier", "power bank", "hiking boots", "drill"). V2.2 WP-3 (H-3): a
+ * named-model phrase ends where a product noun phrase starts, so "Ostra AP-400 air purifier" keeps model "AP-400",
+ * never "AP-400 air". Also used by requirement extraction (capabilities.ts re-exports it).
+ */
+export const PRODUCT_NOUN_PHRASES = /\b(?:rice cookers?|air conditioners?|air mattress(?:es)?|robot vacuums?|robot mops?|cordless drills?|drill drivers?|impact drivers?|power drills?|stand mixers?|hand mixers?|espresso machines?|dish ?washers?|washing machines?|space heaters?|electric toothbrush(?:es)?|toothbrush(?:es)?|standing desks?|gaming chairs?|smart speakers?|bluetooth speakers?|portable chargers?|wireless chargers?|travel backpacks?|dash ?cams?|baby monitors?|security cameras?|action cameras?|label makers?|sewing machines?|drills?|sanders?|saws?|mixers?|grills?|ovens?|irons?|scales?|thermostats?|doorbells?|pressure cookers?|slow cookers?|electric kettles?|air purifiers?|air fryers?|power banks?|hair dryers?|coffee (?:makers?|machines?|brewers?)|water bottles?|office chairs?|vacuum cleaners?|stick vacuums?|running shoes?|hiking boots?|e-?readers?|smart ?watch(?:es)?|sound ?bars?|head ?phones?|ear ?buds?|ear ?phones?|headsets?|laptops?|notebooks?|smartphones?|phones?|monitors?|displays?|backpacks?|daypacks?|chairs?|vacuums?|bottles?|tumblers?|flasks?|boots?|shoes?|sneakers?|tvs?|televisions?|speakers?|kettles?|blenders?|toasters?|tablets?|cameras?|routers?|keyboards?|mice|mouse|projectors?|printers?|drones?|fans?|heaters?|lamps?|purifiers?|humidifiers?|dehumidifiers?|cookers?|fryers?|microwaves?|webcams?|microphones?|chargers?|cases?|sleeves?|cables?|adapters?|stands?|blankets?|throws?|desks?|tables?|sofas?|bikes?|strollers?|toys?|watch(?:es)?)\b/i;
+const NOUN_PHRASE_AT_START = new RegExp(`^(?:(?:charging|replacement|spare|protective|carrying|travel)\\s+)?(?:${PRODUCT_NOUN_PHRASES.source.replace(/^\\b\(\?:/, "").replace(/\)\\b$/, "")}|${ACCESSORY_NOUN.source.replace(/^\\b\(/, "").replace(/\)\\b$/, "")})(?=[^A-Za-z0-9]|$)`, "i");
+/** A product noun followed by a model token is part of the model ("Galaxy Watch 6", "Surface Laptop 5"). */
+const MODELISH_NEXT = /^(?:\d[\w.-]*|[A-Za-z]{0,3}\d[\w-]*|pro|max|plus|ultra|mini|lite|se|xl|gen\d*|mk\w*|series)$/i;
+/** "STOP": a product/accessory noun phrase starts here and ends the model; "MODEL": noun + model token, part of the model. */
+const nounPhraseAt = (rest: string[]): "STOP" | "MODEL" | null => {
+  const m = NOUN_PHRASE_AT_START.exec(rest.join(" "));
+  if (!m) return null;
+  const after = (rest.join(" ").slice(m[0].length).trim().split(/\s+/)[0] ?? "").replace(/[,;:()|]+$/, "");
+  return MODELISH_NEXT.test(after) && !UNIT_TOKEN.test(after) && !/^\d+[- ]?(?:pack|pk|count|ct)$/i.test(after) && m[0].split(/\s+/).length === 1 ? "MODEL" : "STOP";
+};
+
+/** Named model phrase: words after the brand up to the first generic word, product noun, attribute or punctuation (max 4 words). */
 export function namedModelAfter(text: string, brand: string | null): string | null {
   const t = text.normalize("NFKC");
   let rest = t;
@@ -192,12 +209,16 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
   const parts = rest.split(/\s+/).filter(Boolean);
   for (const [i, raw] of parts.entries()) {
     if (/^[,;:()|/–—+&-]/.test(raw)) break;
+    // V2.2 WP-3: a product noun phrase starting here ends the model ("AP-400 air purifier", "T18 drill").
+    const np = nounPhraseAt(parts.slice(i));
+    if (words.length && np === "STOP") break;
     // Attribute phrases end the model: "size 10.5", "32 oz", "2-pack", "12 cup" (requests rarely have commas).
     if (/^(size|sz|사이즈)$/i.test(raw) || /^\d+[- ]?(pack|pk|count|ct)$/i.test(raw)) break;
     if (/^\d+(?:\.\d+)?$/.test(raw) && /^(oz|fl|ounces?|cups?|gb|tb|inch|in|ml|l|liters?|qt|pack|pk|-pack|hours?|h)\b/i.test(parts[i + 1] ?? "")) break;
     const w = raw.replace(/[,;:()|]+$/, "");
     const stop = /[,;:()|]$/.test(raw);
     const lw = w.toLowerCase().replace(/[’']s$/, "'s");
+    if (words.length && np === "MODEL") { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);
@@ -218,8 +239,13 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
   if (isAccessory) {
     const target = t.slice(forIdx).replace(/^(?:for|compatible with|fits)\s+(?:the\s+)?/i, "");
     const tb = brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(target) ? brand : null;
-    const num = modelNumberToken(target);
-    const named = namedModelAfter(target, tb);
+    // V2.2 WP-3: "Kova Pulse watch band for my wife": a "for" phrase without the brand or a model number names a
+    // person or use, not the product the accessory fits; the model is then the one before the accessory noun.
+    const targetNamesProduct = !!tb || !!modelNumberToken(target);
+    const src = targetNamesProduct ? target : head;
+    const srcBrand = targetNamesProduct ? tb : (brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(head) ? brand : null);
+    const num = modelNumberToken(src);
+    const named = namedModelAfter(src, srcBrand);
     const noun = (nounMatch?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, "");
     return { brand, model: stripVersion(num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
       attributes: { ...parseAttributes(head), ...(parseAttributes(target).capacity ? { capacity: parseAttributes(target).capacity } : {}) }, titleCondition };
@@ -233,7 +259,10 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
     model = named && normalizeKey(named).includes(normalizeKey(num)) ? named : num; basis = "MODEL_NUMBER";
     if (named && normalizeKey(named).includes(normalizeKey(num)) && named.split(" ").length > 1) basis = "NAMED_MODEL";
   } else if (named) { model = named; basis = "NAMED_MODEL"; }
-  return { brand, model: stripVersion(model), modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
+  const stripped = stripVersion(model);
+  // V2.2 WP-3: "AP-400 Gen 2" is model number AP-400 plus generation 2 (an attribute), not a named model.
+  if (basis === "NAMED_MODEL" && num && stripped && normalizeKey(stripped) === normalizeKey(num)) basis = "MODEL_NUMBER";
+  return { brand, model: stripped, modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
 }
 
 /**

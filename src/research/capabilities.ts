@@ -201,4 +201,5 @@ export const KO_QUERY_NOUNS: Array<[RegExp, string]> = [
 ];
 
 /** English product nouns (the head of a product noun phrase); multi-word ones first. Used to find what modifies them. */
-export const PRODUCT_NOUN_PHRASES = /\b(?:rice cookers?|pressure cookers?|slow cookers?|electric kettles?|air purifiers?|air fryers?|power banks?|hair dryers?|coffee (?:makers?|machines?|brewers?)|water bottles?|office chairs?|vacuum cleaners?|stick vacuums?|running shoes?|hiking boots?|e-?readers?|smart ?watch(?:es)?|sound ?bars?|head ?phones?|ear ?buds?|ear ?phones?|headsets?|laptops?|notebooks?|smartphones?|phones?|monitors?|displays?|backpacks?|daypacks?|chairs?|vacuums?|bottles?|tumblers?|flasks?|boots?|shoes?|sneakers?|tvs?|televisions?|speakers?|kettles?|blenders?|toasters?|tablets?|cameras?|routers?|keyboards?|mice|mouse|projectors?|printers?|drones?|fans?|heaters?|lamps?|purifiers?|humidifiers?|dehumidifiers?|cookers?|fryers?|microwaves?|webcams?|microphones?|chargers?|cases?|sleeves?|cables?|adapters?|stands?|blankets?|throws?|desks?|tables?|sofas?|bikes?|strollers?|toys?|watches?)\b/i;
+/** V2.2 WP-3: defined next to the identity extractor (which must stop a model name at a product noun). */
+export { PRODUCT_NOUN_PHRASES } from "../identity/ProductIdentityExtractor.js";
