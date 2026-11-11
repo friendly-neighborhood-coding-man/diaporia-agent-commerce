@@ -47,6 +47,13 @@ async function startPhaseC(o: Omit<MerchantServerOptions, "config"> & { seller?:
 async function prepareLumen(hh: PhaseCHarness, extra: { maximumApprovedTotalMinor?: number; quantity?: number } = {}) {
   const client = await mcpClient(hh.url, TOKENS.alice);
   const research = await call(client, "research_purchase", { request: "Buy Lumen Q3 Black wireless headphones, never exceed $150.", currency: "USD" });
+  // V2.1: "wireless" is a stated must-have that the catalog listing alone does not verify, so the session holds until
+  // the user's own clarification is recorded (see research-v2.1-purchase-gate.test.ts for the blocked path).
+  const first = await call(client, "compare_purchase_offers", { researchSessionId: research.purchaseSessionId, productIdentity: LUMEN, destination: CA });
+  expect(first.state).toBe("HOLD");
+  expect(first.purchaseReadiness.open.join(" ")).toContain("must:wireless");
+  await call(client, "resolve_research_hold", { purchaseSessionId: research.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:wireless", currency: "USD",
+    userStatement: "I know the Lumen Q3 Black is the model I want; wireless does not need separate verification." });
   await call(client, "compare_purchase_offers", { researchSessionId: research.purchaseSessionId, productIdentity: LUMEN, destination: CA });
   const prepared = await call(client, "prepare_browser_checkout", { purchaseSessionId: research.purchaseSessionId, offerId: "off_lumen_q3",
     quantity: extra.quantity ?? 1, maximumApprovedTotalMinor: extra.maximumApprovedTotalMinor ?? 12_000, currency: "USD" });
@@ -118,6 +125,19 @@ describe("Phase C MOCK end to end through DIAPORIA's unchanged handoff", () => {
 });
 
 describe("Phase C MOCK: constraint failures HOLD with no handoff", () => {
+  it("V2.1: an unresolved research requirement refuses the browser handoff (no cart, no handoff row)", async () => {
+    h = await startPhaseC();
+    const client = await mcpClient(h.url, TOKENS.alice);
+    const research = await call(client, "research_purchase", { request: "Buy Lumen Q3 Black wireless headphones, never exceed $150.", currency: "USD" });
+    const cmp = await call(client, "compare_purchase_offers", { researchSessionId: research.purchaseSessionId, productIdentity: LUMEN, destination: CA });
+    expect(cmp.state).toBe("HOLD");
+    const r = await client.callTool({ name: "prepare_browser_checkout", arguments: { purchaseSessionId: research.purchaseSessionId, offerId: "off_lumen_q3", quantity: 1, maximumApprovedTotalMinor: 12_000, currency: "USD" } });
+    expect(r.isError).toBe(true);
+    expect(JSON.stringify(r.content)).toContain("RESEARCH_REQUIREMENTS_UNRESOLVED");
+    expect(h.app.store.db.prepare("SELECT COUNT(*) AS n FROM browser_handoffs").get()).toMatchObject({ n: 0 });
+    await client.close();
+  });
+
   it("variant substitution → VARIANT_MISMATCH", async () => {
     h = await startPhaseC({ storeKnobs: { extraVariants: ["Silver"], substituteVariant: "Silver" } });
     const { prepared } = await prepareLumen(h);

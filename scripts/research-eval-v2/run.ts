@@ -125,10 +125,8 @@ function worldAdapter(inner: any, claims: Record<string, unknown>, now: () => nu
   return a;
 }
 
-/** Eval per-request caps. EVAL_CAPS (6/12) give the planner room to show its stopping rules; SERVICE caps (1/2) are what main.ts runs (review R-05). */
-export const EVAL_CAPS = Object.freeze({ CHANNEL3: 6, TAVILY: 12 });
-export const SERVICE_ARM_CAPS = Object.freeze({ CHANNEL3: 1, TAVILY: 2 });
-export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2, caps: { CHANNEL3: number; TAVILY: number } = EVAL_CAPS): Promise<CaseOutcome> {
+/** The eval app on the fake world (also used by end-to-end tests). No network: fake fetch only. */
+export function buildWorldApp(L: Awaited<ReturnType<typeof load>>, caps: { CHANNEL3: number; TAVILY: number } = EVAL_CAPS) {
   const counters: WorldCounters = newCounters();
   const fetchImpl = worldFetch(counters);
   const now = () => Date.parse("2026-11-10T12:00:00.000Z");
@@ -140,6 +138,15 @@ export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2
   const ch3 = new L.Channel3ResearchAdapter("ch3-EVAL-FAKE-KEY-0000", { fetchImpl, now });
   const app = L.createApp({ host: "127.0.0.1", port: 0, baseUrl: "http://127.0.0.1:1", authMode: "dev", dbPath: ":memory:", auth: new L.DevAuth(), now,
     research: worldAdapter(ch3, L.MERCHANT_CLAIMS, now), service: { mode: "community", ledger, router, billing: null } });
+  return { app, store, counters, close: () => { app.store.close(); store.close(); } };
+}
+export const loadRoot = (root: string) => load(root);
+
+/** Eval per-request caps. EVAL_CAPS (6/12) give the planner room to show its stopping rules; SERVICE caps (1/2) are what main.ts runs (review R-05). */
+export const EVAL_CAPS = Object.freeze({ CHANNEL3: 6, TAVILY: 12 });
+export const SERVICE_ARM_CAPS = Object.freeze({ CHANNEL3: 1, TAVILY: 2 });
+export async function runCase(L: Awaited<ReturnType<typeof load>>, c: EvalCaseV2, caps: { CHANNEL3: number; TAVILY: number } = EVAL_CAPS): Promise<CaseOutcome> {
+  const { app, store, counters } = buildWorldApp(L, caps);
   const e = c.expect;
   const t0 = performance.now();
   let out: any = null; let cmp: any = null; let error: string | undefined;

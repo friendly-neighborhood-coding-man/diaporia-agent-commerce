@@ -32,6 +32,7 @@ import { canonicalVariant } from "../identity/ProductIdentityExtractor.js";
 import { runResearchV2, type PlannerLimits } from "../research/ResearchPlannerV2.js";
 import type { SearchPage, ProductSearchQuery } from "../research/CommerceResearchAdapter.js";
 import type { RankingWeights } from "../decision/weights.js";
+import { gateFromDecision, gateReadiness, resolveGate, type PurchaseGate } from "./PurchaseGate.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -300,8 +301,10 @@ export class CommerceGateway {
     unknowns.push(...plan.decision.holdReasons.filter((h) => !unknowns.includes(h)));
     if (iv.budgetConflict) unknowns.push(`Budget not applied: ${iv.budgetConflict}. Confirm the budget in ${intent.currency}.`);
     else if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
-    const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision };
-    const holdNeeded = intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0;
+    // V2.1: the decision is bound to the session. Later steps read the gate, never the session state alone.
+    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict);
+    const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision, purchaseGate };
+    const holdNeeded = (intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0) || plan.decision.state === "HOLD";
     ps = this.sessions.updatePurchaseSession(ps, holdNeeded ? "HOLD" : "RESEARCHED", { research: researchOut, lockedIdentity: locked?.identity ?? null, productId: locked?.productId ?? null });
     this.audit.append(ps.purchaseSessionId, userId, holdNeeded ? "RESEARCH_HOLD" : "RESEARCHED", { candidates: candidates.length, decision: plan.decision.state, engine: plan.decision.engine, weights: plan.decision.weights });
     return {
@@ -414,26 +417,71 @@ export class CommerceGateway {
       if (locked && !identityEquals(locked, pick.identity)) throw new CommerceError("IDENTITY_MISMATCH", "This session already locked a different product. Start a new research session.");
       locked = pick.identity;
     }
+    const productId = ps.mode === "EXACT_PRODUCT_PURCHASE" ? ps.productId
+      : ((ps.research.candidates ?? []) as Array<{ identity: ProductIdentity; productId: string }>).find((c) => identityEquals(c.identity, locked!))?.productId ?? null;
+    const readiness = this.purchaseReadiness(ps, productId);
     const offers = await this.research.findOffers(locked);
     // Quote anything not known to be out of stock: a merchant cart may establish availability.
     const items = await Promise.all(offers.map(async (offer) => ({ offer, quote: offer.availability !== "OUT_OF_STOCK" ? await this.research.getQuote(offer.offerId, 1, destination) : null,
       identity: await this.verifyMerchant(offer) })));
-    const comparison = this.verifier.compare(locked, items, { now: this.now(), currency: ps.intent.currency, budgetMinor: ps.intent.budgetMinor });
+    const comparison = this.verifier.compare(locked, items, { now: this.now(), currency: ps.intent.currency, budgetMinor: readiness.effectiveBudgetMinor });
     const holdReasons: string[] = [];
     if (!comparison.lowestVerifiedEligible) {
       holdReasons.push("No offer has a verified, fully known total that meets every requirement.");
       if (!destination) holdReasons.push("No shipping destination was given, so tax cannot be quoted. Provide country/region to get verified totals.");
     }
-    const to = comparison.lowestVerifiedEligible ? "OFFER_VERIFIED" : "HOLD";
-    ps = this.sessions.updatePurchaseSession(ps, to, { comparison, lockedIdentity: locked, destination });
-    this.audit.append(ps.purchaseSessionId, userId, "OFFERS_COMPARED", { eligible: comparison.eligible.map((o) => o.offerId), lowest: comparison.lowestVerifiedEligible?.offerId ?? null });
+    // Read-only comparison always runs, but an unresolved research requirement keeps the session out of OFFER_VERIFIED.
+    holdReasons.push(...readiness.open);
+    const to = comparison.lowestVerifiedEligible && readiness.ready ? "OFFER_VERIFIED" : "HOLD";
+    ps = this.sessions.updatePurchaseSession(ps, to, { comparison, lockedIdentity: locked, destination, ...(productId ? { productId } : {}) });
+    this.audit.append(ps.purchaseSessionId, userId, "OFFERS_COMPARED", { eligible: comparison.eligible.map((o) => o.offerId), lowest: comparison.lowestVerifiedEligible?.offerId ?? null,
+      purchaseReady: readiness.ready, openRequirements: readiness.open.length });
     return {
       purchaseSessionId: ps.purchaseSessionId, state: ps.state, productIdentity: locked, destinationUsed: destination,
       eligibleOffers: comparison.eligible.map((o) => publicOffer(o, this.research.isMock)), ineligibleOffers: comparison.ineligible.map((o) => publicOffer(o, this.research.isMock)),
       lowestVerifiedEligibleOffer: comparison.lowestVerifiedEligible ? publicOffer(comparison.lowestVerifiedEligible, this.research.isMock) : null,
       lowestPayPalCheckoutableOffer: comparison.lowestPayPalCheckoutable ? publicOffer(comparison.lowestPayPalCheckoutable, this.research.isMock) : null,
       holdReasons, disclosure: comparison.disclosure, dataSource: this.dataSource(), paymentEffect: "NONE" as const,
+      purchaseReadiness: { ready: readiness.ready, open: readiness.open, budgetMinor: readiness.effectiveBudgetMinor, budgetSource: readiness.budgetSource },
     };
+  }
+
+  /** V2.1 research-to-purchase binding (see PurchaseGate). V1-engine sessions carry no decision and keep V1 rules. */
+  purchaseReadiness(ps: PurchaseSession, productId: string | null) {
+    const legacy = !ps.research?.decision;
+    return gateReadiness((ps.research?.purchaseGate ?? null) as PurchaseGate | null, productId, ps.intent.budgetMinor, legacy);
+  }
+
+  /** Throws unless the session's chosen product has no unresolved research requirement. Used by every payment-preparing path. */
+  assertPurchaseReady(ps: PurchaseSession, userId: string, path: string) {
+    const r = this.purchaseReadiness(ps, ps.productId);
+    if (!r.ready) {
+      this.audit.append(ps.purchaseSessionId, userId, "PURCHASE_GATE_BLOCKED", { path, open: r.open.slice(0, 10) });
+      throw new CommerceError("RESEARCH_REQUIREMENTS_UNRESOLVED", "The research decision has unresolved requirements; a payment cannot be prepared.", { open: r.open });
+    }
+    return r;
+  }
+
+  /**
+   * Records a user clarification that resolves one open research item (V2.1). The original item stays in the gate and
+   * the audit log; the session returns to HOLD with no comparison, so offers must be compared again.
+   * `userStatement` is the user's own words, stored verbatim (bounded) for audit. This never grants spending authority.
+   */
+  resolveResearchHold(userId: string, input: { purchaseSessionId: string; kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT"; requirement?: string | null; budgetMinor?: number | null; currency: string; userStatement: string }, actor = "MCP_TOKEN:unknown") {
+    let ps = this.livePurchaseSession(input.purchaseSessionId, userId);
+    if (!["RESEARCHED", "OFFER_VERIFIED", "HOLD"].includes(ps.state)) throw new CommerceError("INVALID_STATE", `Session is ${ps.state}; nothing to resolve.`);
+    const gate = (ps.research?.purchaseGate ?? null) as PurchaseGate | null;
+    if (!gate) throw new CommerceError("INVALID_STATE", "This session has no research decision to resolve (research again).");
+    const statement = String(input.userStatement ?? "").trim();
+    if (statement.length < 3) throw new CommerceError("INVALID_INPUT", "userStatement (the user's own clarification) is required.");
+    let next: PurchaseGate;
+    try {
+      next = resolveGate(gate, { kind: input.kind, requirement: input.requirement ?? null, budgetMinor: input.budgetMinor ?? null, currency: input.currency, actor, note: statement.slice(0, 500) }, this.now(), ps.intent.currency);
+    } catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }
+    ps = this.sessions.updatePurchaseSession(ps, "HOLD", { research: { ...ps.research, purchaseGate: next }, comparison: null });
+    const res = next.resolutions[next.resolutions.length - 1]!;
+    this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_HOLD_RESOLVED", { kind: res.kind, requirement: res.requirement, budgetMinor: res.budgetMinor, currency: res.currency, actor, userStatement: res.note });
+    return { purchaseSessionId: ps.purchaseSessionId, state: ps.state, resolution: res, readiness: this.purchaseReadiness(ps, ps.productId), nextStep: "Compare offers again.", paymentEffect: "NONE" as const };
   }
 
   // ---------------------------------------------------------------- prepare_checkout
@@ -444,6 +492,7 @@ export class CommerceGateway {
   async prepareCheckout(userId: string, input: { purchaseSessionId: string; offerId: string; maximumApprovedTotalMinor: number; currency: string; quantity: number }, actor = "MCP_TOKEN:unknown") {
     const ps = this.livePurchaseSession(input.purchaseSessionId, userId);
     if (ps.state !== "OFFER_VERIFIED" || !ps.comparison || !ps.lockedIdentity) throw new CommerceError("INVALID_STATE", `Session is ${ps.state}; compare offers and obtain a verified offer first.`);
+    const readiness = this.assertPurchaseReady(ps, userId, "prepare_checkout");
     if (!isMinor(input.maximumApprovedTotalMinor) || input.maximumApprovedTotalMinor <= 0) throw new CommerceError("INVALID_INPUT", "maximumApprovedTotalMinor must be a positive integer of minor units");
     if (!Number.isSafeInteger(input.quantity) || input.quantity < 1 || input.quantity > 10) throw new CommerceError("INVALID_INPUT", "quantity must be an integer 1..10");
     if (input.currency !== ps.intent.currency) throw new CommerceError("INVALID_INPUT", `Currency ${input.currency} does not match the session currency ${ps.intent.currency}`);
@@ -468,7 +517,7 @@ export class CommerceGateway {
     const quote = await this.research.getQuote(offer.offerId, input.quantity, ps.destination);
     const checkoutSessionId = newCheckoutSessionId();
     const identity = await this.verifyMerchant(offer, checkoutSessionId);
-    const v = this.verifier.verifyOne(ps.lockedIdentity, offer, quote, { now: this.now(), currency: ps.intent.currency, budgetMinor: ps.intent.budgetMinor }, identity);
+    const v = this.verifier.verifyOne(ps.lockedIdentity, offer, quote, { now: this.now(), currency: ps.intent.currency, budgetMinor: readiness.effectiveBudgetMinor }, identity);
     const bound = this.bindIdentity(offer, identity);
     // The recipient only matters when DIAPORIA itself creates the payment order.
     if ("code" in bound && !(bound.code === "MERCHANT_RECIPIENT_UNKNOWN" && v.checkoutPath === "EXTERNAL_MERCHANT_CHECKOUT")) {

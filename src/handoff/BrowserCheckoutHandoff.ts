@@ -212,6 +212,8 @@ export class BrowserCheckoutHandoff {
     catch (e) { if (e instanceof NotFoundError) throw new CommerceError("NOT_FOUND", "Purchase session not found"); throw e; }
     if (ps.expiresAt <= this.now()) throw new CommerceError("SESSION_EXPIRED", "Purchase session expired; research again.");
     if (!ps.comparison || !ps.lockedIdentity) throw new CommerceError("INVALID_STATE", "Compare offers for an exact product first.");
+    // V2.1: the research decision binds every payment-preparing path, not only prepare_checkout.
+    this.gateway.assertPurchaseReady(ps, userId, "prepare_browser_checkout");
     if (!isCurrency(input.currency) || input.currency !== ps.intent.currency) throw new CommerceError("INVALID_INPUT", `Currency must be the session currency ${ps.intent.currency}`);
     const offer = [...ps.comparison.eligible, ...ps.comparison.ineligible].find((o) => o.offerId === input.offerId);
     if (!offer) throw new CommerceError("NOT_FOUND", "Offer is not part of this session's comparison.");
