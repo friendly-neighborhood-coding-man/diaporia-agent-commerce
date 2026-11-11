@@ -31,12 +31,12 @@ export function factsOf(p: CatalogProduct): ProductFacts {
   if (r) {
     const accessoryNoun = r.kind === "ACCESSORY" ? (/^ACCESSORY ([^/]+)/.exec(p.identity.variant ?? "")?.[1]?.trim() ?? null) : null;
     return { product: p, kind: r.kind, accessoryNoun, attributes: r.attributes, conflictingAxes: r.conflictingAxes, titleCondition: (r.titleCondition === "open_box" ? "used" : r.titleCondition) as Condition | null,
-      family: familyKey(p.identity.brand, p.identity.model) };
+      family: familyKey(r.kind === "ACCESSORY" && r.fitsBrand ? r.fitsBrand : p.identity.brand, p.identity.model) };
   }
   // Products without research metadata (fixtures, other adapters): derive from the title and the identity variant.
   const ex = extractIdentity(p.title, p.identity.brand || null);
   return { product: p, kind: ex.kind, accessoryNoun: ex.accessoryNoun, attributes: { ...ex.attributes, ...attributesFromVariant(p.identity.variant) }, conflictingAxes: [],
-    titleCondition: p.identity.condition !== "new" ? p.identity.condition : null, family: familyKey(p.identity.brand, p.identity.model) };
+    titleCondition: p.identity.condition !== "new" ? p.identity.condition : null, family: familyKey(ex.kind === "ACCESSORY" && ex.fitsBrand ? ex.fitsBrand : p.identity.brand, p.identity.model) };
 }
 
 const eqAttr = (axis: AttributeAxis, a: string, b: string) => normalizeKey(axis === "color" && /^gr[ae]y$/i.test(a) ? "gray" : a) === normalizeKey(axis === "color" && /^gr[ae]y$/i.test(b) ? "gray" : b);

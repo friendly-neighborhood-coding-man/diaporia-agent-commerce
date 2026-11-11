@@ -179,6 +179,8 @@ export interface ExtractedIdentity {
   attributes: VariantAttributes;
   /** Condition stated by the title itself ("Renewed", "Refurbished", "Used"), else null. */
   titleCondition: "refurbished" | "used" | "open_box" | null;
+  /** V2.3: for a third-party accessory, the brand of the product it fits ("Pagewise" in "Foldo Cover for Pagewise Glow"). */
+  fitsBrand?: string | null;
 }
 
 /**
@@ -246,14 +248,20 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
     const tb = brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(target) ? brand : null;
     // V2.2 WP-3: "Kova Pulse watch band for my wife": a "for" phrase without the brand or a model number names a
     // person or use, not the product the accessory fits; the model is then the one before the accessory noun.
-    const targetNamesProduct = !!tb || !!modelNumberToken(target);
+    // V2.3 (V22-07 i13): a third-party accessory names the product it fits by that product's own brand and model
+    // ("Foldo Cover for Pagewise Glow (3rd Gen)"): two capitalized name words after "for" (not "for my wife").
+    const fitsName = !tb && /^([A-Z][A-Za-z0-9&'-]+)\s+(?:[A-Z0-9][\w-]*)/.exec(target);
+    const fitsBrand = fitsName && !GENERIC.has(fitsName[1]!.toLowerCase()) ? fitsName[1]! : null;
+    const targetNamesProduct = !!tb || !!modelNumberToken(target) || !!fitsBrand;
     const src = targetNamesProduct ? target : head;
-    const srcBrand = targetNamesProduct ? tb : (brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(head) ? brand : null);
+    const srcBrand = targetNamesProduct ? (tb ?? fitsBrand) : (brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(head) ? brand : null);
     const num = modelNumberToken(src);
     const named = namedModelAfter(src, srcBrand);
     const noun = (nounMatch?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, "");
+    const tAttr = parseAttributes(target);
     return { brand, model: stripVersion(num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
-      attributes: { ...parseAttributes(head), ...(parseAttributes(target).capacity ? { capacity: parseAttributes(target).capacity } : {}) }, titleCondition };
+      attributes: { ...parseAttributes(head), ...(tAttr.capacity ? { capacity: tAttr.capacity } : {}), ...(tAttr.generation ? { generation: tAttr.generation } : {}) }, titleCondition,
+      fitsBrand: targetNamesProduct && fitsBrand && (!brand || fitsBrand.toLowerCase() !== brand.toLowerCase()) ? fitsBrand : null };
   }
   const kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
   const num = modelNumberToken(t.replace(/\(.*?\)/g, " "));

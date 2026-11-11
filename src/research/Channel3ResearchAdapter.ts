@@ -178,7 +178,7 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
     const product: CatalogProduct = { productId, title, category: typeof item.category?.slug === "string" ? item.category.slug : "unknown", identity,
       // Catalog text is a LISTING claim at best; capabilities are left to independent verification.
       capabilities: [], description: descText ? { origin: "channel3", text: descText } : null, reviews: [],
-      research: { kind: ex.kind, modelBasis: ex.modelBasis, attributes: attrs, conflictingAxes: conflicting,
+      research: { kind: ex.kind, fitsBrand: ex.fitsBrand ?? null, modelBasis: ex.modelBasis, attributes: attrs, conflictingAxes: conflicting,
         categoryTitle: typeof item.category?.title === "string" ? item.category.title : null, titleCondition: ex.titleCondition,
         provenance: { provider: "channel3", providerProductId: String(item.id ?? ""), observedAt, ...prov }, alsoListedAs: [], siblingVariants: siblings } };
     this.products.set(productId, { product, offers });

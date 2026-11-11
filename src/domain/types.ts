@@ -44,6 +44,8 @@ export interface CatalogProduct {
 }
 export interface CatalogResearchInfo {
   kind: "STANDALONE" | "BUNDLE" | "ACCESSORY";
+  /** V2.3: a third-party accessory's target brand (the product it fits); its family uses this brand. */
+  fitsBrand?: string | null;
   modelBasis: "MODEL_NUMBER" | "NAMED_MODEL" | "NONE";
   attributes: Partial<Record<"color" | "memory" | "storage" | "capacity" | "size" | "pack" | "year" | "generation", string>>;
   /** Attribute axes whose value conflicts between the provider's structured variant data and the title. */

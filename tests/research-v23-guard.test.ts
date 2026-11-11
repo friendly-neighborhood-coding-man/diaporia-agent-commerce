@@ -144,3 +144,10 @@ describe("full unattended demo (npm run demo:full)", () => {
     expect(trace.steps.every((s: any) => s.ok)).toBe(true);
   }, 150_000);
 });
+
+describe("V2.3 third-party accessories (V22-07)", () => {
+  it("an accessory names the product it fits by that product's brand", () => {
+    expect(extractIdentity("Tamsin Sleeve for Lumio Vela (2nd Gen)", "Tamsin")).toMatchObject({ kind: "ACCESSORY", model: "Vela", fitsBrand: "Lumio", attributes: { generation: "2" } });
+    expect(extractIdentity("Kova Pulse watch band for my wife", "Kova").fitsBrand ?? null).toBeNull();
+  });
+});
