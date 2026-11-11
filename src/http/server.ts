@@ -16,6 +16,7 @@ import { esc, money, page } from "./html.js";
 import { RateLimiter } from "./rateLimit.js";
 import { BrowserCheckoutHandoff } from "../handoff/BrowserCheckoutHandoff.js";
 import { createHandoffRoutes } from "../handoff/http.js";
+import { createResearchHoldRoutes } from "./researchHoldRoutes.js";
 import { OAuthAuthority, type PendingAuthorization } from "../auth/oauth.js";
 
 export interface AppConfig {
@@ -91,6 +92,8 @@ export function createApp(cfg: AppConfig): App {
   // WP-5 (IR-10): previewMinor is the strictly parsed limit the owner was shown on the confirm step.
   const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number; csId: string; summaryHash: string; previewMinor?: number }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
+  const researchHoldRoutes = createResearchHoldRoutes({ gateway, verifyOwnerKey: (k) => cfg.auth.verifyOwnerKey(k), now, secureCookies: base.protocol === "https:",
+    sameOriginForm: (req) => sameOriginStrict(req, allowedOrigins), readText });
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
     sameOrigin: (req) => sameOriginStrict(req, allowedOrigins), readText }) : null;
   const handoffTimer = handoff ? setInterval(() => { void handoff.tick(); }, 15_000) : null;
@@ -159,7 +162,7 @@ export function createApp(cfg: AppConfig): App {
         }
       }
       // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
-      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
+      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff|research-holds)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
       // ---- Owner API (human-held owner key; AI client tokens cannot reach this) ----
       if (url.pathname === "/owner/mandates" && req.method === "POST") {
@@ -350,6 +353,9 @@ export function createApp(cfg: AppConfig): App {
         }
         return send(res, 405, { error: "Method not allowed" });
       }
+
+      // ---- V21-04 owner confirmation of research-hold proposals (owner key + cookie + CSRF; never via MCP) ----
+      if (await researchHoldRoutes(req, res, url)) return;
 
       // ---- Browser checkout handoff page (owner-authenticated; separate from the PayPal Sandbox path) ----
       if (handoffRoutes && await handoffRoutes(req, res, url)) return;

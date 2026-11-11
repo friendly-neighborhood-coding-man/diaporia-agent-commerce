@@ -34,6 +34,7 @@ import type { SearchPage, ProductSearchQuery } from "../research/CommerceResearc
 import type { RankingWeights } from "../decision/weights.js";
 import { gateFromDecision, gateReadiness, resolveGate, type PurchaseGate } from "./PurchaseGate.js";
 import { priceProvenance } from "./QuotePromotion.js";
+import { ResearchHoldProposals } from "./ResearchHoldProposals.js";
 
 export interface GatewayConfig {
   /** Public base URL of this server, used for return/cancel/authorization links. */
@@ -110,6 +111,7 @@ export class CommerceGateway {
   readonly mandates: MandateRepository;
   readonly audit: PurchaseAuditJournal;
   readonly identity: MerchantIdentityVerifier;
+  readonly holdProposals: ResearchHoldProposals;
 
   constructor(private readonly store: Store, readonly research: CommerceResearchAdapter, readonly payments: PaymentProvider, readonly config: GatewayConfig,
     private readonly now: () => number = Date.now) {
@@ -117,6 +119,7 @@ export class CommerceGateway {
     this.policy = new PurchasePolicyEngine(store, now);
     this.mandates = new MandateRepository(store, now);
     this.audit = new PurchaseAuditJournal(store, now);
+    this.holdProposals = new ResearchHoldProposals(store, now);
     this.identity = config.merchantIdentity ?? defaultMockMerchantIdentityVerifier(now);
   }
 
@@ -469,25 +472,84 @@ export class CommerceGateway {
   }
 
   /**
-   * Records a user clarification that resolves one open research item (V2.1). The original item stays in the gate and
-   * the audit log; the session returns to HOLD with no comparison, so offers must be compared again.
-   * `userStatement` is the user's own words, stored verbatim (bounded) for audit. This never grants spending authority.
+   * V21-04: an agent call only PROPOSES a resolution of one open research item. Nothing in the gate changes; the result
+   * is a link to the owner confirmation page, where only the authenticated human owner can confirm it
+   * (confirmResearchHoldAsOwner). `userStatement` is stored as the agent's text and is never treated as the user's words.
    */
   resolveResearchHold(userId: string, input: { purchaseSessionId: string; kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT"; requirement?: string | null; budgetMinor?: number | null; currency: string; userStatement: string }, actor = "MCP_TOKEN:unknown") {
-    let ps = this.livePurchaseSession(input.purchaseSessionId, userId);
+    const ps = this.livePurchaseSession(input.purchaseSessionId, userId);
     if (!["RESEARCHED", "OFFER_VERIFIED", "HOLD"].includes(ps.state)) throw new CommerceError("INVALID_STATE", `Session is ${ps.state}; nothing to resolve.`);
     const gate = (ps.research?.purchaseGate ?? null) as PurchaseGate | null;
     if (!gate) throw new CommerceError("INVALID_STATE", "This session has no research decision to resolve (research again).");
     const statement = String(input.userStatement ?? "").trim();
-    if (statement.length < 3) throw new CommerceError("INVALID_INPUT", "userStatement (the user's own clarification) is required.");
-    let next: PurchaseGate;
-    try {
-      next = resolveGate(gate, { kind: input.kind, requirement: input.requirement ?? null, budgetMinor: input.budgetMinor ?? null, currency: input.currency, actor, note: statement.slice(0, 500) }, this.now(), ps.intent.currency);
-    } catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }
-    ps = this.sessions.updatePurchaseSession(ps, "HOLD", { research: { ...ps.research, purchaseGate: next }, comparison: null });
-    const res = next.resolutions[next.resolutions.length - 1]!;
-    this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_HOLD_RESOLVED", { kind: res.kind, requirement: res.requirement, budgetMinor: res.budgetMinor, currency: res.currency, actor, userStatement: res.note });
-    return { purchaseSessionId: ps.purchaseSessionId, state: ps.state, resolution: res, readiness: this.purchaseReadiness(ps, ps.productId), nextStep: "Compare offers again.", paymentEffect: "NONE" as const };
+    if (statement.length < 3) throw new CommerceError("INVALID_INPUT", "userStatement (the explanation shown to the owner) is required.");
+    const item = this.openItemFor(gate, ps, input.kind, input.requirement ?? null, input.budgetMinor ?? null, input.currency);
+    const proposal = this.holdProposals.create({ userId, purchaseSessionId: ps.purchaseSessionId, kind: input.kind, requirement: input.kind === "DROP_REQUIREMENT" ? input.requirement ?? null : null,
+      budgetMinor: input.kind === "CONFIRM_BUDGET" ? input.budgetMinor ?? null : null, currency: input.currency, item, agentText: statement.slice(0, 500), proposedBy: actor });
+    this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_HOLD_PROPOSED", { proposalId: proposal.proposalId, digest: proposal.digest, kind: proposal.kind, requirement: proposal.requirement,
+      budgetMinor: proposal.budgetMinor, currency: proposal.currency, actor, agentText: proposal.agentText });
+    return { purchaseSessionId: ps.purchaseSessionId, state: ps.state, proposalId: proposal.proposalId, status: "PENDING_OWNER_CONFIRMATION" as const,
+      ownerConfirmationUrl: `${this.config.baseUrl}/research-holds/${proposal.proposalId}`, expiresAt: new Date(proposal.expiresAt).toISOString(),
+      readiness: this.purchaseReadiness(ps, ps.productId),
+      nextStep: "Give ownerConfirmationUrl to the user. Only the user, signed in as the owner on that page, can confirm this change; nothing has been resolved. Compare offers again after they confirm.",
+      paymentEffect: "NONE" as const };
+  }
+
+  /** The open gate item a proposal would resolve; throws INVALID_INPUT for anything that is not open and resolvable. */
+  private openItemFor(gate: PurchaseGate, ps: PurchaseSession, kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT", requirement: string | null, budgetMinor: number | null, currency: string) {
+    // The same validation the owner confirmation applies, run now so that an impossible proposal is never shown.
+    try { resolveGate(gate, { kind, requirement, budgetMinor, currency, actor: "OWNER_SESSION:validate", confirmation: "CONFIRMED_BY_OWNER", proposalId: "validate", proposalDigest: "", agentText: "" }, this.now(), ps.intent.currency); }
+    catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }
+    if (kind === "CONFIRM_BUDGET") return { code: "BUDGET_UNRESOLVED", detail: gate.budgetConflict!, productId: null, sessionBudgetMinor: ps.intent.budgetMinor };
+    const entries = Object.entries(gate.products).filter(([, p]) => p.requirements.some((q) => q.key === requirement));
+    const [productId, p] = entries.find(([id]) => id === ps.productId) ?? entries[0]!;
+    const q = p.requirements.find((x) => x.key === requirement)!;
+    return { code: q.code, detail: q.detail, productId, sessionBudgetMinor: ps.intent.budgetMinor };
+  }
+
+  /** Owner page only (src/http/researchHoldRoutes.ts): the proposal for its own user, with whether it can still be decided. */
+  researchHoldForOwner(userId: string, proposalId: string) {
+    const p = this.holdProposals.get(proposalId, userId);
+    if (!p) return null;
+    const ps = this.sessions.getPurchaseSession(p.purchaseSessionId, userId);
+    return { proposal: p, session: { purchaseSessionId: ps.purchaseSessionId, requestText: ps.request, currency: ps.intent.currency, budgetMinor: ps.intent.budgetMinor, state: ps.state },
+      decidable: p.status === "PENDING" && p.expiresAt > this.now() };
+  }
+
+  /**
+   * Owner page only. Confirms a PENDING, unexpired proposal of this owner whose digest equals the one the owner was
+   * shown, and appends an owner-confirmed resolution. Single use. Never reachable from an MCP tool.
+   */
+  confirmResearchHoldAsOwner(userId: string, proposalId: string, o: { shownDigest: string; ownerSessionFingerprint: string; typedBudgetMinor: number | null }) {
+    return this.store.transaction(() => {
+      const p = this.holdProposals.get(proposalId, userId);
+      if (!p) throw new CommerceError("NOT_FOUND", "Proposal not found.");
+      if (p.digest !== o.shownDigest) throw new CommerceError("INVALID_STATE", "The proposal is not the one that was reviewed.");
+      if (p.kind === "CONFIRM_BUDGET" && o.typedBudgetMinor !== p.budgetMinor) throw new CommerceError("INVALID_INPUT", "The typed budget does not match the proposed budget.");
+      let ps = this.livePurchaseSession(p.purchaseSessionId, userId);
+      const gate = (ps.research?.purchaseGate ?? null) as PurchaseGate | null;
+      if (!gate || !["RESEARCHED", "OFFER_VERIFIED", "HOLD"].includes(ps.state)) throw new CommerceError("INVALID_STATE", "The purchase session can no longer be changed.");
+      const actor = `OWNER_SESSION:${o.ownerSessionFingerprint}`;
+      let next: PurchaseGate;
+      try { next = resolveGate(gate, { kind: p.kind, requirement: p.requirement, budgetMinor: p.budgetMinor, currency: p.currency, actor, confirmation: "CONFIRMED_BY_OWNER", proposalId: p.proposalId, proposalDigest: p.digest, agentText: p.agentText }, this.now(), ps.intent.currency); }
+      catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }
+      if (!this.holdProposals.decide(p.proposalId, userId, "CONFIRMED", actor)) throw new CommerceError("INVALID_STATE", "The proposal was already decided or has expired.");
+      ps = this.sessions.updatePurchaseSession(ps, "HOLD", { research: { ...ps.research, purchaseGate: next }, comparison: null });
+      const res = next.resolutions[next.resolutions.length - 1]!;
+      this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_HOLD_CONFIRMED_BY_OWNER", { proposalId: p.proposalId, digest: p.digest, kind: res.kind, requirement: res.requirement,
+        budgetMinor: res.budgetMinor, currency: res.currency, actor, originalItem: p.item, proposedBy: p.proposedBy });
+      return { resolution: res, readiness: this.purchaseReadiness(ps, ps.productId) };
+    });
+  }
+
+  /** Owner page only: rejects a PENDING proposal. Nothing in the gate changes. */
+  rejectResearchHoldAsOwner(userId: string, proposalId: string, o: { shownDigest: string; ownerSessionFingerprint: string }) {
+    const p = this.holdProposals.get(proposalId, userId);
+    if (!p) throw new CommerceError("NOT_FOUND", "Proposal not found.");
+    if (p.digest !== o.shownDigest) throw new CommerceError("INVALID_STATE", "The proposal is not the one that was reviewed.");
+    const actor = `OWNER_SESSION:${o.ownerSessionFingerprint}`;
+    if (!this.holdProposals.decide(p.proposalId, userId, "REJECTED", actor)) throw new CommerceError("INVALID_STATE", "The proposal was already decided or has expired.");
+    this.audit.append(p.purchaseSessionId, userId, "RESEARCH_HOLD_REJECTED_BY_OWNER", { proposalId: p.proposalId, digest: p.digest, actor });
   }
 
   // ---------------------------------------------------------------- prepare_checkout

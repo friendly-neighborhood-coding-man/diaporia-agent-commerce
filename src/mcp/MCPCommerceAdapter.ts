@@ -90,7 +90,7 @@ export function serverInstructions(principal: Principal, opts: McpOptions): stri
   if (can(SCOPES.RESEARCH)) parts.push("research_purchase and compare_purchase_offers never move money.");
   if (opts.exposePaymentTools && can(SCOPES.PREPARE)) {
     parts.push("prepare_checkout creates a checkout but captures nothing; payment needs a user-created spending mandate and the buyer's own approval on PayPal.");
-    parts.push("If compare_purchase_offers reports unresolved research requirements, ask the user; call resolve_research_hold only with the user's own words. It never grants spending authority.");
+    parts.push("If compare_purchase_offers reports unresolved research requirements, ask the user. resolve_research_hold only creates a proposal and returns ownerConfirmationUrl; give that link to the user, who confirms it on the owner page. You cannot confirm it, and nothing is resolved until they do.");
   } else {
     parts.push("This connection cannot create checkouts or payments.");
   }
@@ -164,22 +164,23 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
       _meta: { "diaporia/effect": "STATE_MUTATING_PAYMENT_PREPARATION", "diaporia/capturesFunds": false },
     }, async (args) => run(SCOPES.PREPARE, () => gateway.prepareCheckout(principal.userId, args, `MCP_TOKEN:${principal.tokenFingerprint}`))());
 
-    // V2.1: the only way an open research item is cleared inside a session. Listed with the payment tools because it
-    // only matters for a payment path. Hard violations are never resolvable; a resolution is appended, never replaces.
+    // V21-04: an agent can only PROPOSE. The proposal is confirmed by the human owner on /research-holds/<id> (owner key,
+    // cookie, CSRF), never through MCP. Hard violations are never resolvable; a resolution is appended, never replaces.
     server.registerTool("resolve_research_hold", {
-      title: "Record the user's clarification of an open research requirement",
-      description: "Records the USER's own clarification for one open item that blocks payment preparation: CONFIRM_BUDGET (the request's budget was in another currency; give the budget in the session currency) or DROP_REQUIREMENT (the user accepts that a stated requirement, e.g. must:wireless, cannot be verified). Pass the user's words verbatim in userStatement; never call this on your own judgement. The original uncertainty stays in the audit trail. Moves no money and grants no spending authority; compare offers again afterwards.",
+      title: "Propose a resolution of an open research requirement (the owner confirms it)",
+      description: "Creates a PROPOSAL to resolve one open item that blocks payment preparation: CONFIRM_BUDGET (the budget is unresolved or in another currency; propose a budget in the session currency) or DROP_REQUIREMENT (propose dropping a stated requirement, e.g. must:wireless, that research could not verify). This call resolves NOTHING. It returns ownerConfirmationUrl: give it to the user, who reviews and confirms the exact change on the owner page with their own owner credentials. userStatement is shown to the owner labelled as your text. Moves no money and grants no spending authority; compare offers again after the owner confirms.",
       inputSchema: {
         purchaseSessionId: idString("ps"),
         kind: z.enum(["CONFIRM_BUDGET", "DROP_REQUIREMENT"]),
         requirement: z.string().min(3).max(80).optional().describe("For DROP_REQUIREMENT: the requirement key reported by compare_purchase_offers, e.g. must:wireless"),
-        budgetMinor: z.number().int().positive().max(100_000_000).optional().describe("For CONFIRM_BUDGET: the budget in the session currency, integer minor units"),
+        budgetMinor: z.number().int().positive().max(100_000_000).optional().describe("For CONFIRM_BUDGET: the proposed budget in the session currency, integer minor units"),
         currency: z.enum(["USD", "EUR", "GBP", "JPY", "KRW"]),
-        userStatement: z.string().min(3).max(500).describe("The user's own clarification, verbatim"),
+        userStatement: z.string().min(3).max(500).describe("Your explanation for the owner (shown as the assistant's text, never as the owner's words)"),
       },
-      outputSchema: z.looseObject({ purchaseSessionId: z.string(), state: z.string(), resolution: z.looseObject({}), readiness: z.looseObject({ ready: z.boolean(), open: z.array(z.string()) }), paymentEffect: z.literal("NONE") }),
-      annotations: { title: "Record the user's clarification", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-      _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT", "diaporia/capturesFunds": false },
+      outputSchema: z.looseObject({ purchaseSessionId: z.string(), state: z.string(), proposalId: z.string(), status: z.literal("PENDING_OWNER_CONFIRMATION"), ownerConfirmationUrl: z.string(), expiresAt: z.string(),
+        readiness: z.looseObject({ ready: z.boolean(), open: z.array(z.string()) }), paymentEffect: z.literal("NONE") }),
+      annotations: { title: "Propose a research-hold resolution", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT", "diaporia/capturesFunds": false, "diaporia/requiresOwnerConfirmation": true },
     }, async (args) => run(SCOPES.PREPARE, () => gateway.resolveResearchHold(principal.userId, args, `MCP_TOKEN:${principal.tokenFingerprint}`))());
   }
 

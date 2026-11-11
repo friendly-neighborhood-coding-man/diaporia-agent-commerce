@@ -88,3 +88,20 @@ export async function researchAndCompare(client: Client, request = "Buy Sony WH-
   const compare = await call(client, "compare_purchase_offers", { researchSessionId: research.purchaseSessionId, productIdentity: SONY_BLACK, destination: CA });
   return { research, compare };
 }
+
+/**
+ * V21-04: plays the HUMAN owner on the research-hold confirmation page (owner key → review session cookie + CSRF →
+ * explicit confirmation), like a browser would. The MCP client never holds the owner key; only this simulated human does.
+ */
+export async function ownerConfirmsHold(ownerConfirmationUrl: string, ownerKey: string, form: Record<string, string> = {}) {
+  const origin = new URL(ownerConfirmationUrl).origin;
+  const post = (body: Record<string, string>, cookie = "") => fetch(ownerConfirmationUrl, { method: "POST", redirect: "manual",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: new URLSearchParams(body).toString() });
+  const review = await post({ action: "review", ownerKey });
+  const reviewHtml = await review.text();
+  if (review.status !== 200) return { status: review.status, reviewHtml, html: reviewHtml };
+  const cookie = (review.headers.get("set-cookie") ?? "").split(";")[0]!;
+  const csrf = /name="csrf" value="([^"]+)"/.exec(reviewHtml)?.[1] ?? "";
+  const r = await post({ action: "confirm", csrf, acknowledge: "yes", ...form }, cookie);
+  return { status: r.status, reviewHtml, html: await r.text() };
+}

@@ -21,6 +21,10 @@
  *
  * A resolution never deletes the original uncertainty: the gate keeps the original items and appends the resolution
  * (who, when, what) so the audit trail shows both.
+ *
+ * V21-04: a resolution exists only when the human owner confirmed an agent's proposal on the owner confirmation page
+ * (`confirmation: "CONFIRMED_BY_OWNER"`, ResearchHoldProposals). gateReadiness ignores any other resolution (fail
+ * closed), and resolveGate refuses one.
  */
 import type { Decision } from "../decision/DecisionEngine.js";
 
@@ -28,7 +32,18 @@ export const GATE_VERSION = "purchase-gate-v1";
 const REQUIREMENT_CODES = new Set(["MUST_HAVE_UNVERIFIED", "MUST_HAVE_CONTRADICTED", "VERIFICATION_LIMIT_REACHED", "ATTRIBUTE_UNKNOWN"]);
 
 export interface GateItem { key: string; code: string; detail: string }
-export interface GateResolution { kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT"; requirement: string | null; budgetMinor: number | null; currency: string; at: string; actor: string; note: string }
+export interface GateResolution {
+  kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT"; requirement: string | null; budgetMinor: number | null; currency: string; at: string;
+  /** OWNER_SESSION:<fingerprint of the owner confirmation session>. */
+  actor: string;
+  confirmation: "CONFIRMED_BY_OWNER";
+  proposalId: string;
+  /** The digest of the proposal the owner saw and confirmed. */
+  proposalDigest: string;
+  /** The AI agent's explanation from the proposal: agent-provided, never the owner's words. */
+  agentText: string;
+}
+const ownerConfirmed = (r: GateResolution) => r.confirmation === "CONFIRMED_BY_OWNER" && typeof r.proposalId === "string" && /^OWNER_SESSION:/.test(r.actor ?? "");
 export interface PurchaseGate {
   version: typeof GATE_VERSION;
   decisionState: Decision["state"];
@@ -62,7 +77,8 @@ export interface GateReadiness { ready: boolean; open: string[]; effectiveBudget
  */
 export function gateReadiness(gate: PurchaseGate | null | undefined, productId: string | null, sessionBudgetMinor: number | null, legacy: boolean): GateReadiness {
   if (legacy) return { ready: true, open: [], effectiveBudgetMinor: sessionBudgetMinor, budgetSource: "SESSION" };
-  const confirmed = [...(gate?.resolutions ?? [])].reverse().find((r) => r.kind === "CONFIRM_BUDGET");
+  const owned = (gate?.resolutions ?? []).filter(ownerConfirmed);
+  const confirmed = [...owned].reverse().find((r) => r.kind === "CONFIRM_BUDGET");
   const effectiveBudgetMinor = confirmed ? confirmed.budgetMinor : sessionBudgetMinor;
   const budgetSource = confirmed ? "USER_CONFIRMED" as const : "SESSION" as const;
   if (!gate || gate.version !== GATE_VERSION) return { ready: false, open: ["The research decision for this session is missing; research again."], effectiveBudgetMinor, budgetSource };
@@ -72,7 +88,7 @@ export function gateReadiness(gate: PurchaseGate | null | undefined, productId: 
   if (!p) open.push("This product was not assessed by the research decision.");
   else {
     for (const h of p.hard) open.push(`Known violation (start a new research session): ${h.detail}`);
-    const dropped = new Set(gate.resolutions.filter((r) => r.kind === "DROP_REQUIREMENT").map((r) => r.requirement));
+    const dropped = new Set(owned.filter((r) => r.kind === "DROP_REQUIREMENT").map((r) => r.requirement));
     for (const q of p.requirements) if (!dropped.has(q.key)) open.push(`Unresolved requirement ${q.key}: ${q.detail}`);
   }
   return { ready: open.length === 0, open, effectiveBudgetMinor, budgetSource };
@@ -80,12 +96,14 @@ export function gateReadiness(gate: PurchaseGate | null | undefined, productId: 
 
 /** Appends an audited resolution. Throws on anything that is not a resolvable open item. */
 export function resolveGate(gate: PurchaseGate, r: Omit<GateResolution, "at"> & { at?: string }, now: number, sessionCurrency: string): PurchaseGate {
+  if (!ownerConfirmed({ ...r, at: "" } as GateResolution)) throw new Error("Only an owner-confirmed proposal can resolve a research hold.");
   if (r.currency !== sessionCurrency) throw new Error(`Resolution currency ${r.currency} does not match the session currency ${sessionCurrency}`);
   if (r.kind === "CONFIRM_BUDGET") {
-    if (!gate.budgetConflict) throw new Error("There is no budget conflict to resolve in this session; research again to change the budget.");
+    if (!gate.budgetConflict) throw new Error("There is no unresolved budget in this session; research again to change the budget.");
     if (r.budgetMinor === null || !Number.isSafeInteger(r.budgetMinor) || r.budgetMinor <= 0) throw new Error("budgetMinor must be a positive integer of minor units");
   } else {
-    const open = new Set(Object.values(gate.products).flatMap((p) => p.requirements.map((q) => q.key)));
+    const dropped = new Set(gate.resolutions.filter(ownerConfirmed).filter((x) => x.kind === "DROP_REQUIREMENT").map((x) => x.requirement));
+    const open = new Set(Object.values(gate.products).flatMap((p) => p.requirements.map((q) => q.key)).filter((k) => !dropped.has(k)));
     if (!r.requirement || !open.has(r.requirement)) throw new Error(`No open requirement ${r.requirement ?? "(none)"} in this session`);
   }
   return { ...gate, resolutions: [...gate.resolutions, { ...r, at: r.at ?? new Date(now).toISOString() }] };

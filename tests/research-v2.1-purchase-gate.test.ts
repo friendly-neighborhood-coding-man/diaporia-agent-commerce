@@ -24,6 +24,18 @@ const cand = (out: any, id: string) => out.candidates.find((c: any) => c.product
 const compare = (gw: any, out: any, identity: unknown) => gw.compareOffers("alice", { researchSessionId: out.purchaseSessionId, productIdentity: identity, destination: CA });
 const prepare = (gw: any, out: any, offerId: string, max = 10_000_000) =>
   gw.prepareCheckout("alice", { purchaseSessionId: out.purchaseSessionId, offerId, maximumApprovedTotalMinor: max, currency: "USD", quantity: 1 });
+/**
+ * V21-04: the agent proposes (resolve_research_hold) and the HUMAN OWNER confirms. Here the owner step is the gateway's
+ * owner-page method in process; the HTTP owner page itself is covered in research-v2.1-remediation-owner-confirm.test.ts.
+ */
+function ownerResolve(gw: any, args: any) {
+  const p = gw.resolveResearchHold("alice", args);
+  expect(p.status).toBe("PENDING_OWNER_CONFIRMATION");
+  expect(gw.purchaseReadiness(gw.sessions.getPurchaseSession(args.purchaseSessionId, "alice"), null).open.length).toBeGreaterThan(0);
+  const digest = gw.holdProposals.get(p.proposalId, "alice").digest;
+  const c = gw.confirmResearchHoldAsOwner("alice", p.proposalId, { shownDigest: digest, ownerSessionFingerprint: "0123456789abcdef", typedBudgetMinor: args.budgetMinor ?? null });
+  return { state: gw.sessions.getPurchaseSession(args.purchaseSessionId, "alice").state, ...c };
+}
 const events = (gw: any, out: any) => gw.audit.timeline([out.purchaseSessionId], "alice").map((e: any) => ({ type: e.type, data: e.data }));
 
 describe("currency-conflicting budget never silently disappears", () => {
@@ -60,7 +72,7 @@ describe("currency-conflicting budget never silently disappears", () => {
     expect(() => gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "CONFIRM_BUDGET", currency: "USD", userStatement: "about $200" })).toThrow(/budgetMinor/);
     expect(() => gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "CONFIRM_BUDGET", budgetMinor: 20_000, currency: "USD", userStatement: "" })).toThrow(/userStatement/);
     // A budget below the verified total: the session is no longer blocked by the conflict, but no offer fits.
-    const r: any = gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "CONFIRM_BUDGET", budgetMinor: price - 1, currency: "USD", userStatement: "Keep it under that, in dollars." });
+    const r: any = ownerResolve(gw, { purchaseSessionId: out.purchaseSessionId, kind: "CONFIRM_BUDGET", budgetMinor: price - 1, currency: "USD", userStatement: "Keep it under that, in dollars." });
     expect(r.state).toBe("HOLD");
     expect(r.readiness.budgetSource).toBe("USER_CONFIRMED");
     const tight: any = await compare(gw, out, id);
@@ -69,16 +81,17 @@ describe("currency-conflicting budget never silently disappears", () => {
     expect(tight.lowestVerifiedEligibleOffer).toBeNull();
     expect(tight.state).toBe("HOLD");
     // A later confirmation supersedes; the earlier one stays in the gate and the audit log.
-    gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "CONFIRM_BUDGET", budgetMinor: price + 10_000, currency: "USD", userStatement: "OK, up to that much." });
+    ownerResolve(gw, { purchaseSessionId: out.purchaseSessionId, kind: "CONFIRM_BUDGET", budgetMinor: price + 10_000, currency: "USD", userStatement: "OK, up to that much." });
     const ok: any = await compare(gw, out, id);
     expect(ok.state).toBe("OFFER_VERIFIED");
     const ps = gw.sessions.getPurchaseSession(out.purchaseSessionId, "alice");
     const gate = (ps.research as any).purchaseGate as PurchaseGate;
     expect(gate.budgetConflict).toMatch(/KRW/);
     expect(gate.resolutions.map((x) => x.budgetMinor)).toEqual([price - 1, price + 10_000]);
-    const ev = events(gw, out).filter((e: any) => e.type === "RESEARCH_HOLD_RESOLVED");
+    const ev = events(gw, out).filter((e: any) => e.type === "RESEARCH_HOLD_CONFIRMED_BY_OWNER");
     expect(ev).toHaveLength(2);
-    expect(ev[0].data).toMatchObject({ kind: "CONFIRM_BUDGET", currency: "USD", userStatement: "Keep it under that, in dollars." });
+    expect(ev[0].data).toMatchObject({ kind: "CONFIRM_BUDGET", currency: "USD", actor: "OWNER_SESSION:0123456789abcdef" });
+    expect(events(gw, out).filter((e: any) => e.type === "RESEARCH_HOLD_PROPOSED")[0].data).toMatchObject({ agentText: "Keep it under that, in dollars." });
     // The prepare path re-verifies the quote against the confirmed budget, not the (absent) session budget.
     const prep: any = await prepare(gw, out, ok.lowestVerifiedEligibleOffer.offerId);
     expect(prep.state).not.toBe("APPROVED");
@@ -103,7 +116,7 @@ describe("an unverified must-have stays unresolved through the whole workflow", 
     const id = cand(out, "ch3:h_fab_lite").identity;
     await compare(gw, out, id);
     expect(() => gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:wireless", currency: "USD", userStatement: "drop it" })).toThrow(/No open requirement/);
-    gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:over_ear", currency: "USD", userStatement: "On-ear is fine too." });
+    ownerResolve(gw, { purchaseSessionId: out.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:over_ear", currency: "USD", userStatement: "On-ear is fine too." });
     // The resolution clears the old comparison: prepare needs a fresh compare.
     await expect(prepare(gw, out, "ch3:h_fab_lite:0")).rejects.toMatchObject({ code: "INVALID_STATE" });
     const cmp: any = await compare(gw, out, id);
@@ -113,7 +126,7 @@ describe("an unverified must-have stays unresolved through the whole workflow", 
     expect(prep.paymentEffect ?? "NONE").not.toBe("CAPTURED");
     const gate = (gw.sessions.getPurchaseSession(out.purchaseSessionId, "alice").research as any).purchaseGate as PurchaseGate;
     expect(gate.products["ch3:h_fab_lite"]!.requirements.map((q) => q.key)).toContain("must:over_ear");
-    expect(gate.resolutions).toMatchObject([{ kind: "DROP_REQUIREMENT", requirement: "must:over_ear", note: "On-ear is fine too." }]);
+    expect(gate.resolutions).toMatchObject([{ kind: "DROP_REQUIREMENT", requirement: "must:over_ear", agentText: "On-ear is fine too.", confirmation: "CONFIRMED_BY_OWNER" }]);
   });
 
   it("quoting never resolves a requirement: re-comparing many times stays HOLD", async () => {
@@ -133,7 +146,7 @@ describe("a hard-constraint violation never becomes purchase-eligible", () => {
     const cmp: any = await compare(gw, out, c.identity);
     expect(cmp.state).toBe("HOLD");
     expect(cmp.purchaseReadiness.open.join(" ")).toMatch(/Known violation/);
-    gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:over_ear", currency: "USD", userStatement: "Whatever, buy it." });
+    ownerResolve(gw, { purchaseSessionId: out.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:over_ear", currency: "USD", userStatement: "Whatever, buy it." });
     const again: any = await compare(gw, out, c.identity);
     expect(again.state).toBe("HOLD");
     expect(again.purchaseReadiness.open.join(" ")).toMatch(/Known violation/);
@@ -154,7 +167,7 @@ describe("prepare_checkout re-checks the gate (defense in depth)", () => {
     const { gw, out } = await research("Over-ear headphones under $60");
     const id = cand(out, "ch3:h_fab_lite").identity;
     await compare(gw, out, id);
-    gw.resolveResearchHold("alice", { purchaseSessionId: out.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:over_ear", currency: "USD", userStatement: "On-ear is fine." });
+    ownerResolve(gw, { purchaseSessionId: out.purchaseSessionId, kind: "DROP_REQUIREMENT", requirement: "must:over_ear", currency: "USD", userStatement: "On-ear is fine." });
     const cmp: any = await compare(gw, out, id);
     expect(cmp.state).toBe("OFFER_VERIFIED");
     return { gw, out, offerId: cmp.lowestVerifiedEligibleOffer.offerId as string };
@@ -194,12 +207,23 @@ describe("PurchaseGate unit rules", () => {
     expect(gateReadiness(gate, "q", 100, false).ready).toBe(false);
     expect(gateReadiness(null, null, 100, true)).toMatchObject({ ready: true, effectiveBudgetMinor: 100, budgetSource: "SESSION" });
   });
-  it("a resolution is appended, never replaces, and CONFIRM_BUDGET needs a conflict", () => {
-    const r = resolveGate(gate, { kind: "DROP_REQUIREMENT", requirement: "must:anc", budgetMinor: null, currency: "USD", actor: "t", note: "fine" }, 0, "USD");
+  const owner = { actor: "OWNER_SESSION:0123456789abcdef", confirmation: "CONFIRMED_BY_OWNER" as const, proposalId: "rhp_x", proposalDigest: "d", agentText: "fine" };
+  it("a resolution is appended, never replaces, and CONFIRM_BUDGET needs an unresolved budget", () => {
+    const r = resolveGate(gate, { kind: "DROP_REQUIREMENT", requirement: "must:anc", budgetMinor: null, currency: "USD", ...owner }, 0, "USD");
     expect(gate.resolutions).toHaveLength(0);
     expect(r.resolutions).toHaveLength(1);
     expect(r.products.p!.requirements).toHaveLength(1);
     expect(gateReadiness(r, "p", null, false).ready).toBe(true);
-    expect(() => resolveGate(gate, { kind: "CONFIRM_BUDGET", requirement: null, budgetMinor: 5, currency: "USD", actor: "t", note: "x" }, 0, "USD")).toThrow(/no budget conflict/);
+    expect(() => resolveGate(gate, { kind: "CONFIRM_BUDGET", requirement: null, budgetMinor: 5, currency: "USD", ...owner }, 0, "USD")).toThrow(/no unresolved budget/);
+  });
+  it("V21-04: only an owner-confirmed resolution counts; anything else is refused or ignored (fail closed)", () => {
+    const agentMade = { kind: "DROP_REQUIREMENT" as const, requirement: "must:anc", budgetMinor: null, currency: "USD", actor: "MCP_TOKEN:abc", confirmation: "CONFIRMED_BY_OWNER" as const, proposalId: "rhp_x", proposalDigest: "d", agentText: "x" };
+    expect(() => resolveGate(gate, agentMade, 0, "USD")).toThrow(/owner-confirmed/);
+    expect(() => resolveGate(gate, { ...agentMade, actor: owner.actor, confirmation: "AGENT_ASSERTED" as any }, 0, "USD")).toThrow(/owner-confirmed/);
+    // A resolution injected without owner confirmation (e.g. an old V2.1 row) does not open the gate.
+    const injected: PurchaseGate = { ...gate, resolutions: [{ ...agentMade, at: "2026-11-10T00:00:00Z" }] };
+    expect(gateReadiness(injected, "p", null, false).ready).toBe(false);
+    const legacy: PurchaseGate = { ...gate, resolutions: [{ kind: "DROP_REQUIREMENT", requirement: "must:anc", budgetMinor: null, currency: "USD", at: "", actor: "MCP_TOKEN:abc", note: "user said ok" } as any] };
+    expect(gateReadiness(legacy, "p", null, false).ready).toBe(false);
   });
 });
