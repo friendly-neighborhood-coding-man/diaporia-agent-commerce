@@ -255,3 +255,35 @@ thread, reproduced every HIGH finding).
   the product noun that nothing else interprets is now an unrecognized must-have (English and Korean). Seen IW-2:
   0 unsafe, 0/19 gate bypasses, 0/8 agent-resolution bypasses; IW-1.1 and the builder's seen eval unchanged.
 - Lesson: recall fixes (query translation) can remove an accidental safety net; rerun the safety probes after each.
+
+## J-28 · V2.2 WP-1 (H-1): money constraints are explicit (468e5e7, 9f0efcb)
+- Every stated amount becomes a constraint (currency, lower and upper bound in integer minor units, inclusive or
+  exclusive, span, provenance, basis) or a named ambiguity. "under US$120" allows at most 119.99; ranges, "20만원 이하",
+  만원/천 multipliers and 원대 bands are read; a structured budget can only tighten the text. Nothing is converted
+  between currencies. Both checkout paths cap at the confirmed maximum.
+- Follow-up after the seen IW-2 rerun: an approximate amount ("around $250", "20만원 정도") had become an unresolved
+  budget, so a legitimate request went to HOLD. It is now applied as the maximum (never exceeded) with an assumption.
+
+## J-29 · V2.2 WP-2 (H-2): the boundary is the OS account (9704f75)
+- An AI host running as the service's own OS account can rewrite the database and the code; no in-application check
+  stops that. Payment-facing operations now require the service to run under its own account, with data 700/600,
+  code, configuration and the Node binary not writable by the AI host, and the owner registry administered by root.
+  Otherwise checkout preparation, browser handoff and the owner pages are disabled (fail closed); research works.
+- Every gate check re-verifies the stored passkey assertion against the registry; a row written by anything else
+  does not count. The reviewer's database attack was re-run with real OS accounts (shared account: writes succeed,
+  checkout refused; setup-script account: every write refused; human passkey positive control prepares).
+
+## J-30 · V2.2 WP-3 (H-3): exact identity (44b2be6)
+- A product noun phrase ends a named model ("AP-400 air purifier" → AP-400); a noun followed by a model token stays
+  in it ("Watch 6"). Any listing that does not name the requested model number is NOT_REQUESTED_MODEL, in exact mode
+  and in discovery (English and Korean).
+
+## J-31 · V2.2 WP-4/WP-5: evidence first (d4d0b2e)
+- Owner decision EVIDENCE FIRST. Unfamiliar requirements are generic propositions verified by the existing statement
+  and sufficiency rules, not by a bigger vocabulary. Manufacturer text verifies a stated property, never a
+  performance judgement. Owner ATTEST and WAIVE go through the passkey flow and are never shown as verified.
+- Two unsafe outcomes appeared in the first seen IW-3 rerun of this change and were fixed generically before commit:
+  a Korean verb-final denial after a parenthetical was read as a statement ("…(…) 기능은 없습니다"), and a kit page
+  was read as a statement about the tool-only listing. Rules: a denial in the governing predicate is false, any
+  other later negation makes the clause silent; a kit/bundle clause never counts for a standalone listing.
+- Lesson (same as J-27): a recall gain needs the safety probes rerun before it is kept.
