@@ -6,6 +6,7 @@ import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import type { CapabilityVerdict } from "../evidence/EvidenceV2.js";
 import { evidenceCapabilityOf, productCategory, propositionWords, PROPOSITION_PREFIX } from "../research/capabilities.js";
 import { weightsFor, type RankingWeights } from "./weights.js";
+import { uninterpretedKey } from "../intent/Uninterpreted.js";
 
 /**
  * Research V2 decision engine. Two stages, in this order:
@@ -24,7 +25,7 @@ export const BUDGET_HEADROOM = 0.9;
 
 export type DecisionState = "RECOMMEND" | "INVESTIGATE" | "HOLD";
 export type Disqualifier = "CATEGORY_MISMATCH" | "NOT_STANDALONE" | "BUNDLE_EXCLUDED" | "ATTRIBUTE_MISMATCH" | "CONDITION_MISMATCH" | "OVER_BUDGET" | "BELOW_STATED_RANGE" | "UNAVAILABLE" | "MUST_HAVE_FALSE" | "NOT_LOCKED_IDENTITY" | "NOT_REQUESTED_MODEL";
-export type Blocker = "MUST_HAVE_UNRECOGNIZED" | "MUST_NOT_UNVERIFIABLE" | "MUST_HAVE_UNVERIFIED" | "MUST_HAVE_CONTRADICTED" | "VERIFICATION_LIMIT_REACHED" | "PRICE_NOT_IN_REQUESTED_CURRENCY" | "BUDGET_TIGHT" | "AVAILABILITY_UNKNOWN" | "CONDITION_UNCONFIRMED" | "ATTRIBUTE_UNKNOWN";
+export type Blocker = "REQUEST_UNINTERPRETED" | "MUST_HAVE_UNRECOGNIZED" | "MUST_NOT_UNVERIFIABLE" | "MUST_HAVE_UNVERIFIED" | "MUST_HAVE_CONTRADICTED" | "VERIFICATION_LIMIT_REACHED" | "PRICE_NOT_IN_REQUESTED_CURRENCY" | "BUDGET_TIGHT" | "AVAILABILITY_UNKNOWN" | "CONDITION_UNCONFIRMED" | "ATTRIBUTE_UNKNOWN";
 
 export interface CandidateInput {
   product: CatalogProduct;
@@ -70,7 +71,7 @@ export interface Decision {
   disclaimer: string;
 }
 
-const REQUIREMENT_BLOCKERS = new Set<string>(["MUST_HAVE_UNVERIFIED", "MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "VERIFICATION_LIMIT_REACHED", "MUST_HAVE_CONTRADICTED", "ATTRIBUTE_UNKNOWN"]);
+const REQUIREMENT_BLOCKERS = new Set<string>(["REQUEST_UNINTERPRETED", "MUST_HAVE_UNVERIFIED", "MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "VERIFICATION_LIMIT_REACHED", "MUST_HAVE_CONTRADICTED", "ATTRIBUTE_UNKNOWN"]);
 const DISCLAIMER = "Research decision only. It is not a payment authorization: spending requires a user-created purchase mandate and PayPal buyer approval. Listing prices are search-time prices, not verified totals.";
 const eq = (a: string, b: string) => normalizeKey(a) === normalizeKey(b);
 
@@ -99,7 +100,7 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
   //     nice-to-haves, then utility (versioned weights), then price. Listing text is never used here.
   //   otherwise (INVESTIGATE candidates): verified nice-to-haves, then the listing-text prior (which unverified candidate
   //     is most likely to pass verification; ordering only, never evidence), then utility, then price.
-  const unverifiedMust = (a: (typeof assessed)[number]) => a.r.blockers.some((b) => b.code === "MUST_HAVE_UNVERIFIED" || b.code === "MUST_HAVE_UNRECOGNIZED" || b.code === "MUST_NOT_UNVERIFIABLE" || b.code === "VERIFICATION_LIMIT_REACHED" || b.code === "MUST_HAVE_CONTRADICTED");
+  const unverifiedMust = (a: (typeof assessed)[number]) => a.r.blockers.some((b) => b.code === "REQUEST_UNINTERPRETED" || b.code === "MUST_HAVE_UNVERIFIED" || b.code === "MUST_HAVE_UNRECOGNIZED" || b.code === "MUST_NOT_UNVERIFIABLE" || b.code === "VERIFICATION_LIMIT_REACHED" || b.code === "MUST_HAVE_CONTRADICTED");
   const price = (a: (typeof assessed)[number]) => a.r.price.lowestListingMinor ?? Infinity;
   // V2.2 WP-5: eligibility first (no score compensates a known violation), then the number of MUST requirements still
   // open (verified eligibility before price: a cheaper listing never outranks one whose requirements are verified),
@@ -240,6 +241,9 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
       ? { code: "MUST_NOT_UNVERIFIABLE", detail: `must-have "${key}" (must NOT have "${r?.text ?? key.slice(4)}") is not verified for this product (${why})` }
       : { code: "MUST_HAVE_UNRECOGNIZED", detail: `must-have "${key}" ("${r?.text ?? key}") is not verified for this product (${why})` });
   }
+  // V2.3 structural guard: a content word of the request that became neither identity, requirement, category nor money
+  // is an open MUST item on every candidate (never RECOMMEND/prepare) until the owner attests or waives it.
+  for (const u of intent.uninterpreted ?? []) bl.push({ code: "REQUEST_UNINTERPRETED", detail: `must-have "${uninterpretedKey(u.text)}" ("${u.text}") was not interpreted from the request; research could not check it` });
   const niceVerified = intent.niceToHave.filter((n) => c.nice[n]?.status === "VERIFIED_TRUE").length;
   const r: RankedCandidate = { productId: p.productId, title: p.title, rank: 0, eligible: dq.length === 0, disqualifiers: dq, blockers: bl, utility: null, utilityParts: null, niceVerified, satisfied,
     price: { lowestListingMinor: lowest?.itemPriceMinor ?? null, currency: intent.currency, merchantDomain: lowest?.merchantDomain ?? null, offersConsidered: usable.length,

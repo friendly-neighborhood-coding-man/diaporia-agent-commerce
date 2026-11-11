@@ -64,7 +64,8 @@ describe("WP-3 request parsing: multi-word category nouns end the model", () => 
     expect(intent("Recommend a quiet air purifier under $200").requestedModel ?? null).toBeNull();
     expect(intent("a laptop with an M2 chip under $1500").requestedModel ?? null).toBeNull();
     expect(intent("best 4K TV under $500").requestedModel ?? null).toBeNull();
-    expect(intent("Buy the Arden Glide electric toothbrush").requestedModel ?? null).toBeNull();
+    // V2.3 (V22-03): a named model-less product binds like a model number.
+    expect(intent("Buy the Arden Glide electric toothbrush").requestedModel).toBe("Glide");
   });
 });
 

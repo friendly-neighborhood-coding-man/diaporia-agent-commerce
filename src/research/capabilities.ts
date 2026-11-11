@@ -91,8 +91,10 @@ const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function propositionStatement(clause: string, id: string): boolean | null {
   const words = propositionWords(id);
   if (!words.length) return null;
-  const tok = (w: string) => /[가-힣]/.test(w) ? escRe(w).replace(/(?<=.)(?=.)/gu, "\\s*") : /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
+  const num = numericProposition(id);
+  if (num) return numericStatement(clause, num);
   const gap = "(?:[^\\p{L}\\p{N}]+[\\p{L}\\p{N}][\\p{L}\\p{N}'’-]*){0,3}?[^\\p{L}\\p{N}]*";
+  const tok = (w: string) => /^\d+(?:\.\d+)?[a-z]+$/i.test(w) ? w.replace(/^(\d+(?:\.\d+)?)([a-z]+)$/i, (_, n: string, u: string) => `${escRe(n)}\\s?-?${escRe(u)}`) : /[가-힣]/.test(w) ? escRe(w).replace(/(?<=.)(?=.)/gu, "\\s*") : /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
   const re = new RegExp(`(?<![\\p{L}\\p{N}])${words.map(tok).join(gap)}(?![A-Za-z0-9])`, "iu");
   const m = re.exec(clause.normalize("NFKC"));
   if (!m) return null;
@@ -109,6 +111,45 @@ function propositionStatement(clause: string, id: string): boolean | null {
   if (/^\s*(?:is|are|was|were)\s+(?:not|n't)\s+(?:included|supported|available|provided|offered)\b|^\s*(?:aren't|isn't)\s+(?:included|supported|available)\b|^[^.;]{0,30}\b(?:sold separately|not included|optional extra|purchased separately)\b/i.test(rest)) return false;
   if (/없|않|미지원|불가|\b(?:not|no|never|without|lacks?|isn't|aren't|doesn't|don't|cannot|can't)\b/i.test(rest)) return null;
   return true;
+}
+
+/**
+ * V2.3: a proposition with a number ("at least 65 W USB-C power delivery", "100W", "90W USB-C charging", "at most 30 dB")
+ * is a threshold, never a word match: the clause must state a value for the same unit and words, and the value decides.
+ * A bare spec of a capacity-like unit (W, mAh, Wh, Hz, Mbps, Gbps, nits) is a minimum ("100W" accepts 140 W, not 65 W);
+ * any other bare number must match exactly.
+ */
+interface NumericProposition { dir: "AT_LEAST" | "AT_MOST" | "EXACT"; n: number; unit: string; rest: string[] }
+const MIN_UNITS = /^(?:w|watts?|mah|wh|hz|mbps|gbps|nits|tb|gb)$/i;
+export function numericProposition(id: string): NumericProposition | null {
+  if (!id.startsWith(PROPOSITION_PREFIX)) return null;
+  const m = /^(?:(at-least|at-most)-)?(\d+(?:\.\d+)?)(?:-?([a-z%]+))?(?:-(.+))?$/i.exec(id.slice(PROPOSITION_PREFIX.length));
+  if (!m) return null;
+  const rest = (m[4] ?? "").split("-").filter((w) => w && !PROP_STOP.has(w));
+  const unit = (m[3] ?? "").toLowerCase();
+  const dir = m[1] === "at-least" ? "AT_LEAST" : m[1] === "at-most" ? "AT_MOST" : MIN_UNITS.test(unit) ? "AT_LEAST" : "EXACT";
+  if (!unit && !rest.length) return null;
+  return { dir, n: Number(m[2]), unit, rest };
+}
+function numericStatement(clause: string, p: NumericProposition): boolean | null {
+  const c = clause.normalize("NFKC");
+  const unitRe = p.unit ? (/^watts?$|^w$/.test(p.unit) ? "(?:w|watts?)" : escRe(p.unit)) : "";
+  const tok = (w: string) => /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
+  // The other words ("USB-C power delivery") must be stated next to the number, before or after it ("USB-C with 90 W
+  // power delivery", "90W USB-C charging"): within 40 characters on either side.
+  const restRe = p.rest.map((w) => new RegExp(`(?<![\\p{L}\\p{N}])${tok(w)}(?![A-Za-z0-9])`, "iu"));
+  const re = new RegExp(`(?<![\\p{L}\\p{N}.])(\\d+(?:\\.\\d+)?)\\s?-?${unitRe}${p.unit ? "(?![A-Za-z])" : ""}`, "giu");
+  let verdict: boolean | null = null;
+  for (const m of c.matchAll(re)) {
+    const win = c.slice(Math.max(0, m.index! - 40), m.index! + m[0].length + 40);
+    if (!restRe.every((r) => r.test(win))) continue;
+    const before = c.slice(Math.max(0, m.index! - 40), m.index!);
+    if (new RegExp(`\\b${NEG}\\b(?:\\s+\\S+){0,3}\\s*$`, "i").test(before)) return null;
+    const v = Number(m[1]);
+    const ok = p.dir === "AT_LEAST" ? v >= p.n : p.dir === "AT_MOST" ? v <= p.n : v === p.n;
+    if (verdict === null) verdict = ok; else if (verdict !== ok) return null;
+  }
+  return verdict;
 }
 
 export function capabilityPhrase(id: string): string {
@@ -247,6 +288,10 @@ export function productCategory(p: { category: string; title: string; research?:
  * nothing here can widen or narrow what counts as the right product).
  */
 export const KO_QUERY_NOUNS: Array<[RegExp, string]> = [
+  // V2.3: more product nouns (the structural guard needs to know them; queries gain English nouns).
+  [/로봇\s*청소기/, "robot vacuum"], [/(?:전자책\s*)?리더기/, "e-reader"], [/스탠딩\s*(?:책상|데스크)/, "standing desk"], [/책상|데스크/, "desk"],
+  [/여행\s*(?:배낭|가방)/, "travel backpack"], [/배낭|백팩/, "backpack"], [/필터/, "filter"], [/그라인더|분쇄기/, "coffee grinder"], [/등산화/, "hiking boots"],
+  [/커피\s*메이커|커피메이커/, "coffee maker"], [/청소기/, "vacuum"], [/노트북|랩탑/, "laptop"], [/이어폰|이어버드/, "earbuds"], [/헤드폰|헤드셋/, "headphones"], [/모니터/, "monitor"], [/재킷|자켓|우비|바람막이/, "jacket"],
   [/전자책|이북\s*리더|e-?북/i, "e-reader"], [/밥솥/, "rice cooker"], [/전기\s*(?:포트|주전자)|커피\s*포트/, "electric kettle"], [/태블릿/, "tablet"],
   [/스피커/, "speaker"], [/키보드/, "keyboard"], [/마우스/, "mouse"], [/공기\s*청정기/, "air purifier"], [/가습기/, "humidifier"], [/제습기/, "dehumidifier"],
   [/선풍기/, "fan"], [/에어\s*프라이어/, "air fryer"], [/전자\s*레인지/, "microwave"], [/보조\s*배터리/, "power bank"], [/충전기/, "charger"], [/케이스/, "case"], [/파우치/, "pouch"], [/거치대/, "stand"], [/케이블/, "cable"],

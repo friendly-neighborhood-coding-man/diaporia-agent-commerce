@@ -20,6 +20,7 @@ import { normalizeIdentifier } from "../merchant-identity/identifiers.js";
 import type { MerchantIdentityAssessment } from "../merchant-identity/types.js";
 import { newCheckoutSessionId, type MerchantIdentityBinding } from "../checkout/CheckoutSessionManager.js";
 import type { MerchantOffer } from "../domain/types.js";
+import { uninterpretedStated } from "../intent/Uninterpreted.js";
 import type { ServicePlane } from "./ServicePlane.js";
 import { EvidenceRouter, type RouterResult } from "../evidence/EvidenceRouter.js";
 import { UsageLimitError } from "../metering/UsageLedger.js";
@@ -318,7 +319,7 @@ export class CommerceGateway {
     else if (iv.budgetUnresolved) unknowns.push(`Budget not applied: ${iv.budgetUnresolved}. Confirm the amount and currency.`);
     else if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
     // V2.1: the decision is bound to the session. Later steps read the gate, never the session state alone.
-    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict ?? iv.budgetUnresolved ?? null, iv.requirements);
+    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict ?? iv.budgetUnresolved ?? null, [...(iv.requirements ?? []), ...uninterpretedStated(iv.uninterpreted)]);
     const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision, purchaseGate };
     const holdNeeded = (intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0) || plan.decision.state === "HOLD";
     ps = this.sessions.updatePurchaseSession(ps, holdNeeded ? "HOLD" : "RESEARCHED", { research: researchOut, lockedIdentity: locked?.identity ?? null, productId: locked?.productId ?? null });

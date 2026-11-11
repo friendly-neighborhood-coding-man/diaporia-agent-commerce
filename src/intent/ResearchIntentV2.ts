@@ -4,6 +4,7 @@ import { ACCESSORY_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { extractRequirements, type StatedRequirement } from "./Requirements.js";
+import { uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
 import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
 
 /**
@@ -46,6 +47,8 @@ export interface ResearchIntentV2 {
    * not mention exactly this model is never eligible, in discovery as well as in exact mode.
    */
   requestedModel?: string | null;
+  /** V2.3 structural guard: content words that became neither identity, requirement, category, money nor attribute. */
+  uninterpreted?: UninterpretedWord[];
   /** Variant attributes the user stated (colour, size, capacity, storage, memory, pack). */
   attributes: VariantAttributes;
   /** Requested condition; `conditionStated` false means "new" was assumed. */
@@ -76,7 +79,7 @@ const BUY_EN = /\b(buy|purchase|order|checkout|get me|i want to buy|pick up)\b/i
 const BUY_KO = /구매|구입|사줘|사 줘|주문|결제/;
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;
 /** Common words that are capitalized only because they start a sentence: never a brand. */
-const NOT_BRAND = new Set(`i buy purchase order get please need want looking find cheapest cheap best the a an my noise wireless laptop laptops headphones headphone
+const NOT_BRAND = new Set(`usd eur gbp jpy krw won dollars max min budget i buy purchase order get please need want looking find cheapest cheap best the a an my noise wireless laptop laptops headphones headphone
   over-ear over office waterproof water programmable cordless insulated money phone smartphone shoes boots hiking running coffee monitor 4k backpack daypack chair vacuum
   bottle system note ignore new used refurbished renewed replacement standalone under budget with and for in on of`.split(/\s+/).filter(Boolean));
 
@@ -153,7 +156,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
 
   // Exact target: a buy verb plus a brand followed by a model (or an explicit exactProduct).
   const buy = BUY_EN.exec(text) ?? BUY_KO.exec(text);
-  const brandHit = input.exactProduct?.brand ? { brand: input.exactProduct.brand, index: Math.max(0, text.toLowerCase().indexOf(input.exactProduct.brand.toLowerCase())) } : findBrand(text);
+  const brandHit = input.exactProduct?.brand ? { brand: input.exactProduct.brand, index: Math.max(0, text.toLowerCase().indexOf(input.exactProduct.brand.toLowerCase())) } : findBrand(money.parse.masked.length === text.length ? money.parse.masked : text);
   let target: ResearchIntentV2["target"] = null;
   let targetSpan: [number, number] | null = null;
   if (brandHit) {
@@ -241,7 +244,9 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       // (brand names, "IH", "USB-C") and known product nouns are kept in English; if nothing remains, no catalog
       // search is made (research then finds nothing and asks, instead of searching for untranslated text).
       const latin = (text.match(/[A-Za-z][A-Za-z0-9+.-]*/g) ?? []).filter((w) => !/^(?:usd|krw|won)$/i.test(w));
-      const nouns = KO_QUERY_NOUNS.filter(([re]) => re.test(text)).map(([, en]) => en);
+      // V2.3: Korean is head-final, so the product noun is the LAST one ("노트북 충전기" = a charger); longest match wins.
+      const nouns = KO_QUERY_NOUNS.flatMap(([re, en]) => { const m = re.exec(text); return m ? [{ en, end: m.index + m[0].length, len: m[0].length }] : []; })
+        .sort((a, b) => b.end - a.end || b.len - a.len).map((x) => x.en).filter((x, i, a) => a.indexOf(x) === i);
       const of = mentionedCategory(text)?.noun ?? null;
       primary = [...phrases, ...latin, of, ...nouns.slice(0, 1)].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 120);
       fallback = nouns.length && primary !== nouns[0] ? nouns[0]! : null;
@@ -253,17 +258,26 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   }
   // V2.2 WP-3: the requested model number (see the field). A model token right before a product noun counts too.
   let requestedModel: string | null = target?.modelBasis === "MODEL_NUMBER" && target.model && modelNumberToken(target.model) ? target.model : null;
+  // V2.3 (V22-03): a named model-less product ("Nordvik Summit backpack") binds the identity like a model number does.
+  if (!requestedModel && target?.modelBasis === "NAMED_MODEL" && target.model && target.model.split(/\s+/).every((x) => /^[A-Z0-9]/.test(x))) {
+    requestedModel = target.model; assumptions.push(`"${target.brand} ${target.model}" is named in the request: only listings of that product are eligible.`);
+  }
   if (!requestedModel && !input.exactProduct?.sku) {
     const nouns = [PRODUCT_NOUN_PHRASES.source.replace(/^\\b/, ""), ...KO_QUERY_NOUNS.map(([re]) => re.source)].join("|");
     const m = new RegExp(`(?:^|[\\s(])([A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*)\\s*(?:${nouns})`, "i").exec(money.parse.masked);
     const tok = m ? modelNumberToken(m[1]!) : null;
     if (tok && tok === m![1]!.toUpperCase()) { requestedModel = m![1]!; assumptions.push(`Model ${m![1]} is named in the request: only listings of exactly that model are eligible.`); }
   }
+  // V2.3 structural guard (see Uninterpreted.ts).
+  const covered: Array<[number, number]> = [...requirements.filter((r) => r.source === "REQUEST_TEXT").map((r) => r.span),
+    ...[...money.parse.constraints.map((c) => c.span), ...money.parse.ambiguities.map((c) => c.span), ...money.parse.notes.map((c) => c.span)].filter((x): x is [number, number] => !!x), ...(targetSpan ? [targetSpan] : [])];
+  const uninterpreted = uninterpretedWords(text, covered, [target?.brand ?? "", target?.model ?? "", target?.accessoryNoun ?? "", input.exactProduct?.brand ?? "", input.exactProduct?.model ?? "", input.exactProduct?.variant ?? ""]);
+  if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
   return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
-    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel,
+    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }

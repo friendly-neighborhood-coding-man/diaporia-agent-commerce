@@ -71,11 +71,11 @@ const NOT_ENTITY = new Set(("the a an it its it's this that these those they the
   "tv pc hz khz db mah mm am pm january february march april may june july august september october november december jan feb mar apr jun jul aug sep sept oct nov dec " +
   "monday tuesday wednesday thursday friday saturday sunday english korean us uk eu " +
   "uhd hdr hdr10 oled qled lcd led ips va tn hdmi dp displayport pd rgb ssd hdd ram cpu gpu os ai bt nfc gps hepa bpa uv ac dc lb lbs oz ml kg cm ft fps " +
-  "4k 8k fhd qhd wqhd ppi nits srgb dci-p3 vesa thunderbolt kvm ethernet lan wpa ghz mhz w v").split(/\s+/));
+  "4k 8k fhd qhd wqhd ppi nits srgb dci-p3 vesa thunderbolt kvm ethernet lan wpa ghz mhz w v power delivery gan quick charge fast charging pps french turkish italian american european japanese celsius fahrenheit").split(/\s+/));
 const isEntityToken = (tok: string, own: Set<string>) => {
   const t = tok.replace(/[’']s$/, "");
   const l = t.toLowerCase();
-  if (!/^[A-Z]/.test(t) || own.has(l) || NOT_ENTITY.has(l) || /^ip[x\d]\d$/i.test(t) || NOT_A_MODEL.test(t)) return false;
+  if (!/^[A-Z]/.test(t) || t.length === 1 || own.has(l) || NOT_ENTITY.has(l) || /^ip[x\d]\d$/i.test(t) || NOT_A_MODEL.test(t)) return false;
   return true;
 };
 /**
@@ -98,7 +98,7 @@ export function namesUnknownEntity(text: string, product: CatalogProduct): boole
   return false;
 }
 /** Reported or second-hand speech: a review quoting another source, or a brand's claim, is not independent evidence. */
-const REPORTED = /\b(?:according to|via|per|says|said|claims?|claimed|reports?|reported|states?|stated|advertis(?:es|ed)|market(?:s|ed) as|touts?|touted|promises?)\b|^\s*source\s*:|(?:에 따르면|라고 (?:한다|밝혔|주장)|주장한다|광고한다)/i;
+const REPORTED = /\bper\s+(?:[a-z0-9-]+\.[a-z]{2,}|the\s+(?:manufacturer|brand|maker|company|vendor|seller))\b|\b(?:according to|via|says|said|claims?|claimed|reports?|reported|states?|stated|advertis(?:es|ed)|market(?:s|ed) as|touts?|touted|promises?)\b|^\s*source\s*:|(?:에 따르면|라고 (?:한다|밝혔|주장)|주장한다|광고한다)/i;
 
 /** True if `text` names a product other than this one (another brand, another model code, or a family extension). */
 export function namesOtherProduct(text: string, product: CatalogProduct): boolean {
@@ -148,6 +148,11 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     // No model: the brand plus at least two title words must appear (weak attribution; still needs a counted source).
     const words = product.title.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
     if (!product.identity.brand || !text.toLowerCase().includes(product.identity.brand.toLowerCase()) || words.filter((w) => text.toLowerCase().includes(w)).length < 3) return null;
+    // V2.3: a spec the title names ("100W", "20000mAh", "1.7L") is part of what the product is. A page that never states
+    // it is about a sibling ("Voltaro 65W GaN charger" is not the 100W one), so it is not attributed.
+    const squash = (t: string) => t.normalize("NFKC").toLowerCase().replace(/(\d)\s*-?\s*(?=[a-z])/g, "$1");
+    const specs = squash(product.title).match(/(?<![a-z0-9.])\d+(?:\.\d+)?(?:w|kw|mah|wh|v|l|qt|oz|ml|gb|tb|hz|mm|cm)(?![a-z])/g) ?? [];
+    if (specs.some((x) => !new RegExp(`(?<![a-z0-9.])${x.replace(/\./g, "\\.")}(?![a-z])`).test(squash(text)))) return null;
   }
   const comparisonPage = COMPARISON_TITLE.test(hit.title);
   const facts = factsOf(product);

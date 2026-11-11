@@ -32,7 +32,7 @@ import type { StatedRequirement } from "../intent/Requirements.js";
 import type { StoredAssertion } from "../auth/OwnerConfirmation.js";
 
 export const GATE_VERSION = "purchase-gate-v1";
-const REQUIREMENT_CODES = new Set(["MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "MUST_HAVE_UNVERIFIED", "MUST_HAVE_CONTRADICTED", "VERIFICATION_LIMIT_REACHED", "ATTRIBUTE_UNKNOWN"]);
+const REQUIREMENT_CODES = new Set(["REQUEST_UNINTERPRETED", "MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "MUST_HAVE_UNVERIFIED", "MUST_HAVE_CONTRADICTED", "VERIFICATION_LIMIT_REACHED", "ATTRIBUTE_UNKNOWN"]);
 
 export interface GateItem { key: string; code: string; detail: string }
 /**
@@ -163,7 +163,7 @@ export function requirementLedger(gate: PurchaseGate | null | undefined, product
     else if (p.hard.some((h) => h.code === "MUST_HAVE_FALSE" && h.detail.includes(`"${r.key}"`))) status = "VIOLATED";
     else {
       const open = p.requirements.find((q) => q.key === key);
-      status = !open ? "VERIFIED" : open.code === "MUST_HAVE_CONTRADICTED" ? "CONTRADICTED" : open.code === "MUST_HAVE_UNRECOGNIZED" ? "UNRECOGNIZED"
+      status = !open ? "VERIFIED" : open.code === "MUST_HAVE_CONTRADICTED" ? "CONTRADICTED" : open.code === "MUST_HAVE_UNRECOGNIZED" || open.code === "REQUEST_UNINTERPRETED" ? "UNRECOGNIZED"
         : open.code === "MUST_NOT_UNVERIFIABLE" ? "UNVERIFIABLE" : "UNVERIFIED";
     }
     const verification: VerificationState = status === "OPTIONAL" ? "NOT_REQUIRED" : status === "NOT_ASSESSED" ? "NOT_ASSESSED" : status === "VERIFIED" ? "VERIFIED"

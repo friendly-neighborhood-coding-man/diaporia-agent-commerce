@@ -75,7 +75,7 @@ export const COLOR_WORDS: Record<string, string> = Object.fromEntries([
 ]);
 const GREY = (c: string) => (c === "Grey" ? "Gray" : c);
 
-const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:h|hr|hrs|hours?|gb|tb|mb|mm|cm|m|in|inch|ft|w|kw|mah|v|oz|ml|l|cup|cups|qt|lb|lbs|kg|g|k|p|hz|fps|pack|pk|ct)$/i;
+const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:h|hr|hrs|hours?|gb|tb|mb|mm|cm|m|in|inch|ft|w|kw|mah|v|oz|ml|l|cup|cups|qt|lb|lbs|kg|g|k|p|hz|fps|pack|pk|ct|ports?|pcs?|pieces?|count|speeds?|slots?|outlets?|burners?|tiers?|layers?|zones?|person|seater|cups?)$/i;
 /** Words that end a named-model phrase: product nouns, descriptors, connectors. */
 const GENERIC = new Set(`wireless wired bluetooth noise cancelling canceling noise-cancelling noise-canceling active headphones headphone headset earbuds earbud earphones
   over-ear on-ear in-ear laptop laptops notebook computer smartphone phone cell mobile running shoes shoe sneakers boots boot hiking men's women's mens womens kids
@@ -109,6 +109,8 @@ export function parseAttributes(text: string): VariantAttributes {
     if (re.test(lower)) { out.color = GREY(c); break; }
   }
   for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s?(GB|TB)\b(\s*(?:of\s+)?(RAM|memory|unified memory|SSD|storage|HDD|eMMC))?/gi)) {
+    // V2.3: "10 Gb Ethernet", "2.5GbE" are network speeds (gigabits), not memory or storage.
+    if (/^[GT]b$/.test(m[2]!) || /^\s*(?:e\b|ethernet|lan|wan|ports?|sfp|bps|it\b|\/s)/i.test(t.slice(m.index! + m[0].length))) continue;
     const val = `${m[1]}${m[2]!.toUpperCase()}`;
     const ctx = (m[4] ?? "").toLowerCase();
     const axis: AttributeAxis = /ram|memory/.test(ctx) ? "memory" : /ssd|storage|hdd|emmc/.test(ctx) ? "storage"
@@ -184,7 +186,7 @@ export interface ExtractedIdentity {
  * named-model phrase ends where a product noun phrase starts, so "Ostra AP-400 air purifier" keeps model "AP-400",
  * never "AP-400 air". Also used by requirement extraction (capabilities.ts re-exports it).
  */
-export const PRODUCT_NOUN_PHRASES = /\b(?:rice cookers?|air conditioners?|air mattress(?:es)?|robot vacuums?|robot mops?|cordless drills?|drill drivers?|impact drivers?|power drills?|stand mixers?|hand mixers?|espresso machines?|dish ?washers?|washing machines?|space heaters?|electric toothbrush(?:es)?|toothbrush(?:es)?|standing desks?|gaming chairs?|smart speakers?|bluetooth speakers?|portable chargers?|wireless chargers?|travel backpacks?|dash ?cams?|baby monitors?|security cameras?|action cameras?|label makers?|sewing machines?|drills?|sanders?|saws?|mixers?|grills?|ovens?|irons?|scales?|thermostats?|doorbells?|pressure cookers?|slow cookers?|electric kettles?|air purifiers?|air fryers?|power banks?|hair dryers?|coffee (?:makers?|machines?|brewers?)|water bottles?|office chairs?|vacuum cleaners?|stick vacuums?|running shoes?|hiking boots?|e-?readers?|smart ?watch(?:es)?|sound ?bars?|head ?phones?|ear ?buds?|ear ?phones?|headsets?|laptops?|notebooks?|smartphones?|phones?|monitors?|displays?|backpacks?|daypacks?|chairs?|vacuums?|bottles?|tumblers?|flasks?|boots?|shoes?|sneakers?|tvs?|televisions?|speakers?|kettles?|blenders?|toasters?|tablets?|cameras?|routers?|keyboards?|mice|mouse|projectors?|printers?|drones?|fans?|heaters?|lamps?|purifiers?|humidifiers?|dehumidifiers?|cookers?|fryers?|microwaves?|webcams?|microphones?|chargers?|cases?|sleeves?|cables?|adapters?|stands?|blankets?|throws?|desks?|tables?|sofas?|bikes?|strollers?|toys?|watch(?:es)?)\b/i;
+export const PRODUCT_NOUN_PHRASES = /\b(?:rain jackets?|rain coats?|shell jackets?|puffer jackets?|coffee grinders?|burr grinders?|wi-?fi routers?|jackets?|coats?|grinders?|tents?|sleeping bags?|duffel bags?|rice cookers?|air conditioners?|air mattress(?:es)?|robot vacuums?|robot mops?|cordless drills?|drill drivers?|impact drivers?|power drills?|stand mixers?|hand mixers?|espresso machines?|dish ?washers?|washing machines?|space heaters?|electric toothbrush(?:es)?|toothbrush(?:es)?|standing desks?|gaming chairs?|smart speakers?|bluetooth speakers?|portable chargers?|wireless chargers?|travel backpacks?|dash ?cams?|baby monitors?|security cameras?|action cameras?|label makers?|sewing machines?|drills?|sanders?|saws?|mixers?|grills?|ovens?|irons?|scales?|thermostats?|doorbells?|pressure cookers?|slow cookers?|electric kettles?|air purifiers?|air fryers?|power banks?|hair dryers?|coffee (?:makers?|machines?|brewers?)|water bottles?|office chairs?|vacuum cleaners?|stick vacuums?|running shoes?|hiking boots?|e-?readers?|smart ?watch(?:es)?|sound ?bars?|head ?phones?|ear ?buds?|ear ?phones?|headsets?|laptops?|notebooks?|smartphones?|phones?|monitors?|displays?|backpacks?|daypacks?|chairs?|vacuums?|bottles?|tumblers?|flasks?|boots?|shoes?|sneakers?|tvs?|televisions?|speakers?|kettles?|blenders?|toasters?|tablets?|cameras?|routers?|keyboards?|mice|mouse|projectors?|printers?|drones?|fans?|heaters?|lamps?|purifiers?|humidifiers?|dehumidifiers?|cookers?|fryers?|microwaves?|webcams?|microphones?|chargers?|cases?|sleeves?|cables?|adapters?|stands?|blankets?|throws?|desks?|tables?|sofas?|bikes?|strollers?|toys?|watch(?:es)?)\b/i;
 const NOUN_PHRASE_AT_START = new RegExp(`^(?:(?:charging|replacement|spare|protective|carrying|travel)\\s+)?(?:${PRODUCT_NOUN_PHRASES.source.replace(/^\\b\(\?:/, "").replace(/\)\\b$/, "")}|${ACCESSORY_NOUN.source.replace(/^\\b\(/, "").replace(/\)\\b$/, "")})(?=[^A-Za-z0-9]|$)`, "i");
 /** A product noun followed by a model token is part of the model ("Galaxy Watch 6", "Surface Laptop 5"). */
 const MODELISH_NEXT = /^(?:\d[\w.-]*|[A-Za-z]{0,3}\d[\w-]*|pro|max|plus|ultra|mini|lite|se|xl|gen\d*|mk\w*|series)$/i;
@@ -219,6 +221,8 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
     const stop = /[,;:()|]$/.test(raw);
     const lw = w.toLowerCase().replace(/[’']s$/, "'s");
     if (words.length && np === "MODEL") { words.push(w); if (stop || words.length >= 4) break; continue; }
+    // V2.3: in a request, an all-lowercase word after a capitalized name ends it ("Nordvik Summit tent" → Summit).
+    if (words.length && /^[a-z][a-z-]*$/.test(w) && words.every((x) => /^[A-Z0-9]/.test(x))) break;
     if (!w || GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);
@@ -227,6 +231,7 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
   return words.length ? words.join(" ") : null;
 }
 
+const TECH_SUFFIX = /^(?:IH|GaN|PD|ANC|ENC|OLED|QLED|IPS|HDR|HDR10|Wi-?Fi|BT|NFC|USB-?C|LED|LCD|DC|AC|UV|HEPA|IPX?\d|IP\d\d)$/;
 export function extractIdentity(title: string, brand: string | null): ExtractedIdentity {
   const t = title.normalize("NFKC").replace(/\s+/g, " ").trim();
   const attributes = parseAttributes(t);
@@ -252,7 +257,13 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
   }
   const kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
   const num = modelNumberToken(t.replace(/\(.*?\)/g, " "));
-  const named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null);
+  let named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null);
+  // V2.3 (V22-07): a technology acronym written after a model number describes it, it is not part of the model
+  // ("HR-6 IH rice cooker" is the HR-6; "P20 GaN charger" is the P20). Family extensions (Pro, Max, Gen 2) still are.
+  if (named && num) {
+    const ws = named.split(" ");
+    if (normalizeKey(ws[0]!) === normalizeKey(num)) { let k = ws.length; while (k > 1 && TECH_SUFFIX.test(ws[k - 1]!)) k--; named = ws.slice(0, k).join(" "); }
+  }
   let model: string | null = null; let basis: ExtractedIdentity["modelBasis"] = "NONE";
   if (num) {
     // A model number inside the named phrase keeps the family words ("Sweep S7", "View 27 4K" stays named).
