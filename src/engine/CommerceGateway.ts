@@ -32,7 +32,7 @@ import { canonicalVariant } from "../identity/ProductIdentityExtractor.js";
 import { runResearchV2, type PlannerLimits } from "../research/ResearchPlannerV2.js";
 import type { SearchPage, ProductSearchQuery } from "../research/CommerceResearchAdapter.js";
 import type { RankingWeights } from "../decision/weights.js";
-import { gateFromDecision, gateReadiness, requirementLedger, resolveGate, type PurchaseGate, type ResolutionVerifier } from "./PurchaseGate.js";
+import { gateFromDecision, gateReadiness, requirementLedger, resolveGate, type HoldKind, type PurchaseGate, type ResolutionVerifier } from "./PurchaseGate.js";
 import { priceProvenance } from "./QuotePromotion.js";
 import { ResearchHoldProposals } from "./ResearchHoldProposals.js";
 import { isVerifiedHumanAssertion, researchHoldBinding, type OwnerConfirmationBoundary } from "../auth/OwnerConfirmation.js";
@@ -524,7 +524,7 @@ export class CommerceGateway {
    * is a link to the owner confirmation page, where only the authenticated human owner can confirm it
    * (confirmResearchHoldAsOwner). `userStatement` is stored as the agent's text and is never treated as the user's words.
    */
-  resolveResearchHold(userId: string, input: { purchaseSessionId: string; kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT"; requirement?: string | null; budgetMinor?: number | null; currency: string; userStatement: string }, actor = "MCP_TOKEN:unknown") {
+  resolveResearchHold(userId: string, input: { purchaseSessionId: string; kind: HoldKind; requirement?: string | null; budgetMinor?: number | null; currency: string; userStatement: string }, actor = "MCP_TOKEN:unknown") {
     const ps = this.livePurchaseSession(input.purchaseSessionId, userId);
     if (!["RESEARCHED", "OFFER_VERIFIED", "HOLD"].includes(ps.state)) throw new CommerceError("INVALID_STATE", `Session is ${ps.state}; nothing to resolve.`);
     const gate = (ps.research?.purchaseGate ?? null) as PurchaseGate | null;
@@ -532,7 +532,7 @@ export class CommerceGateway {
     const statement = String(input.userStatement ?? "").trim();
     if (statement.length < 3) throw new CommerceError("INVALID_INPUT", "userStatement (the explanation shown to the owner) is required.");
     const item = this.openItemFor(gate, ps, input.kind, input.requirement ?? null, input.budgetMinor ?? null, input.currency);
-    const proposal = this.holdProposals.create({ userId, purchaseSessionId: ps.purchaseSessionId, kind: input.kind, requirement: input.kind === "DROP_REQUIREMENT" ? input.requirement ?? null : null,
+    const proposal = this.holdProposals.create({ userId, purchaseSessionId: ps.purchaseSessionId, kind: input.kind, requirement: input.kind !== "CONFIRM_BUDGET" ? input.requirement ?? null : null,
       budgetMinor: input.kind === "CONFIRM_BUDGET" ? input.budgetMinor ?? null : null, currency: input.currency, item, agentText: statement.slice(0, 500), proposedBy: actor });
     this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_HOLD_PROPOSED", { proposalId: proposal.proposalId, digest: proposal.digest, kind: proposal.kind, requirement: proposal.requirement,
       budgetMinor: proposal.budgetMinor, currency: proposal.currency, actor, agentText: proposal.agentText });
@@ -544,7 +544,7 @@ export class CommerceGateway {
   }
 
   /** The open gate item a proposal would resolve; throws INVALID_INPUT for anything that is not open and resolvable. */
-  private openItemFor(gate: PurchaseGate, ps: PurchaseSession, kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT", requirement: string | null, budgetMinor: number | null, currency: string) {
+  private openItemFor(gate: PurchaseGate, ps: PurchaseSession, kind: HoldKind, requirement: string | null, budgetMinor: number | null, currency: string) {
     // The same validation the owner confirmation applies, run now so that an impossible proposal is never shown.
     try { resolveGate(gate, { kind, requirement, budgetMinor, currency, actor: "OWNER_SESSION:validate", confirmation: "CONFIRMED_BY_OWNER", proposalId: "validate", proposalDigest: "", agentText: "", humanVerification: "WEBAUTHN_USER_VERIFIED", credentialFingerprint: "validate" }, this.now(), ps.intent.currency); }
     catch (e) { throw new CommerceError("INVALID_INPUT", errorText(e)); }

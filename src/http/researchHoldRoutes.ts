@@ -149,7 +149,13 @@ function reviewBody(p: ResearchHoldProposal, s: { requestText: string; currency:
   const cur = p.currency as Currency;
   const fmt = (minor: number | null) => (minor === null ? "none" : `${formatMinor(minor, cur)} ${cur}`);
   const parts: string[] = [`<p>Your purchase request: <q>${esc(s.requestText)}</q></p>`];
-  if (p.kind === "DROP_REQUIREMENT") {
+  if (p.kind === "ATTEST_REQUIREMENT") {
+    // V2.2 WP-4: an attestation is the owner's own statement, recorded as OWNER_ATTESTED, never as verified evidence.
+    parts.push(`<h2>Open requirement</h2><table><tr><td>Requirement</td><td><code>${esc(p.requirement)}</code></td></tr><tr><td>Research result</td><td>${esc(p.item.code)}: ${esc(p.item.detail)}</td></tr></table>`);
+    if (p.item.code === "MUST_HAVE_CONTRADICTED") parts.push(`<p class="state" style="color:#b3261e">Warning: sources found during research disagree about this requirement for this product.</p>`);
+    parts.push(`<h2>Proposed change</h2><p>You state, from your own firsthand knowledge, that the product meets the requirement <code>${esc(p.requirement)}</code>, for this purchase session only.</p>`);
+    parts.push(`<p class="state" style="color:#b3261e">DIAPORIA has NOT verified this. It will be recorded as attested by you (OWNER_ATTESTED), never as independently verified. Confirm only if you know it yourself.</p>`);
+  } else if (p.kind === "DROP_REQUIREMENT") {
     const contradicted = p.item.code === "MUST_HAVE_CONTRADICTED";
     parts.push(`<h2>Open requirement</h2><table><tr><td>Requirement</td><td><code>${esc(p.requirement)}</code></td></tr><tr><td>Research result</td><td>${esc(p.item.code)}: ${esc(p.item.detail)}</td></tr></table>`);
     const unrecognized = p.item.code === "MUST_HAVE_UNRECOGNIZED" || p.item.code === "MUST_NOT_UNVERIFIABLE";
@@ -157,7 +163,7 @@ function reviewBody(p: ResearchHoldProposal, s: { requestText: string; currency:
     else parts.push(contradicted
       ? `<p class="state" style="color:#b3261e">Warning: evidence found during research says this product does NOT meet this requirement. If you drop it, the product you buy may lack it.</p>`
       : `<p class="state">This requirement is not verified for this product. If you drop it, the product may not have it.</p>`);
-    parts.push(`<h2>Proposed change</h2><p>Drop the requirement <code>${esc(p.requirement)}</code> for this purchase session only.</p>`);
+    parts.push(`<h2>Proposed change</h2><p>Drop (waive) the requirement <code>${esc(p.requirement)}</code> for this purchase session only. It will be recorded as waived by you (OWNER_WAIVED), not as verified.</p>`);
   } else {
     // R-C: the stated amount is read by the research parser itself (currency and magnitude included), never by a regex
     // over the item text. An amount in another currency is shown as such and never converted.

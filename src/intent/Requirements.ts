@@ -15,7 +15,7 @@
  * attribute (parsed separately), the brand/model, a price or a condition is not a requirement.
  */
 import { parseAttributes } from "../identity/ProductIdentityExtractor.js";
-import { KO_QUERY_NOUNS, PRODUCT_NOUN_PHRASES, requestCapabilities, requestCategory } from "../research/capabilities.js";
+import { KO_QUERY_NOUNS, PRODUCT_NOUN_PHRASES, capabilityPhrase, evidenceCapabilityOf, isPerformanceClaim, requestCapabilities, requestCategory } from "../research/capabilities.js";
 import { GENERIC_WORDS } from "../identity/ProductIdentityExtractor.js";
 
 export type RequirementPolarity = "REQUIRED" | "EXCLUDED";
@@ -32,6 +32,17 @@ export interface StatedRequirement {
   polarity: RequirementPolarity;
   strength: RequirementStrength;
   source: "REQUEST_TEXT" | "STRUCTURED_INPUT";
+  /**
+   * V2.2 WP-4 generic representation. `proposition`: the normalized claim the product must make true ("has lanyard
+   * loop", "has no ads"); `evidenceCapability`: the capability id evidence verifies (a known capability, or the
+   * proposition itself as `unrecognized:<slug>`); `claimType`: PROPERTY (manufacturer-statable) or PERFORMANCE (needs
+   * independent evidence). `note`: DECORATIVE (a style adjective, kept as optional) or CATEGORY_WORD (part of the
+   * product's category name in an exact-product request, never a capability).
+   */
+  proposition?: string;
+  evidenceCapability?: string | null;
+  claimType?: "PROPERTY" | "PERFORMANCE";
+  note?: "DECORATIVE" | "CATEGORY_WORD";
 }
 
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red|ably)?|bonus|if possible|if available|optional(?:ly)?|a plus|would love|bonus points)\b|있으면 좋|선호|가능하면|되면 좋/i;
@@ -84,6 +95,10 @@ function onlyRestates(phrase: string, targetWords: Set<string>): boolean {
   if (Object.keys(attrs).length && attrs.color) rest = rest.replace(new RegExp(`\\b${attrs.color}\\b`, "i"), " ").trim();
   return !rest.trim() || NUMBERISH.test(rest);
 }
+
+/** V2.2 WP-4: style adjectives. Kept as OPTIONAL preferences (never mandatory capabilities, never dropped). */
+const DECORATIVE = /^(?:stylish|sleek|beautiful|pretty|cute|elegant|modern|classic|fancy|cool|gorgeous|attractive|trendy|minimalist|minimal|aesthetic|chic|lovely|nice-looking|good-looking|fashionable|예쁜|이쁜|세련된|귀여운|멋진|깔끔한|심플한|고급스러운)$/i;
+const isDecorative = (phrase: string) => phrase.split(/\s+/).filter((w) => !/^(?:and|or|very|really|a|an|the|look(?:s|ing)?|design)$/i.test(w)).every((w) => DECORATIVE.test(w));
 
 /** Words that describe intent, price or quality, never a product property. */
 const MODIFIER_STOP = new Set(`buy purchase order get find me i we want need looking look for please recommend suggest show a an the some any my our new brand-new cheap cheapest cheaper
@@ -141,6 +156,15 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       const abs = at + c.index;
       recognizedSpans.push([c.index, c.end]);
       if (inTarget(abs)) continue;
+      // V2.2 WP-4: in an exact-product request, a capability word inside the category noun right after the product
+      // ("Brix T18 cordless drill") names the category, not a requirement: the exact model fixes the product.
+      if (targetSpan && abs >= targetSpan[1]) {
+        const np = new RegExp(`^\\s*(?:${PRODUCT_NOUN_PHRASES.source})`, "i").exec(text.slice(targetSpan[1]));
+        if (np && abs < targetSpan[1] + np[0].length && /^\s*$/.test(text.slice(targetSpan[1], abs).replace(/\S+$/, "").replace(/^\s+/, ""))) {
+          add({ key: `category:${slugOf(clause.slice(c.index, c.end))}`, text: clause.slice(c.index, c.end), span: [abs, at + c.end], recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CATEGORY_WORD" });
+          continue;
+        }
+      }
       const before = clause.slice(Math.max(0, c.index - 30), c.index);
       const after = clause.slice(c.end, c.end + 8);
       const negated = /\b(?:without|no|not|never|free of|must not have|mustn't have|doesn't need|don't need|do not need)\s+(?:an?\s+|any\s+)?(?:\w+\s+){0,1}$/i.test(before) || /^\s*(?:이|가)?\s*(?:없는|없어야|없이|제외)/.test(after);
@@ -163,7 +187,8 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       if (requestCapabilities(phrase).length) return;
       if (onlyRestates(phrase, tw)) return;
       const key = `${polarity === "EXCLUDED" ? "not" : "unrecognized"}:${slugOf(phrase)}`;
-      add({ key, text: phrase, span: [abs, abs + phrase.length], recognized: false, capability: null, polarity, strength, source: "REQUEST_TEXT" });
+      const decorative = polarity === "REQUIRED" && isDecorative(phrase);
+      add({ key, text: phrase, span: [abs, abs + phrase.length], recognized: false, capability: null, polarity, strength: decorative ? "NICE" : strength, source: "REQUEST_TEXT", ...(decorative ? { note: "DECORATIVE" as const } : {}) });
     };
     for (const re of EN_NOT) tryPhrase(re.exec(clause), "EXCLUDED");
     for (const re of EN_MUST) tryPhrase(re.exec(clause), "REQUIRED");
@@ -178,7 +203,8 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       if (recognizedSpans.some(([s, e]) => s < m.index + m.word.length && e > m.index)) continue;
       if (out.some((r) => r.source === "REQUEST_TEXT" && r.span[0] <= abs && abs < r.span[1])) continue;
       if (tw.has(m.word.toLowerCase()) || onlyRestates(m.word, tw) || requestCapabilities(m.word).length) continue;
-      add({ key: `unrecognized:${slugOf(m.word)}`, text: m.word, span: [abs, abs + m.word.length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+      const decorative = DECORATIVE.test(m.word);
+      add({ key: `unrecognized:${slugOf(m.word)}`, text: m.word, span: [abs, abs + m.word.length], recognized: false, capability: null, polarity: "REQUIRED", strength: decorative ? "NICE" : strength, source: "REQUEST_TEXT", ...(decorative ? { note: "DECORATIVE" as const } : {}) });
     }
   }
   // Structured input can ADD requirements; it can never remove or soften one stated in the text.
@@ -188,6 +214,14 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   for (const x of out.filter((r) => r.polarity === "EXCLUDED" && r.capability)) {
     const i = out.findIndex((r) => r.key === x.capability && r.source === "REQUEST_TEXT");
     if (i >= 0) out.splice(i, 1);
+  }
+  // V2.2 WP-4: the generic proposition of each requirement.
+  for (const r of out) {
+    if (r.note === "CATEGORY_WORD") { r.evidenceCapability = null; continue; }
+    const cap = r.recognized && r.polarity === "REQUIRED" ? r.capability! : evidenceCapabilityOf(r.key);
+    r.evidenceCapability = cap;
+    r.claimType = isPerformanceClaim(cap) ? "PERFORMANCE" : "PROPERTY";
+    r.proposition = `${r.polarity === "EXCLUDED" ? "has no" : "has"} ${capabilityPhrase(cap)}`;
   }
   return out;
 }

@@ -60,7 +60,59 @@ export function numericSpec(id: string): { family: (typeof NUMERIC_FAMILIES)[num
   return { family, threshold: Number(m[2]) };
 }
 
+/**
+ * V2.2 WP-4 (M-1/M-2): generic propositions. A stated requirement the vocabulary does not know keeps its key
+ * `unrecognized:<slug>` and is ALSO an evidence capability with that id: the proposition is "the product has <words>".
+ * Evidence verifies it with the same statement and sufficiency rules as a known capability (exact model named in the
+ * clause, all proposition words in one clause, negation governing them). The vocabulary is not extended.
+ */
+export const PROPOSITION_PREFIX = "unrecognized:";
+const PROP_STOP = new Set("a an the of to for with and or in on at by it its be is are has have that which this very really".split(" "));
+export function propositionWords(id: string): string[] {
+  return id.slice(PROPOSITION_PREFIX.length).split("-").map((w) => w.trim()).filter((w) => w && !PROP_STOP.has(w));
+}
+/**
+ * A performance or quality judgement ("quiet", "comfortable for long flights", "durable", "튼튼한") rather than a
+ * manufacturer-statable property ("lanyard loop", "HDMI 2.1", "warm light"). Manufacturer text alone never verifies it;
+ * independent evidence (two expert groups) is required.
+ */
+const PERFORMANCE_WORDS = /^(?:quiet(?:er|est)?|silent|comfortable|comfy|durable|sturdy|reliable|fast(?:er)?|quick|powerful|strong|accurate|precise|loud(?:er)?|clear(?:er)?|crisp|easy|simple|intuitive|good|great|excellent|best|better|long[- ]?lasting|lasting|efficient|effective|stable|smooth|responsive|bright(?:er)?|sharp|rich|warm(?:-sounding)?|deep|punchy|light-?weight|portable|safe|healthy|kid[- ]?friendly|beginner[- ]?friendly|ergonomic|premium|high[- ]?quality|well[- ]?made|performs?|performance|조용|조용한|편안|편안한|편한|튼튼|튼튼한|내구성|빠른|강력|강력한|정확|정확한|좋은|가벼운|부드러운|선명한)$/i;
+export function isPerformanceClaim(id: string): boolean {
+  return id.startsWith(PROPOSITION_PREFIX) && propositionWords(id).some((w) => PERFORMANCE_WORDS.test(w));
+}
+/** The evidence capability behind a requirement key: `not:<cap>` asks for the absence of <cap> (a known capability or a proposition). */
+export function evidenceCapabilityOf(key: string): string {
+  if (!key.startsWith("not:")) return key;
+  const x = key.slice(4);
+  return BY_ID.has(x) || numericSpec(x) ? x : `${PROPOSITION_PREFIX}${x}`;
+}
+const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** What one clause says about a proposition: all of its words in order (at most three words apart), negation governing them. */
+function propositionStatement(clause: string, id: string): boolean | null {
+  const words = propositionWords(id);
+  if (!words.length) return null;
+  const tok = (w: string) => /[가-힣]/.test(w) ? escRe(w).replace(/(?<=.)(?=.)/gu, "\\s*") : /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
+  const gap = "(?:[^\\p{L}\\p{N}]+[\\p{L}\\p{N}][\\p{L}\\p{N}'’-]*){0,3}?[^\\p{L}\\p{N}]*";
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${words.map(tok).join(gap)}(?![A-Za-z0-9])`, "iu");
+  const m = re.exec(clause.normalize("NFKC"));
+  if (!m) return null;
+  const before = clause.normalize("NFKC").slice(Math.max(0, m.index - 40), m.index);
+  const after = clause.normalize("NFKC").slice(m.index + m[0].length, m.index + m[0].length + 12);
+  if (new RegExp(`\\b${NEG}\\b(?:\\s+(?:have|has|support|supports|offer|offers|come with|comes with|include|includes|a|an|any|the|real|true|built-in|dedicated)){0,3}\\s*$`, "i").test(before)) return false;
+  if (/^\s*[-–]?\s*free\b/i.test(after)) return false;
+  // Negation after the phrase. Korean is verb-final: "자동 배수(연속 배수) 기능은 없습니다" denies it; English too:
+  // "two batteries are not included", "sold separately". A denial in the predicate that governs the phrase (only a
+  // parenthetical, a feature noun and a particle between) is false; any other negation later in the clause makes the
+  // clause ambiguous (no statement), never true.
+  const rest = clause.normalize("NFKC").slice(m.index + m[0].length).replace(/\([^)]*\)/g, " ");
+  if (/^\s*(?:기능|옵션|모드|장치)?\s*(?:이|가|은|는|도)?\s*(?:없|미지원|미탑재|불가|지원(?:하지|되지)\s*않|되지\s*않|안\s*(?:되|됨))/.test(rest)) return false;
+  if (/^\s*(?:is|are|was|were)\s+(?:not|n't)\s+(?:included|supported|available|provided|offered)\b|^\s*(?:aren't|isn't)\s+(?:included|supported|available)\b|^[^.;]{0,30}\b(?:sold separately|not included|optional extra|purchased separately)\b/i.test(rest)) return false;
+  if (/없|않|미지원|불가|\b(?:not|no|never|without|lacks?|isn't|aren't|doesn't|don't|cannot|can't)\b/i.test(rest)) return null;
+  return true;
+}
+
 export function capabilityPhrase(id: string): string {
+  if (id.startsWith(PROPOSITION_PREFIX)) return propositionWords(id).join(" ");
   const n = numericSpec(id);
   if (n) return n.family.family === "battery" ? `battery life ${n.threshold} hours` : `keeps cold ${n.threshold} hours`;
   return BY_ID.get(id)?.phrase ?? id.replace(/_/g, " ");
@@ -89,6 +141,7 @@ export function requestCapabilities(text: string): Array<{ id: string; index: nu
  * comparative ("not as strong as") is not a denial.
  */
 export function clauseStatement(clause: string, id: string): boolean | null {
+  if (id.startsWith(PROPOSITION_PREFIX)) return propositionStatement(clause, id);
   const n = numericSpec(id);
   if (n) {
     if (!n.family.statement.test(clause)) return null;

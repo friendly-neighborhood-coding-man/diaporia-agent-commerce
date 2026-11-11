@@ -9,6 +9,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { Store } from "../store/Database.js";
+import type { HoldKind } from "./PurchaseGate.js";
 
 export const PROPOSAL_TTL_MS = 30 * 60_000;
 export type ProposalStatus = "PENDING" | "CONFIRMED" | "REJECTED";
@@ -16,7 +17,7 @@ export interface ResearchHoldProposal {
   proposalId: string;
   userId: string;
   purchaseSessionId: string;
-  kind: "CONFIRM_BUDGET" | "DROP_REQUIREMENT";
+  kind: HoldKind;
   requirement: string | null;
   budgetMinor: number | null;
   currency: string;

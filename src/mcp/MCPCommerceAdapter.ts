@@ -169,11 +169,11 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     // cookie, CSRF), never through MCP. Hard violations are never resolvable; a resolution is appended, never replaces.
     server.registerTool("resolve_research_hold", {
       title: "Propose a resolution of an open research requirement (the owner confirms it)",
-      description: "Creates a PROPOSAL to resolve one open item that blocks payment preparation: CONFIRM_BUDGET (the budget is unresolved or in another currency; propose a budget in the session currency) or DROP_REQUIREMENT (propose dropping a stated requirement, e.g. must:wireless, that research could not verify). This call resolves NOTHING. It returns ownerConfirmationUrl: give it to the user, who reviews and confirms the exact change on the owner page with their own owner credentials. userStatement is shown to the owner labelled as your text. Moves no money and grants no spending authority; compare offers again after the owner confirms.",
+      description: "Creates a PROPOSAL to resolve one open item that blocks payment preparation: CONFIRM_BUDGET (the budget is unresolved or in another currency; propose a budget in the session currency) DROP_REQUIREMENT (propose that the owner waives a stated requirement, e.g. must:wireless, that research could not verify) or ATTEST_REQUIREMENT (propose that the owner attests, from their own firsthand knowledge, that the product meets it; recorded as OWNER_ATTESTED, never as verified evidence). This call resolves NOTHING. It returns ownerConfirmationUrl: give it to the user, who reviews and confirms the exact change on the owner page with their own owner credentials. userStatement is shown to the owner labelled as your text. Moves no money and grants no spending authority; compare offers again after the owner confirms.",
       inputSchema: {
         purchaseSessionId: idString("ps"),
-        kind: z.enum(["CONFIRM_BUDGET", "DROP_REQUIREMENT"]),
-        requirement: z.string().min(3).max(80).optional().describe("For DROP_REQUIREMENT: the requirement key reported by compare_purchase_offers, e.g. must:wireless"),
+        kind: z.enum(["CONFIRM_BUDGET", "DROP_REQUIREMENT", "ATTEST_REQUIREMENT"]),
+        requirement: z.string().min(3).max(80).optional().describe("For DROP_REQUIREMENT or ATTEST_REQUIREMENT: the requirement key reported by compare_purchase_offers, e.g. must:wireless"),
         budgetMinor: z.number().int().positive().max(100_000_000).optional().describe("For CONFIRM_BUDGET: the proposed budget in the session currency, integer minor units"),
         currency: z.enum(["USD", "EUR", "GBP", "JPY", "KRW"]),
         userStatement: z.string().min(3).max(500).describe("Your explanation for the owner (shown as the assistant's text, never as the owner's words)"),

@@ -1,7 +1,7 @@
 import type { CatalogProduct, EvidenceKind } from "../domain/types.js";
 import { generationsIn, mentionsExactModel, normalizeKey, parseAttributes, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
 import { factsOf } from "../identity/ProductResolverV2.js";
-import { clauseStatement } from "../research/capabilities.js";
+import { clauseStatement, isPerformanceClaim, PROPOSITION_PREFIX } from "../research/capabilities.js";
 import { jaccard, registrableDomain, shingles, hostOf, type SourceClass, type SourceRegistry } from "./SourceRegistry.js";
 
 /**
@@ -176,10 +176,18 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     const clauseNamesThis = namesThis(clause) && (!otherYearInHit || (!!year && clauseYears.has(year)) || (!!generation && clauseGens.has(generation)));
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product)) continue;
     if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
+    // V2.2 WP-4: a clause about a kit, bundle or combo describes another configuration than a standalone product
+    // ("the kit includes two batteries" says nothing about the tool-only listing).
+    if (facts.kind === "STANDALONE" && /\b(?:kits?|bundles?|combos?|combo pack|set includes|package includes|bundled with)\b|세트|번들|패키지/i.test(clause)) continue;
     const said = parseAttributes(clause);
     const clash = (Object.keys(said) as AttributeAxis[]).some((a) => a !== "color" && facts.attributes[a] && normalizeKey(said[a]!) !== normalizeKey(facts.attributes[a]!));
     if (clash) continue;
-    const v = clauseStatement(clause, capability);
+    // V2.2 WP-4: a proposition word that is part of the product's own name ("Alder" in "Alder 30L Travel Backpack") is
+    // not a statement about the product, so the product's brand and model are removed before a proposition is matched.
+    const own = capability.startsWith(PROPOSITION_PREFIX)
+      ? [product.identity.brand, product.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), clause)
+      : clause;
+    const v = clauseStatement(own, capability);
     if (v !== null) return { value: v, quote: clause.trim().slice(0, 300) };
   }
   return null;
@@ -229,7 +237,11 @@ function printOf(quote: string): Set<string> {
   return sh.size ? sh : new Set([`=${quote.toLowerCase().replace(/[^a-z0-9가-힣]+/g, " ").trim()}`]);
 }
 
-export function judgeV2(capability: string, items: EvidenceItem[]): CapabilityVerdict {
+export function judgeV2(capability: string, rawItems: EvidenceItem[]): CapabilityVerdict {
+  // V2.2 WP-4: manufacturer text can establish a manufacturer-stated property, never a performance judgement ("quiet",
+  // "comfortable", "durable"): for those only independent expert groups count.
+  const performance = isPerformanceClaim(capability);
+  const items = performance ? rawItems.map((x) => x.sourceClass === "MANUFACTURER" && x.counts ? { ...x, counts: false, whyNotCounted: "manufacturer claim; a performance claim needs independent evidence" } : x) : rawItems;
   const counted = items.filter((x) => x.counts);
   const manu = counted.filter((x) => x.sourceClass === "MANUFACTURER");
   const expert = counted.filter((x) => x.sourceClass === "EXPERT_REVIEW");

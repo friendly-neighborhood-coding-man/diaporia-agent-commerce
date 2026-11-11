@@ -6,7 +6,7 @@ import { resolveExactV2, type ResolutionV2 } from "../identity/ProductResolverV2
 import type { EvidenceRouter, RouterResult, RouterStep } from "../evidence/EvidenceRouter.js";
 import { judgeV2, type CapabilityVerdict, type EvidenceItem } from "../evidence/EvidenceV2.js";
 import { hostOf } from "../evidence/SourceRegistry.js";
-import { clauseStatement } from "./capabilities.js";
+import { clauseStatement, evidenceCapabilityOf } from "./capabilities.js";
 
 /** True when any clause of a listing text claims the capability (planner prior only). */
 function clauseStatementAny(text: string, cap: string): boolean | null {
@@ -139,7 +139,11 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
 
   const verdicts = new Map<string, Record<string, CapabilityVerdict>>();
   const notChecked = new Map<string, string[]>();
-  const caps = [...intent.mustHave, ...intent.niceToHave];
+  // V2.2 WP-4: stated requirements outside the vocabulary are verified as generic propositions too (evidenceCapabilityOf).
+  const propCaps = [...new Set((intent.unresolvedMust ?? []).map(evidenceCapabilityOf))].filter((x) => !intent.mustHave.includes(x));
+  const mustCaps = [...intent.mustHave, ...propCaps];
+  const caps = [...mustCaps, ...intent.niceToHave.filter((n) => !mustCaps.includes(n))];
+  const propsHold = (vv: Record<string, CapabilityVerdict>) => (intent.unresolvedMust ?? []).every((k) => vv[evidenceCapabilityOf(k)]?.status === (k.startsWith("not:") ? "VERIFIED_FALSE" : "VERIFIED_TRUE"));
   const sellers = [...new Set([...offers.values()].flat().map((o) => o.merchantDomain).concat([...offers.values()].flat().map((o) => (o.listingUrl ? hostOf(o.listingUrl) : "")).filter(Boolean)))];
   let limitReached = false;
   const legacyRouting = new Map<string, RouterResult[]>();
@@ -189,7 +193,7 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
       const v = await verifyFor(d, p, caps, sellers, Math.min(L.maxEvidenceSearchesPerCandidate, L.maxEvidenceSearches - trace.evidenceSearches), trace);
       verdicts.set(p.productId, v.verdicts);
       if (v.blocked.length) { limitReached = true; notChecked.set(p.productId, v.blocked); trace.stops.push("usage limit reached during evidence; remaining requirements stay unverified"); }
-      const allMust = intent.mustHave.every((m) => v.verdicts[m]?.status === "VERIFIED_TRUE");
+      const allMust = intent.mustHave.every((m) => v.verdicts[m]?.status === "VERIFIED_TRUE") && propsHold(v.verdicts);
       if (allMust && pe.blockersBeforeEvidence.length === 0) {
         const nice = intent.niceToHave.filter((n) => v.verdicts[n]?.status === "VERIFIED_TRUE").length;
         const price = pe.lowestListingMinor ?? Infinity;
@@ -200,7 +204,7 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   }
   const inputs: CandidateInput[] = pool.map((p) => {
     const v = verdicts.get(p.productId) ?? (d.router?.policy === "v2" ? fixtureVerdicts(p, caps) : Object.fromEntries(caps.map((c) => [c, v1Verdict(p, c, null)])));
-    return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, intent.mustHave), nice: pick(v, intent.niceToHave),
+    return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, mustCaps), nice: pick(v, intent.niceToHave),
       listingClaims: intent.mustHave.filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length, notChecked: notChecked.get(p.productId) ?? (verdicts.has(p.productId) ? [] : caps.filter((c) => !v[c] || v[c]!.status === "UNVERIFIED")), limitReached };
   });
   const exactFailure = exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;

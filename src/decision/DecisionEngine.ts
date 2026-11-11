@@ -4,7 +4,7 @@ import { AXES, mentionsExactModel, normalizeKey, type AttributeAxis } from "../i
 import { factsOf } from "../identity/ProductResolverV2.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import type { CapabilityVerdict } from "../evidence/EvidenceV2.js";
-import { productCategory } from "../research/capabilities.js";
+import { evidenceCapabilityOf, productCategory, propositionWords, PROPOSITION_PREFIX } from "../research/capabilities.js";
 import { weightsFor, type RankingWeights } from "./weights.js";
 
 /**
@@ -44,6 +44,12 @@ export interface RankedCandidate {
   utility: number | null;
   utilityParts: Record<string, number> | null;
   niceVerified: number;
+  /**
+   * V2.2 WP-4: how each satisfied MUST requirement was established for THIS product (identity binding): by evidence
+   * (MANUFACTURER or TWO_EXPERT_GROUPS, with the counted source URLs) or by the catalog identity (the requirement word is
+   * the listing's own brand or model).
+   */
+  satisfied?: Array<{ key: string; basis: "MANUFACTURER" | "TWO_EXPERT_GROUPS" | "CATALOG_IDENTITY"; sources: string[] }>;
   price: { lowestListingMinor: number | null; currency: Currency; merchantDomain: string | null; offersConsidered: number; confidence: "LISTING_PRICE_ONLY" | "NO_PRICE_IN_CURRENCY" };
 }
 export interface Decision {
@@ -64,6 +70,7 @@ export interface Decision {
   disclaimer: string;
 }
 
+const REQUIREMENT_BLOCKERS = new Set<string>(["MUST_HAVE_UNVERIFIED", "MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "VERIFICATION_LIMIT_REACHED", "MUST_HAVE_CONTRADICTED", "ATTRIBUTE_UNKNOWN"]);
 const DISCLAIMER = "Research decision only. It is not a payment authorization: spending requires a user-created purchase mandate and PayPal buyer approval. Listing prices are search-time prices, not verified totals.";
 const eq = (a: string, b: string) => normalizeKey(a) === normalizeKey(b);
 
@@ -74,9 +81,11 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
   const cheapest = Math.min(...eligible.map((a) => a.r.price.lowestListingMinor ?? Infinity));
   for (const a of eligible) {
     const p = a.r.price.lowestListingMinor;
-    const mustN = intent.mustHave.length, niceN = intent.niceToHave.length;
-    const mustT = intent.mustHave.filter((m) => a.c.must[m]?.status === "VERIFIED_TRUE").length;
-    const ev = mustN ? intent.mustHave.reduce((s, m) => s + (a.c.must[m]?.basis === "MANUFACTURER" || a.c.must[m]?.basis === "TWO_EXPERT_GROUPS" ? 1 : 0), 0) / mustN : 1;
+    // V2.2 WP-5: every MUST requirement counts, unfamiliar ones included (a proposition verified by evidence is as
+    // good as a vocabulary capability verified by evidence).
+    const mustN = intent.mustHave.length + (intent.unresolvedMust?.length ?? 0), niceN = intent.niceToHave.length;
+    const mustT = a.r.satisfied?.length ?? 0;
+    const ev = mustN ? (a.r.satisfied ?? []).length / mustN : 1;
     const merchants = new Set(a.usable.map((x) => x.merchantDomain)).size;
     const fresh = a.usable.length ? Math.max(0, 1 - (o.now - Math.max(...a.usable.map((x) => Date.parse(x.observedAt) || 0))) / (7 * 86400_000)) : 0;
     const parts = { suitability: w.suitability * (mustN ? mustT / mustN : 1), niceToHave: w.niceToHave * (niceN ? a.r.niceVerified / niceN : 0), evidence: w.evidence * ev,
@@ -92,8 +101,12 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
   //     is most likely to pass verification; ordering only, never evidence), then utility, then price.
   const unverifiedMust = (a: (typeof assessed)[number]) => a.r.blockers.some((b) => b.code === "MUST_HAVE_UNVERIFIED" || b.code === "MUST_HAVE_UNRECOGNIZED" || b.code === "MUST_NOT_UNVERIFIABLE" || b.code === "VERIFICATION_LIMIT_REACHED" || b.code === "MUST_HAVE_CONTRADICTED");
   const price = (a: (typeof assessed)[number]) => a.r.price.lowestListingMinor ?? Infinity;
+  // V2.2 WP-5: eligibility first (no score compensates a known violation), then the number of MUST requirements still
+  // open (verified eligibility before price: a cheaper listing never outranks one whose requirements are verified),
+  // then the other blockers, then the objective.
+  const openMust = (a: (typeof assessed)[number]) => a.r.blockers.filter((b) => REQUIREMENT_BLOCKERS.has(b.code)).length;
   const order = [...assessed].sort((x, y) => {
-    const head = Number(y.r.eligible) - Number(x.r.eligible) || x.r.blockers.length - y.r.blockers.length;
+    const head = Number(y.r.eligible) - Number(x.r.eligible) || openMust(x) - openMust(y) || x.r.blockers.length - y.r.blockers.length;
     if (head) return head;
     const tail = (y.r.utility ?? -1) - (x.r.utility ?? -1) || price(x) - price(y) || x.r.disqualifiers.length - y.r.disqualifiers.length;
     if (!unverifiedMust(x) && !unverifiedMust(y))
@@ -113,7 +126,7 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
   else { state = "HOLD"; holdReasons.push(inputs.length ? "Every candidate has a known violation of the request." : "No candidate was found."); }
   if (state === "HOLD" && !o.exactFailure) for (const a of order.slice(0, 5)) holdReasons.push(`${a.r.title}: ${a.r.disqualifiers.map((d) => d.detail).join("; ")}`);
 
-  const factsFor = (a: (typeof order)[number]) => [...intent.mustHave, ...intent.niceToHave].flatMap((cap) => {
+  const factsFor = (a: (typeof order)[number]) => [...new Set([...intent.mustHave, ...(intent.unresolvedMust ?? []).map(evidenceCapabilityOf), ...intent.niceToHave])].flatMap((cap) => {
     const v = a.c.must[cap] ?? a.c.nice[cap];
     if (!v || (v.status !== "VERIFIED_TRUE" && v.status !== "VERIFIED_FALSE")) return [];
     return [{ capability: cap, value: v.status === "VERIFIED_TRUE", basis: v.basis, sources: v.evidence.filter((e) => e.counts).map((e) => ({ url: e.url, sourceClass: e.sourceClass, quote: e.quote, publishedDate: e.publishedDate })) }];
@@ -129,7 +142,7 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
     const a = best!;
     const why: string[] = [];
     if (o.exactLock) why.push("It is the exact product requested (brand, model, variant, kind and condition all match).");
-    if (intent.mustHave.length) why.push(`Every must-have is verified: ${intent.mustHave.join(", ")}.`);
+    if (intent.mustHave.length || intent.unresolvedMust?.length) why.push(`Every must-have is verified: ${(a.r.satisfied ?? []).map((x) => `${x.key} (${x.basis === "CATALOG_IDENTITY" ? "catalog identity" : x.basis === "MANUFACTURER" ? "manufacturer" : "two expert sources"})`).join(", ")}.`);
     if (intent.niceToHave.length) why.push(`${a.r.niceVerified} of ${intent.niceToHave.length} nice-to-haves verified.`);
     if (a.r.price.lowestListingMinor !== null) why.push(`Lowest eligible listing ${fmt(a.r.price.lowestListingMinor, intent.currency)} at ${a.r.price.merchantDomain}${intent.budgetMinor !== null ? ` (budget ${fmt(intent.budgetMinor, intent.currency)})` : ""}.`);
     recommendation = { productId: a.r.productId, title: a.r.title, whySelected: why,
@@ -205,19 +218,42 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
     else if (v?.status !== "VERIFIED_TRUE") bl.push({ code: c.limitReached && c.notChecked.includes(m) ? "VERIFICATION_LIMIT_REACHED" : "MUST_HAVE_UNVERIFIED",
       detail: `must-have "${m}" is not verified${c.notChecked.includes(m) ? " (not checked)" : v ? ` (${v.evidence.length ? v.evidence.filter((e) => !e.counts).map((e) => e.whyNotCounted).filter(Boolean).slice(0, 2).join("; ") || "too few independent sources" : "no statement found"})` : ""}` });
   }
-  // N-01: a stated must-have the evidence engine cannot verify (unrecognized phrase or a negative requirement) is a
-  // blocker for every candidate. It is never dropped and never softened; only the owner can remove it.
+  const satisfied: NonNullable<RankedCandidate["satisfied"]> = [];
+  for (const m of intent.mustHave) { const v = c.must[m]; if (v?.status === "VERIFIED_TRUE") satisfied.push({ key: m, basis: v.basis === "MANUFACTURER" ? "MANUFACTURER" : "TWO_EXPERT_GROUPS", sources: v.evidence.filter((e) => e.counts).map((e) => e.url).slice(0, 4) }); }
+  // N-01 / V2.2 WP-4: a stated must-have outside the capability vocabulary (or a negative one) is a generic proposition.
+  // It is never dropped or softened: evidence about THIS product verifies it under the same sufficiency rule (a
+  // performance claim only with independent evidence), a word that is the listing's own brand or model is satisfied by
+  // the catalog identity, evidence that the product fails it is a known violation, and anything else stays open until
+  // evidence or the owner (attest or waive) settles it.
   for (const key of intent.unresolvedMust ?? []) {
     const r = intent.requirements?.find((x) => x.key === key);
-    bl.push(key.startsWith("not:")
-      ? { code: "MUST_NOT_UNVERIFIABLE", detail: `must-have "${key}" (must NOT have "${r?.text ?? key.slice(4)}") cannot be verified automatically` }
-      : { code: "MUST_HAVE_UNRECOGNIZED", detail: `must-have "${key}" ("${r?.text ?? key}") is not in the verifiable capability vocabulary` });
+    const negative = key.startsWith("not:");
+    const v = c.must[evidenceCapabilityOf(key)];
+    if (!negative && identityWord(key, p)) { satisfied.push({ key, basis: "CATALOG_IDENTITY", sources: [] }); continue; }
+    const holds = negative ? v?.status === "VERIFIED_FALSE" : v?.status === "VERIFIED_TRUE";
+    const fails = negative ? v?.status === "VERIFIED_TRUE" : v?.status === "VERIFIED_FALSE";
+    if (holds) { satisfied.push({ key, basis: v!.basis === "MANUFACTURER" ? "MANUFACTURER" : "TWO_EXPERT_GROUPS", sources: v!.evidence.filter((e) => e.counts).map((e) => e.url).slice(0, 4) }); continue; }
+    if (fails) { dq.push({ code: "MUST_HAVE_FALSE", detail: `must-have "${key}" is false (${negative ? `the product has "${r?.text ?? key.slice(4)}"` : `the product does not have "${r?.text ?? key}"`}; ${v!.basis === "MANUFACTURER" ? "manufacturer" : "two expert sources"})` }); continue; }
+    if (v?.status === "CONTRADICTED") { bl.push({ code: "MUST_HAVE_CONTRADICTED", detail: `must-have "${key}": sources contradict each other` }); continue; }
+    const why = v && v.evidence.length ? v.evidence.filter((e) => !e.counts).map((e) => e.whyNotCounted).filter(Boolean).slice(0, 2).join("; ") || "too few independent sources" : "no attributable statement found";
+    bl.push(negative
+      ? { code: "MUST_NOT_UNVERIFIABLE", detail: `must-have "${key}" (must NOT have "${r?.text ?? key.slice(4)}") is not verified for this product (${why})` }
+      : { code: "MUST_HAVE_UNRECOGNIZED", detail: `must-have "${key}" ("${r?.text ?? key}") is not verified for this product (${why})` });
   }
   const niceVerified = intent.niceToHave.filter((n) => c.nice[n]?.status === "VERIFIED_TRUE").length;
-  const r: RankedCandidate = { productId: p.productId, title: p.title, rank: 0, eligible: dq.length === 0, disqualifiers: dq, blockers: bl, utility: null, utilityParts: null, niceVerified,
+  const r: RankedCandidate = { productId: p.productId, title: p.title, rank: 0, eligible: dq.length === 0, disqualifiers: dq, blockers: bl, utility: null, utilityParts: null, niceVerified, satisfied,
     price: { lowestListingMinor: lowest?.itemPriceMinor ?? null, currency: intent.currency, merchantDomain: lowest?.merchantDomain ?? null, offersConsidered: usable.length,
       confidence: lowest ? "LISTING_PRICE_ONLY" : "NO_PRICE_IN_CURRENCY" } };
   return { c, r, usable };
+}
+
+/** V2.2 WP-4: the requirement is one word that IS the listing's own brand or a word of its model (catalog identity). */
+function identityWord(key: string, p: CatalogProduct): boolean {
+  if (!key.startsWith(PROPOSITION_PREFIX)) return false;
+  const words = propositionWords(key);
+  if (words.length !== 1) return false;
+  const w = normalizeKey(words[0]!);
+  return !!w && (normalizeKey(p.identity.brand ?? "") === w || (p.identity.model ?? "").split(/\s+/).some((x) => normalizeKey(x) === w));
 }
 
 /** Which hard checks (no provider call needed) already disqualify a candidate. Used by the planner before spending. */
