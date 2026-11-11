@@ -118,7 +118,9 @@ function reviewBody(p: ResearchHoldProposal, s: { requestText: string; currency:
   if (p.kind === "DROP_REQUIREMENT") {
     const contradicted = p.item.code === "MUST_HAVE_CONTRADICTED";
     parts.push(`<h2>Open requirement</h2><table><tr><td>Requirement</td><td><code>${esc(p.requirement)}</code></td></tr><tr><td>Research result</td><td>${esc(p.item.code)}: ${esc(p.item.detail)}</td></tr></table>`);
-    parts.push(contradicted
+    const unrecognized = p.item.code === "MUST_HAVE_UNRECOGNIZED" || p.item.code === "MUST_NOT_UNVERIFIABLE";
+    if (unrecognized) parts.push(`<p class="state" style="color:#b3261e">Warning: DIAPORIA cannot check this requirement automatically, and nothing has verified it. If you drop it, nobody has checked that the product meets it.</p>`);
+    else parts.push(contradicted
       ? `<p class="state" style="color:#b3261e">Warning: evidence found during research says this product does NOT meet this requirement. If you drop it, the product you buy may lack it.</p>`
       : `<p class="state">This requirement is not verified for this product. If you drop it, the product may not have it.</p>`);
     parts.push(`<h2>Proposed change</h2><p>Drop the requirement <code>${esc(p.requirement)}</code> for this purchase session only.</p>`);

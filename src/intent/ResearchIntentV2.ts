@@ -3,6 +3,7 @@ import { isCurrency, parseDecimalToMinor, type Currency } from "../domain/money.
 import { extractIdentity, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
+import { extractRequirements, type StatedRequirement } from "./Requirements.js";
 
 /**
  * Research V2 intent: everything the discovery, identity and decision stages need, parsed deterministically from
@@ -35,8 +36,16 @@ export interface ResearchIntentV2 {
   /** Canonical category id (capabilities.ts) or null. */
   category: string | null;
   categoryNoun: string | null;
+  /** Recognized, verifiable must-have capability ids. */
   mustHave: string[];
   niceToHave: string[];
+  /**
+   * N-01: every requirement the user stated, recognized or not, with its span and polarity (lossless).
+   * `unresolvedMust` lists the keys of stated MUST requirements that the evidence engine cannot verify (unrecognized
+   * or negative). Each is a blocking gate item `must:<key>`; only the owner can remove one.
+   */
+  requirements: StatedRequirement[];
+  unresolvedMust: string[];
   /** The user asked to exclude bundles/kits ("standalone", "no bundles"). */
   excludeBundles: boolean;
   objective: "LOWEST_VERIFIED_TOTAL" | "BEST_SUITABILITY";
@@ -197,21 +206,15 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   else if (/\bnew\b|새\s*제품|새것|미개봉/i.test(text)) { condition = "new"; conditionStated = true; }
   if (!conditionStated) assumptions.push("Condition not stated; only NEW offers are eligible.");
 
-  // Capabilities: per clause, so "ideally X" is a nice-to-have. Words inside the model name are not requirements
-  // ("Tailspin Studio ANC Pro" does not ask for ANC).
-  const must = new Set<string>(input.mustHave ?? []); const nice = new Set<string>(input.niceToHave ?? []);
-  let offset = 0;
-  for (const clause of text.split(/(?<=[,;])\s*|\s+(?=but\b)|\s+and\s+(?=(?:a|an|the)\s|ideally|it would)/i)) {
-    const at = text.indexOf(clause, offset); offset = at >= 0 ? at + clause.length : offset;
-    const isNice = NICE.test(clause);
-    for (const c of requestCapabilities(clause)) {
-      const abs = (at >= 0 ? at : 0) + c.index;
-      if (targetSpan && abs >= targetSpan[0] && abs < targetSpan[1]) continue;
-      (isNice ? nice : must).add(c.id);
-    }
-  }
-  for (const n of nice) if (must.has(n) && !(input.mustHave ?? []).includes(n)) must.delete(n);
-  for (const m of must) nice.delete(m);
+  // Requirements (N-01): lossless, per clause, with spans. "ideally X" is a nice-to-have; words inside the model name
+  // are not requirements ("Tailspin Studio ANC Pro" does not ask for ANC). Structured input can only ADD requirements:
+  // a structured niceToHave never softens a must-have stated in the text.
+  const requirements = extractRequirements(text, targetSpan, [target?.brand ?? "", target?.model ?? ""].filter(Boolean), { mustHave: input.mustHave ?? [], niceToHave: input.niceToHave ?? [] });
+  const must = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "MUST").map((r) => r.capability!));
+  const nice = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "NICE").map((r) => r.capability!).filter((c) => !must.has(c)));
+  const unresolvedMust = requirements.filter((r) => r.strength === "MUST" && (!r.recognized || r.polarity === "EXCLUDED")).map((r) => r.key);
+  for (const r of requirements.filter((x) => x.strength === "MUST" && (!x.recognized || x.polarity === "EXCLUDED")))
+    assumptions.push(`Requirement "${r.text}" (${r.polarity === "EXCLUDED" ? "must NOT have" : "must have"}) cannot be verified automatically; it stays open until evidence or the owner settles it.`);
 
   const cat = requestCategory(target && targetSpan ? text : text);
   const category = target?.kind === "ACCESSORY" ? null : cat?.id ?? null;
@@ -239,6 +242,6 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
   return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, target,
-    attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], excludeBundles, objective,
+    attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }

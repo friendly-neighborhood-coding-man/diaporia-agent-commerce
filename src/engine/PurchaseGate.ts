@@ -27,9 +27,10 @@
  * closed), and resolveGate refuses one.
  */
 import type { Decision } from "../decision/DecisionEngine.js";
+import type { StatedRequirement } from "../intent/Requirements.js";
 
 export const GATE_VERSION = "purchase-gate-v1";
-const REQUIREMENT_CODES = new Set(["MUST_HAVE_UNVERIFIED", "MUST_HAVE_CONTRADICTED", "VERIFICATION_LIMIT_REACHED", "ATTRIBUTE_UNKNOWN"]);
+const REQUIREMENT_CODES = new Set(["MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "MUST_HAVE_UNVERIFIED", "MUST_HAVE_CONTRADICTED", "VERIFICATION_LIMIT_REACHED", "ATTRIBUTE_UNKNOWN"]);
 
 export interface GateItem { key: string; code: string; detail: string }
 export interface GateResolution {
@@ -50,6 +51,8 @@ export interface PurchaseGate {
   budgetConflict: string | null;
   products: Record<string, { hard: GateItem[]; requirements: GateItem[] }>;
   resolutions: GateResolution[];
+  /** N-01: every requirement the user stated (recognized or not), with spans and provenance. */
+  stated?: StatedRequirement[];
 }
 
 /** Stable key for an open requirement, used by DROP_REQUIREMENT. */
@@ -60,13 +63,13 @@ export function requirementKey(code: string, detail: string): string {
   return `${code.toLowerCase()}`;
 }
 
-export function gateFromDecision(decision: Decision, budgetConflict: string | null): PurchaseGate {
+export function gateFromDecision(decision: Decision, budgetConflict: string | null, stated: StatedRequirement[] = []): PurchaseGate {
   const products: PurchaseGate["products"] = {};
   for (const r of decision.ranking) products[r.productId] = {
     hard: r.disqualifiers.map((d) => ({ key: d.code.toLowerCase(), code: d.code, detail: d.detail })),
     requirements: r.blockers.filter((b) => REQUIREMENT_CODES.has(b.code)).map((b) => ({ key: requirementKey(b.code, b.detail), code: b.code, detail: b.detail })),
   };
-  return { version: GATE_VERSION, decisionState: decision.state, budgetConflict, products, resolutions: [] };
+  return { version: GATE_VERSION, decisionState: decision.state, budgetConflict, products, resolutions: [], stated };
 }
 
 export interface GateReadiness { ready: boolean; open: string[]; effectiveBudgetMinor: number | null; budgetSource: "SESSION" | "USER_CONFIRMED" }
@@ -107,4 +110,28 @@ export function resolveGate(gate: PurchaseGate, r: Omit<GateResolution, "at"> & 
     if (!r.requirement || !open.has(r.requirement)) throw new Error(`No open requirement ${r.requirement ?? "(none)"} in this session`);
   }
   return { ...gate, resolutions: [...gate.resolutions, { ...r, at: r.at ?? new Date(now).toISOString() }] };
+}
+
+export type RequirementStatus = "VERIFIED" | "VIOLATED" | "CONTRADICTED" | "UNVERIFIED" | "UNRECOGNIZED" | "UNVERIFIABLE" | "REMOVED_BY_OWNER" | "OPTIONAL" | "NOT_ASSESSED";
+/**
+ * N-01 requirement ledger for one product: each stated requirement with its span, whether it was recognized, and its
+ * current status (verified, contradicted, still open, or explicitly removed by the human owner).
+ */
+export function requirementLedger(gate: PurchaseGate | null | undefined, productId: string | null) {
+  const p = gate && productId ? gate.products[productId] : undefined;
+  const removed = new Set((gate?.resolutions ?? []).filter(ownerConfirmed).filter((r) => r.kind === "DROP_REQUIREMENT").map((r) => r.requirement));
+  return (gate?.stated ?? []).map((r) => {
+    const key = `must:${r.key}`;
+    let status: RequirementStatus;
+    if (r.strength === "NICE") status = "OPTIONAL";
+    else if (!p) status = "NOT_ASSESSED";
+    else if (removed.has(key)) status = "REMOVED_BY_OWNER";
+    else if (p.hard.some((h) => h.code === "MUST_HAVE_FALSE" && h.detail.includes(`"${r.key}"`))) status = "VIOLATED";
+    else {
+      const open = p.requirements.find((q) => q.key === key);
+      status = !open ? "VERIFIED" : open.code === "MUST_HAVE_CONTRADICTED" ? "CONTRADICTED" : open.code === "MUST_HAVE_UNRECOGNIZED" ? "UNRECOGNIZED"
+        : open.code === "MUST_NOT_UNVERIFIABLE" ? "UNVERIFIABLE" : "UNVERIFIED";
+    }
+    return { key, text: r.text, span: r.span, recognized: r.recognized, polarity: r.polarity, strength: r.strength, source: r.source, status };
+  });
 }

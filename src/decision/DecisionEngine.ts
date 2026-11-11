@@ -24,7 +24,7 @@ export const BUDGET_HEADROOM = 0.9;
 
 export type DecisionState = "RECOMMEND" | "INVESTIGATE" | "HOLD";
 export type Disqualifier = "CATEGORY_MISMATCH" | "NOT_STANDALONE" | "BUNDLE_EXCLUDED" | "ATTRIBUTE_MISMATCH" | "CONDITION_MISMATCH" | "OVER_BUDGET" | "UNAVAILABLE" | "MUST_HAVE_FALSE" | "NOT_LOCKED_IDENTITY";
-export type Blocker = "MUST_HAVE_UNVERIFIED" | "MUST_HAVE_CONTRADICTED" | "VERIFICATION_LIMIT_REACHED" | "PRICE_NOT_IN_REQUESTED_CURRENCY" | "BUDGET_TIGHT" | "AVAILABILITY_UNKNOWN" | "CONDITION_UNCONFIRMED" | "ATTRIBUTE_UNKNOWN";
+export type Blocker = "MUST_HAVE_UNRECOGNIZED" | "MUST_NOT_UNVERIFIABLE" | "MUST_HAVE_UNVERIFIED" | "MUST_HAVE_CONTRADICTED" | "VERIFICATION_LIMIT_REACHED" | "PRICE_NOT_IN_REQUESTED_CURRENCY" | "BUDGET_TIGHT" | "AVAILABILITY_UNKNOWN" | "CONDITION_UNCONFIRMED" | "ATTRIBUTE_UNKNOWN";
 
 export interface CandidateInput {
   product: CatalogProduct;
@@ -90,7 +90,7 @@ export function decide(intent: ResearchIntentV2, inputs: CandidateInput[], o: { 
   //     nice-to-haves, then utility (versioned weights), then price. Listing text is never used here.
   //   otherwise (INVESTIGATE candidates): verified nice-to-haves, then the listing-text prior (which unverified candidate
   //     is most likely to pass verification; ordering only, never evidence), then utility, then price.
-  const unverifiedMust = (a: (typeof assessed)[number]) => a.r.blockers.some((b) => b.code === "MUST_HAVE_UNVERIFIED" || b.code === "VERIFICATION_LIMIT_REACHED" || b.code === "MUST_HAVE_CONTRADICTED");
+  const unverifiedMust = (a: (typeof assessed)[number]) => a.r.blockers.some((b) => b.code === "MUST_HAVE_UNVERIFIED" || b.code === "MUST_HAVE_UNRECOGNIZED" || b.code === "MUST_NOT_UNVERIFIABLE" || b.code === "VERIFICATION_LIMIT_REACHED" || b.code === "MUST_HAVE_CONTRADICTED");
   const price = (a: (typeof assessed)[number]) => a.r.price.lowestListingMinor ?? Infinity;
   const order = [...assessed].sort((x, y) => {
     const head = Number(y.r.eligible) - Number(x.r.eligible) || x.r.blockers.length - y.r.blockers.length;
@@ -197,6 +197,14 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
     else if (v?.status !== "VERIFIED_TRUE") bl.push({ code: c.limitReached && c.notChecked.includes(m) ? "VERIFICATION_LIMIT_REACHED" : "MUST_HAVE_UNVERIFIED",
       detail: `must-have "${m}" is not verified${c.notChecked.includes(m) ? " (not checked)" : v ? ` (${v.evidence.length ? v.evidence.filter((e) => !e.counts).map((e) => e.whyNotCounted).filter(Boolean).slice(0, 2).join("; ") || "too few independent sources" : "no statement found"})` : ""}` });
   }
+  // N-01: a stated must-have the evidence engine cannot verify (unrecognized phrase or a negative requirement) is a
+  // blocker for every candidate. It is never dropped and never softened; only the owner can remove it.
+  for (const key of intent.unresolvedMust ?? []) {
+    const r = intent.requirements?.find((x) => x.key === key);
+    bl.push(key.startsWith("not:")
+      ? { code: "MUST_NOT_UNVERIFIABLE", detail: `must-have "${key}" (must NOT have "${r?.text ?? key.slice(4)}") cannot be verified automatically` }
+      : { code: "MUST_HAVE_UNRECOGNIZED", detail: `must-have "${key}" ("${r?.text ?? key}") is not in the verifiable capability vocabulary` });
+  }
   const niceVerified = intent.niceToHave.filter((n) => c.nice[n]?.status === "VERIFIED_TRUE").length;
   const r: RankedCandidate = { productId: p.productId, title: p.title, rank: 0, eligible: dq.length === 0, disqualifiers: dq, blockers: bl, utility: null, utilityParts: null, niceVerified,
     price: { lowestListingMinor: lowest?.itemPriceMinor ?? null, currency: intent.currency, merchantDomain: lowest?.merchantDomain ?? null, offersConsidered: usable.length,
@@ -207,7 +215,7 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
 /** Which hard checks (no provider call needed) already disqualify a candidate. Used by the planner before spending. */
 export function preEligible(intent: ResearchIntentV2, c: Omit<CandidateInput, "must" | "nice" | "notChecked" | "limitReached">, lock: { productId: string } | null) {
   const a = assess(intent, { ...c, must: {}, nice: {}, notChecked: [], limitReached: false }, lock);
-  return { eligible: a.r.disqualifiers.length === 0, disqualifiers: a.r.disqualifiers, lowestListingMinor: a.r.price.lowestListingMinor, blockersBeforeEvidence: a.r.blockers.filter((b) => !b.code.startsWith("MUST_HAVE")) };
+  return { eligible: a.r.disqualifiers.length === 0, disqualifiers: a.r.disqualifiers, lowestListingMinor: a.r.price.lowestListingMinor, blockersBeforeEvidence: a.r.blockers.filter((b) => !b.code.startsWith("MUST_HAVE") && b.code !== "MUST_NOT_UNVERIFIABLE") };
 }
 
 function fmt(minor: number, cur: Currency): string {

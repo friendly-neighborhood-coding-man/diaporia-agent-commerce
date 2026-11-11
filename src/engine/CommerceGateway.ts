@@ -32,7 +32,7 @@ import { canonicalVariant } from "../identity/ProductIdentityExtractor.js";
 import { runResearchV2, type PlannerLimits } from "../research/ResearchPlannerV2.js";
 import type { SearchPage, ProductSearchQuery } from "../research/CommerceResearchAdapter.js";
 import type { RankingWeights } from "../decision/weights.js";
-import { gateFromDecision, gateReadiness, resolveGate, type PurchaseGate } from "./PurchaseGate.js";
+import { gateFromDecision, gateReadiness, requirementLedger, resolveGate, type PurchaseGate } from "./PurchaseGate.js";
 import { priceProvenance } from "./QuotePromotion.js";
 import { ResearchHoldProposals } from "./ResearchHoldProposals.js";
 
@@ -307,7 +307,7 @@ export class CommerceGateway {
     else if (iv.budgetUnresolved) unknowns.push(`Budget not applied: ${iv.budgetUnresolved}. Confirm the amount and currency.`);
     else if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
     // V2.1: the decision is bound to the session. Later steps read the gate, never the session state alone.
-    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict ?? iv.budgetUnresolved ?? null);
+    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict ?? iv.budgetUnresolved ?? null, iv.requirements);
     const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision, purchaseGate };
     const holdNeeded = (intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0) || plan.decision.state === "HOLD";
     ps = this.sessions.updatePurchaseSession(ps, holdNeeded ? "HOLD" : "RESEARCHED", { research: researchOut, lockedIdentity: locked?.identity ?? null, productId: locked?.productId ?? null });
@@ -315,7 +315,8 @@ export class CommerceGateway {
     return {
       purchaseSessionId: ps.purchaseSessionId, state: ps.state, mode: intent.mode,
       intent: { currency: intent.currency, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource, mustHave: intent.mustHave, niceToHave: intent.niceToHave, objective: intent.objective, identityHints: intent.identityHints, assumptions: intent.assumptions,
-        v2: { version: iv.version, language: iv.language, category: iv.category, attributes: iv.attributes, condition: iv.condition, conditionStated: iv.conditionStated, excludeBundles: iv.excludeBundles, target: iv.target, queries: iv.queries } },
+        v2: { version: iv.version, language: iv.language, category: iv.category, attributes: iv.attributes, condition: iv.condition, conditionStated: iv.conditionStated, excludeBundles: iv.excludeBundles, target: iv.target, queries: iv.queries,
+          requirements: iv.requirements, unresolvedMust: iv.unresolvedMust } },
       identity: identityResult, candidates, unknowns, decision: plan.decision,
       researchTrace: { queries: plan.trace.queries, catalogCalls: plan.trace.catalogCalls, evidenceSearches: plan.trace.evidenceSearches, stops: plan.trace.stops, locale: plan.trace.locale,
         evidenceSteps: plan.trace.evidenceSteps.slice(0, 40) },
@@ -448,6 +449,7 @@ export class CommerceGateway {
       lowestPayPalCheckoutableOffer: comparison.lowestPayPalCheckoutable ? publicOffer(comparison.lowestPayPalCheckoutable, this.research.isMock) : null,
       holdReasons, disclosure: comparison.disclosure, dataSource: this.dataSource(), paymentEffect: "NONE" as const,
       purchaseReadiness: { ready: readiness.ready, open: readiness.open, budgetMinor: readiness.effectiveBudgetMinor, budgetSource: readiness.budgetSource },
+      requirementStatus: requirementLedger((ps.research?.purchaseGate ?? null) as PurchaseGate | null, productId),
       // V2.1 Phase 3: which number is a search-time listing price and which is a merchant-verified total.
       priceProvenance: ps.research?.decision ? priceProvenance({ productId, currency: ps.intent.currency, objective: (ps.intent as { objective?: string }).objective ?? null,
         ranking: (ps.research.decision as { ranking?: Array<{ productId: string; eligible: boolean; price: { lowestListingMinor: number | null; merchantDomain: string | null } }> }).ranking ?? null,
