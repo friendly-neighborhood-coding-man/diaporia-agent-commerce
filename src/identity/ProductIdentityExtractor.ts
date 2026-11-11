@@ -200,6 +200,19 @@ const nounPhraseAt = (rest: string[]): "STOP" | "MODEL" | null => {
   return MODELISH_NEXT.test(after) && !UNIT_TOKEN.test(after) && !/^\d+[- ]?(?:pack|pk|count|ct)$/i.test(after) && m[0].split(/\s+/).length === 1 ? "MODEL" : "STOP";
 };
 
+/** V2.5: "Duo" in "AF-55 Duo" / "AF-55 Duo, 5.5 L"; not "Backpacking", "Mechanical", "Footprint", "Black", "Wireless". */
+function siblingSuffix(w: string, raw: string, next: string[]): boolean {
+  if (!/^[A-Z][a-z]{1,9}$/.test(w)) return false;
+  const lw = w.toLowerCase();
+  if (GENERIC.has(lw) || COLOR_WORDS[lw] || UNIT_TOKEN.test(w) || ACCESSORY_NOUN.test(w) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(w)
+    || /(?:ing|ed|al|ic|ive|ous|less|proof|able|ible|ful|er|est|ly)$/.test(lw)) return false;
+  if (/[,;:()|]$/.test(raw) || next.length === 0) return true;
+  const n = next[0]!;
+  if (/^[,;:()|/–—+&-]/.test(n) || /^[a-z가-힣]/.test(n)) return true;
+  // A capitalized word before a product noun is ambiguous ("Duo Air Fryer" vs "Pressure Rice Cooker"): not taken.
+  return false;
+}
+
 /** Named model phrase: words after the brand up to the first generic word, product noun, attribute or punctuation (max 4 words). */
 export function namedModelAfter(text: string, brand: string | null): string | null {
   const t = text.normalize("NFKC");
@@ -225,7 +238,9 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
     // V2.4: once the name has its number ("Ridge 2", "K75", "RV-8"), only a family extension ("Pro", "Lite", "Gen 2")
     // or another number continues it. A descriptive or accessory word after it ("Ridge 2 Backpacking Tent", "K75 Lite
     // Mechanical Keyboard", "Ridge 2 Footprint") is not part of the model.
-    if (words.some((x) => /\d/.test(x)) && !/\d/.test(w) && !isModelExtension(lw)) break;
+    // V2.5: a sibling suffix ("AF-55 Duo", "Hush 2 Trio") is part of the model: one capitalized, non-descriptive word
+    // that ends the name (end of text, punctuation or a lowercase word after it).
+    if (words.some((x) => /\d/.test(x)) && !/\d/.test(w) && !isModelExtension(lw) && !siblingSuffix(w, raw, parts.slice(i + 1))) break;
     if (words.length && np === "MODEL") { words.push(w); if (stop || words.length >= 4) break; continue; }
     // V2.3: in a request, an all-lowercase word after a capitalized name ends it ("Nordvik Summit tent" → Summit).
     if (words.length && /^[a-z][a-z-]*$/.test(w) && words.every((x) => /^[A-Z0-9]/.test(x))) break;
@@ -326,7 +341,8 @@ export function mentionsExactModel(text: string, model: string, own: { generatio
     // N-02: this product's own generation marker right after the model ("Buds (2nd Gen)" for generation 2) is not a
     // different model; any other generation marker is.
     if (next && own.generation && modelGeneration(after.slice(0, 24).replace(/^[-\s(]*/, "")) === own.generation && /^[-\s(]*(?:\d{1,2}(?:st|nd|rd|th)|gen|generation|first|second|third|fourth|fifth|sixth|\d{1,2}\s*세대)/i.test(after)) return true;
-    if (next && isModelExtension(next) && !ownWords.has(next)) continue;
+    // V2.5: "Air" in "AF-55 Duo Air Fryer" starts the product noun, it is not the "Air" model extension.
+    if (next && isModelExtension(next) && !ownWords.has(next) && nounPhraseAt(after.split(/\s+/).filter(Boolean)) !== "STOP") continue;
     return true;
   }
   return false;

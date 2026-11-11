@@ -28,8 +28,8 @@ export const CAPABILITIES: CapabilitySpec[] = [
   { id: "multipoint", phrase: "multipoint", request: /multi-?point|멀티\s*포인트/i, statement: /\bmulti-?point\b|\btwo devices at once\b/i },
   { id: "over_ear", phrase: "over-ear", request: /over[- ]ear|오버\s*이어/i, statement: /\bover[- ]ear\b/i, absent: /\b(?:on|in)[- ]ear (?:design|only)\b/i },
   { id: "waterproof", phrase: "waterproof", request: /water\s?proof|water[- ]resistant|방수/i, statement: /\bwater\s?proof\b|\bwater[- ]resistant\b|\bip6[78]\b/i },
-  { id: "usb_c_charging", phrase: "usb-c charging", request: /usb[- ]?c\s+(?:charging|charge|power)|charg\w*\s+(?:via|over|by)\s+usb[- ]?c|usb[- ]?c\s*충전/i,
-    statement: /\busb[- ]?c\b[^.;]{0,40}\b(?:charg\w*|power delivery)\b|\bcharg\w*\b[^.;]{0,30}\busb[- ]?c\b/i },
+  { id: "usb_c_charging", phrase: "usb-c charging", request: /usb[- ]?c\s+(?:charging|charge|power|rechargeable)|charg\w*\s+(?:via|over|by)\s+usb[- ]?c|usb[- ]?c\s*충전/i,
+    statement: /\busb[- ]?c\b[^.;]{0,40}\b(?:(?:re)?charg\w*|power delivery)\b|\b(?:re)?charg\w*\b[^.;]{0,30}\busb[- ]?c\b/i },
   { id: "backlit_keyboard", phrase: "backlit keyboard", request: /backlit|keyboard backlight|백라이트/i, statement: /\bbacklit keyboard\b|\bkeyboard backlight(?:ing)?\b/i },
   { id: "programmable", phrase: "programmable timer", request: /\bprogrammable\b|예약\s*기능/i, statement: /\bprogrammable\b/i },
   { id: "thermal_carafe", phrase: "thermal carafe", request: /thermal carafe|보온\s*(?:포트|카라페|서버)/i, statement: /\bthermal carafe\b/i },
@@ -94,6 +94,8 @@ const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const NUMBER_WORDS: Record<string, string> = { one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10" };
 /** V2.4: "two-person tent" states the same capacity as "2-person". */
 export const digitsForCounts = (s: string) => s.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)(?=[- ]?(?:persons?|people|man|seaters?|seats?|slices?|burners?|ports?|doors?|bays?)\b)/gi, (w) => NUMBER_WORDS[w.toLowerCase()]!);
+/** V2.5: "single USB-C cable" is stated as "one USB-C cable"; "dual" as "two". */
+const COUNT_SYNONYMS: Record<string, string> = { single: "(?:single|one|1)", one: "(?:single|one|1)", dual: "(?:dual|two|2)", two: "(?:dual|two|2)", twin: "(?:twin|two|2|dual)", triple: "(?:triple|three|3)" };
 function propositionStatement(rawClause: string, id: string): boolean | null {
   const clause = digitsForCounts(rawClause);
   const words = propositionWords(id);
@@ -103,9 +105,25 @@ function propositionStatement(rawClause: string, id: string): boolean | null {
   const ev = evaluativeStatement(clause, id);
   if (ev !== undefined) return ev;
   const gap = "(?:[^\\p{L}\\p{N}]+[\\p{L}\\p{N}][\\p{L}\\p{N}'’-]*){0,3}?[^\\p{L}\\p{N}]*";
-  const tok = (w: string) => /^\d+(?:\.\d+)?[a-z]+$/i.test(w) ? w.replace(/^(\d+(?:\.\d+)?)([a-z]+)$/i, (_, n: string, u: string) => `${escRe(n)}\\s?-?${escRe(u)}`) : /[가-힣]/.test(w) ? escRe(w).replace(/(?<=.)(?=.)/gu, "\\s*") : /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
+  // V2.5: a long word matches its other forms by stem ("oscillates" / "oscillation" / "oscillating").
+  const tok = (w: string) => {
+    if (/^\d+(?:\.\d+)?[a-z]+$/i.test(w)) return w.replace(/^(\d+(?:\.\d+)?)([a-z]+)$/i, (_, n: string, u: string) => `${escRe(n)}\\s?-?${escRe(u)}`);
+    if (/[가-힣]/.test(w)) return escRe(w).replace(/(?<=.)(?=.)/gu, "\\s*");
+    const same = COUNT_SYNONYMS[w.toLowerCase()];
+    if (same) return same;
+    const stem = /^[a-z]{6,}$/i.test(w) ? w.replace(/(?:ations?|ions?|ings?|ers?|es|ed|s|e)$/i, "") : "";
+    if (stem.length >= 6) return `${escRe(stem)}[a-z]{0,5}`;
+    return /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
+  };
   const re = new RegExp(`(?<![\\p{L}\\p{N}])${words.map(tok).join(gap)}(?![A-Za-z0-9])`, "iu");
-  const m = re.exec(clause.normalize("NFKC"));
+  let m = re.exec(clause.normalize("NFKC"));
+  // V2.5: "removable battery" is also stated as "the battery is removable" / "battery: removable".
+  if (!m && words.length === 2 && /(?:able|ible|ful|less|proof|ive|al|ed|ing)$/i.test(words[0]!))
+  {
+    const alt = new RegExp(`(?<![\\p{L}\\p{N}])${tok(words[1]!)}\\s*(?:(?:is|are)\\s+(not\\s+|n['’]t\\s+)?(?:fully\\s+|easily\\s+|also\\s+)?|(?:is|are)n['’]t\\s+|:\\s*)${tok(words[0]!)}(?![A-Za-z0-9])`, "iu").exec(clause.normalize("NFKC"));
+    if (alt && (alt[1] || /n['’]t\s/i.test(alt[0]))) return false;
+    m = alt;
+  }
   if (!m) return null;
   const before = clause.normalize("NFKC").slice(Math.max(0, m.index - 40), m.index);
   const after = clause.normalize("NFKC").slice(m.index + m[0].length, m.index + m[0].length + 12);
@@ -191,6 +209,12 @@ function numericStatement(clause: string, p: NumericProposition): boolean | null
   return verdict;
 }
 
+/** V2.5: search words for a capability: a threshold is searched by its unit and words, not "least 20000". */
+export function capabilityQueryPhrase(id: string): string {
+  const n = numericProposition(id);
+  if (n) return [n.unit === "w" ? "watts" : n.unit, ...n.rest].filter(Boolean).join(" ");
+  return capabilityPhrase(id);
+}
 export function capabilityPhrase(id: string): string {
   if (id.startsWith(PROPOSITION_PREFIX)) return propositionWords(id).join(" ");
   const n = numericSpec(id);
@@ -241,6 +265,13 @@ export function clauseStatement(clause: string, id: string): boolean | null {
   // The negator must sit right before the phrase (at most three words between): "has no active noise cancelling",
   // "is 1080p, not 4K", "does not have a backlit keyboard". "not as strong as" after the phrase is not a denial.
   if (new RegExp(`\\b${NEG}\\b(?:\\s+(?:have|has|support|supports|offer|offers|come with|include|includes|a|an|any|the|real|true|active|truly|fully|really|keep|keeps|drinks)){0,3}\\s*$`, "i").test(before)) return false;
+  // V2.5: a contrast right before the phrase ("micro-USB rather than USB-C"), a negator inside a phrase that spans two
+  // anchors ("charges over micro-USB, not USB-C", "via micro-USB (no USB-C)"), or a denial right after it
+  // ("USB-C charging is not supported") all deny the capability. Ambiguous cases fail closed (contradicted).
+  if (/\b(?:rather than|instead of|in place of|other than|unlike|versus|vs\.?)\s*$/i.test(before)) return false;
+  if (new RegExp(`\\b(?:${NEG}|rather than|instead of|in place of|other than|unlike)\\b`, "i").test(kw[0].slice(1))) return false;
+  const after = clause.slice(kw.index + kw[0].length, kw.index + kw[0].length + 40);
+  if (/^[\s,]*(?:(?:is|are|was|were)\s+(?:not|never)\s+|(?:is|are|was|were)n['’]t\s+|not\s+|un)(?:supported|available|included|offered|present|provided|possible)\b/i.test(after)) return false;
   return true;
 }
 

@@ -66,7 +66,15 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
   }
   // A brandless listing can match only a request that names no brand (review R-06): "Sony WH-1000XM5" is never locked
   // to an unbranded "WH-1000XM5 (compatible)" listing.
-  const family = !t!.model ? all : all.filter((f) => f.family === want || (!t!.brand && !f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand));
+  // V2.5: a listing whose own model stops before the requested sibling suffix ("AF-55" from "Cindra AF-55 Duo Air
+  // Fryer", request "AF-55 Duo") is that model when its title names brand and the full requested model contiguously.
+  const suffixMatch = (f: ProductFacts) => {
+    const lm = normalizeKey(f.product.identity.model ?? "");
+    if (!t!.brand || !t!.model || !lm || !wantNoBrand.startsWith(lm) || wantNoBrand === lm || familyKey(f.product.identity.brand, f.product.identity.model) !== familyKey(t!.brand, f.product.identity.model)) return false;
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    return new RegExp(`(?:^|[^A-Za-z0-9])${esc(t!.brand)}\\s+${esc(t!.model)}(?![A-Za-z0-9])`, "i").test(f.product.title.normalize("NFKC"));
+  };
+  const family = !t!.model ? all : all.filter((f) => f.family === want || suffixMatch(f) || (!t!.brand && !f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand));
   for (const f of all) if (!family.includes(f)) excluded.push({ productId: f.product.productId, title: f.product.title,
     reason: t!.brand && !f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand ? `listing states no brand; requested ${t!.brand}` : `different model (${f.product.identity.brand} ${f.product.identity.model || "unknown"})` });
   if (!family.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing is the ${t!.brand ?? ""} ${t!.model ?? t!.sku} itself.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };

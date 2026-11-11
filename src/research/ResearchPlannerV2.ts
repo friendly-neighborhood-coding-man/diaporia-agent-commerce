@@ -138,6 +138,9 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   // every other model, bundle and accessory.
   const namedFallback = exact && resolution?.status === "AMBIGUOUS" && intent.lockBasis === "NAMED";
   if (exact && !namedFallback) pool = resolution?.status === "LOCKED" ? [products.get(resolution.productId)!] : [];
+  // V2.5: under the fallback only the listings the resolver matched to the named identity are candidates (never a
+  // sibling model the resolver excluded).
+  else if (namedFallback && resolution?.status === "AMBIGUOUS") { const ok = new Set(resolution.options.map((o) => o.productId)); pool = [...products.values()].filter((p) => ok.has(p.productId)); }
   else pool = [...products.values()];
   const lock = resolution?.status === "LOCKED" ? { productId: resolution.productId } : null;
   // Exact-lock duplicates carry their offers on the locked product (Channel3 adapter merges them already).

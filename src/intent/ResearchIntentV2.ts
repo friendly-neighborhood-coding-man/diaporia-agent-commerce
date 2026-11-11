@@ -166,6 +166,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   const buy = BUY_EN.exec(text) ?? BUY_KO.exec(text);
   const brandHit = input.exactProduct?.brand ? { brand: input.exactProduct.brand, index: Math.max(0, text.toLowerCase().indexOf(input.exactProduct.brand.toLowerCase())) } : findBrand(money.parse.masked.length === text.length ? money.parse.masked : text);
   let target: ResearchIntentV2["target"] = null;
+  let bundleWords: string[] = [];
   let targetSpan: [number, number] | null = null;
   if (brandHit) {
     // The product phrase: from the buy verb (or brand) to the end of the clause.
@@ -188,9 +189,16 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       if (kind === "STANDALONE" && lead) { kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, ""); }
       // V2.4: "the Volteq PS-500 bundle with the 100W solar panel" asks for the bundle itself.
       if (kind === "STANDALONE" && ex.model && /^\s*(?:bundle|kit|combo)\b/i.test(clause.slice(Math.max(0, clause.toLowerCase().indexOf(ex.model.toLowerCase())) + ex.model.length)) && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) kind = "BUNDLE";
+      // V2.5: "the GV-12 with the pet tool kit bundle" asks for that bundle; its named contents must be in the title.
+      let withBundle: RegExpExecArray | null = null;
+      if (kind === "STANDALONE" && ex.model) {
+        const mi0 = text.toLowerCase().indexOf(ex.model.toLowerCase());
+        withBundle = mi0 >= 0 ? /^\s*(?:with|plus|\+)\s+(?:the|a|an)?\s*((?:[a-z][a-z-]*\s+){0,3}?)(?:bundle|kit|combo|set)\b/i.exec(text.slice(mi0 + ex.model.length)) : null;
+        if (withBundle && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) { kind = "BUNDLE"; bundleWords = withBundle[1]!.trim().split(/\s+/).filter((w) => w && !/^(?:and|the|a|an|of)$/i.test(w)); } else withBundle = null;
+      }
       target = { brand: brandHit.brand, model, modelBasis: input.exactProduct?.model ? "MODEL_NUMBER" : ex.modelBasis, kind, accessoryNoun };
       const mi = text.toLowerCase().indexOf(model.toLowerCase());
-      targetSpan = mi >= 0 ? [Math.min(brandHit.index, mi), mi + model.length] : [brandHit.index, brandHit.index + brandHit.brand.length];
+      targetSpan = mi >= 0 ? [Math.min(brandHit.index, mi), mi + model.length + (withBundle ? withBundle[0].length : 0)] : [brandHit.index, brandHit.index + brandHit.brand.length];
     }
   }
   // Structured exact input wins over text parsing (brand/model/SKU given by the caller).
@@ -290,7 +298,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   const covered: Array<[number, number]> = [...requirements.filter((r) => r.source === "REQUEST_TEXT").map((r) => r.span),
     ...[...money.parse.constraints.map((c) => c.span), ...money.parse.ambiguities.map((c) => c.span), ...money.parse.notes.map((c) => c.span)].filter((x): x is [number, number] => !!x), ...(targetSpan ? [targetSpan] : [])];
   const uninterpreted = uninterpretedWords(text, covered, [target?.brand ?? "", target?.model ?? "", target?.accessoryNoun ?? "", input.exactProduct?.brand ?? "", input.exactProduct?.model ?? "", input.exactProduct?.variant ?? ""]);
-  const productTypeWords = target ? [] : [...productType];
+  const productTypeWords = target ? bundleWords : [...productType];
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");

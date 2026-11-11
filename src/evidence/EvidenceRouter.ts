@@ -7,7 +7,7 @@ import { UsageLimitError, type UsageLedger, type UsageProvenance } from "../mete
 import type { EvidenceSearchRequest, EvidenceSearchResponse } from "./providers.js";
 import { SourceRegistry, hostOf, type DomainValidity } from "./SourceRegistry.js";
 import { classifyItem, evidenceKindOf, judgeV2, statementFrom, type CapabilityVerdict, type EvidenceItem } from "./EvidenceV2.js";
-import { capabilityPhrase } from "../research/capabilities.js";
+import { capabilityPhrase, capabilityQueryPhrase } from "../research/capabilities.js";
 
 /** Independent web search (e.g. Tavily). */
 export interface IndependentSearchProvider {
@@ -126,7 +126,7 @@ export class EvidenceRouter {
       // One combined query for up to three pending capabilities, the model quoted for precision; sellers excluded.
       const caps = pending().slice(0, 3);
       const subject = product.identity.model ? `"${[product.identity.brand, product.identity.model].filter(Boolean).join(" ")}"` : `"${product.identity.brand}" ${product.title.replace(new RegExp(product.identity.brand, "i"), "").slice(0, 60)}`;
-      const query = `${subject} ${caps.map(capabilityPhrase).join(" ")} specs review`.replace(/\s+/g, " ").trim();
+      const query = `${subject} ${caps.map(capabilityQueryPhrase).join(" ")} specs review`.replace(/\s+/g, " ").trim();
       const req: EvidenceSearchRequest = { query, maxResults: 10, exactMatch: !!product.identity.model, excludeDomains: [...new Set(sellers)].slice(0, 150), depth: "basic" };
       const queryKey = createHash("sha256").update(`${this.search.name}|v2|${JSON.stringify(req).toLowerCase()}`).digest("hex");
       let resp: EvidenceSearchResponse;

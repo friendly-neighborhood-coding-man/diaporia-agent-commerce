@@ -175,14 +175,17 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   const wanted = intent.requestedModel;
   if (wanted && !(normalizeKey(p.identity.model ?? "") === normalizeKey(wanted) || mentionsExactModel(p.title, wanted, { generation: f.attributes.generation ?? null })))
     dq.push({ code: "NOT_REQUESTED_MODEL", detail: `not model ${wanted} (listing: ${p.identity.model || "model not stated"})` });
-  if (!lock) {
-    // V2.4: the product type the request names outside the category vocabulary ("power station", "ear tips") must be
-    // in the listing's title; otherwise the candidate is a different kind of product as far as research can tell.
+  // V2.4: the product type the request names outside the category vocabulary ("power station", "ear tips") must be
+  // in the listing's title; otherwise the candidate is a different kind of product as far as research can tell.
+  // V2.5: the named contents of a requested bundle ("pet tool kit") are checked the same way, locked or not.
+  if (!lock || intent.target?.kind === "BUNDLE") {
     for (const w of intent.productTypeWords ?? []) {
       const stem = w.toLowerCase().replace(/(?:es|s)$/, "");
       if (!new RegExp(`(?<![a-z])${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:s|es)?(?![a-z])`, "i").test(p.title))
         bl.push({ code: "REQUEST_UNINTERPRETED", detail: `must-have "${uninterpretedKey(w)}" ("${w}") is the product type the request names, and the listing title does not state it` });
     }
+  }
+  if (!lock) {
     const cat = productCategory(p);
     if (intent.category && cat && cat !== intent.category) dq.push({ code: "CATEGORY_MISMATCH", detail: `category ${cat}, requested ${intent.category}` });
     if (f.kind === "ACCESSORY") dq.push({ code: "NOT_STANDALONE", detail: `accessory${f.accessoryNoun ? ` (${f.accessoryNoun})` : ""}, not the product itself` });

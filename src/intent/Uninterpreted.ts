@@ -30,11 +30,11 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
   life keep keeps drinks drink safe adjustable built-in builtin setting lowest highest
   around near close range between ish dot com money object nothing else come comes came tool only travel
   isn't aren't doesn't don't won't wasn't weren't hasn't haven't cannot can't shouldn't
-  weighs weigh weighing measures outputs rated
+  weighs weigh weighing measures outputs rated draws draw uses consumes powered runs operated everyday daily
   싶어요 싶어 싶다 싶습니다 싶은데 싶네요 해요 할래 할래요 사려고 살래 좀 요
   never exceed exceeds exceeding spend spending pay paying cap capped ceiling within tops go going wins win winner matters matter important priority day days week weeks business
   size sz oz fl inch inches in cm mm gen generation colour color edition 사이즈 인치 세대 색상 컬러
-  추천 추천해줘 추천해 추천해주세요 사줘 사주세요 사고 사고싶어 구매 구매해줘 구매할 주문 주문해줘 찾아줘 찾아 찾고 찾는 원해 원합니다 필요 필요해 필요해요
+  추천 추천해줘 추천해 추천해주세요 사줘 사주세요 사고 사고싶어 구매 구매해줘 구매할 주문 주문해 주문해요 주문할 주문해줘 구매해 구매해요 찾아줘 찾아 찾고 찾는 원해 원합니다 필요 필요해 필요해요
   좋은 괜찮은 싼 저렴한 가성비 최저가 가장 제일 새 새것 정품 신품 하나 개 제품 상품 것 이하 이상 정도 짜리 용 대 쓸 쓸만한 있는 없는 되는 해줘 주세요
   그리고 하지만 또는 및 꼭 반드시 무조건 가능하면 이면 으로 로 에 에서 를 을 이 가 은 는 의 도 만 와 과 랑 하고 예산 가격 원 달러 만원`.split(/\s+/).filter(Boolean));
 
@@ -99,7 +99,8 @@ function leadingNounPhrases(text: string, covered: Array<[number, number]>): Arr
     const inCov = covered.some(([s, e]) => w.index! >= s && w.index! < e);
     const fn = /^(?:with|without|that|which|for|under|below|over|above|at|and|or|but|in|on|to|from|by|than|is|are|can|must|should|ideally|preferably|max|budget|less|more)$/.test(lw);
     if (fn || /^\d/.test(lw)) { if (run.length) { flush(); return out; } continue; }
-    if (inCov) { if (run.length) { flush(); return out; } continue; }
+    // V2.5: a covered capability before the noun ("a USB-C rechargeable lantern") does not end an article-only run.
+    if (inCov) { if (run.some((x) => !STOP.has(x[0].toLowerCase()))) { flush(); return out; } run = []; continue; }
     run.push(w);
     const after = text.slice(w.index! + w[0].length, w.index! + w[0].length + 1);
     if (/[,;.!?()]/.test(after)) { flush(); return out; }

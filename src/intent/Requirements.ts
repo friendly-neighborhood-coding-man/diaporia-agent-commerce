@@ -42,7 +42,7 @@ export interface StatedRequirement {
   proposition?: string;
   evidenceCapability?: string | null;
   claimType?: "PROPERTY" | "PERFORMANCE";
-  note?: "DECORATIVE" | "CATEGORY_WORD";
+  note?: "DECORATIVE" | "CATEGORY_WORD" | "CONTEXT";
 }
 
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red|ably)?|bonus|if possible|if available|optional(?:ly)?|a plus|would love|bonus points)\b|있으면 좋|선호|가능하면|되면 좋/i;
@@ -58,6 +58,9 @@ const EN_MUST = [
   /\b(?:that|which)\s+(?!(?:has|have|supports?|comes|includes|i|you|we|they|it'?s|is a|are a|costs?|will|would|can i|ships?|arrives?|must|should|needs?|has to|have to|got to)\b)((?:is|are|can|will)?\s*[a-z].+)/i,
   // V2.4: "ideally dimmable", "preferably foldable": an optional preference (NICE, never blocks), never an uninterpreted word.
   /\b(?:ideally|preferably)\s+(?!with\b|a\b|an\b|the\b|under\b|below\b|around\b|less\b|in\s+(?:black|white))([a-z].+)/i,
+  // V2.5: "powered by a single USB-C cable", "runs on AA batteries": the power source is a requirement.
+  /\b(?:powered|charged|operated)\s+(?:by|via|over|from)\s+(.+)/i,
+  /\bruns?\s+(?:on|off)\s+(.+)/i,
   /\b(?:required|essential|mandatory|non-negotiable)\s*:\s*(.+)/i,
   /(.+?)\s+(?:is|are)\s+(?:a must|required|essential|mandatory|non-negotiable)\b/i,
   /^(?:\s*(?:and|also)\s+)?(.+?)\s+(?:would be nice|would be a plus|would be great|is a plus|is a bonus|is optional|is nice to have)\b/i,
@@ -73,10 +76,10 @@ const KO_MUST = [/([가-힣A-Za-z0-9.+\- ]{1,24}?)\s*(?:이|가)?\s*있으면\s*
 const KO_NOT = [/([가-힣A-Za-z0-9.+\-]{1,16}(?:\s[가-힣A-Za-z0-9.+\-]{1,16})?)\s*(?:이|가)?\s*(?:없는|없어야|없이)/, /([가-힣A-Za-z0-9.+\-]{1,16})\s*제외/];
 
 /** Phrase ends: budget, price, conditions, the next requirement, punctuation. */
-const CUT = /\s+(?:with(?:out)?|that|which|featuring|under|below|less than|at most|max(?:imum)?|up to \$|budget|for (?:less|under|about|around)|and (?:it |also |under|ideally|preferably)|but|so|please|if possible|ideally|preferably|in (?:black|white|any colou?r)|from|at|by|ships?|delivered|within)\b|\s+\$|[,.](?!\d)|[;!?()]|\s+\d[\d,.]*\s*(?:usd|eur|krw|dollars?|원|달러|만\s*원)\b/i;
-const FILLER = /^(?:also|a|an|the|some|any|good|great|decent|real|proper|built-in|builtin|an? built-in|it|that|which|to have|to)\s+/i;
+const CUT = /\s+(?:with(?:out)?|that|which|featuring|under|below|less than|at most|max(?:imum)?|up to \$|budget|for (?:less|under|about|around)|and (?:it |also |under|ideally|preferably)|but|so|please|if possible|ideally|preferably|in (?:black|white|any colou?r)|from|at|by|ships?|delivered|within|for(?!\s+(?:\d|one|two|three|four|five|six|seven|eight|nine|ten)\b)|who)\b|\s+\$|[,.](?!\d)|[;!?()]|\s+\d[\d,.]*\s*(?:usd|eur|krw|dollars?|원|달러|만\s*원)\b/i;
+const FILLER = /^(?:has|have|is|are|can|also|a|an|the|some|any|good|great|decent|real|proper|built-in|builtin|an? built-in|it|that|which|to have|to)\s+/i;
 /** Phrases that are never a product requirement on their own. */
-const NOT_REQUIREMENT = /^(?:it|this|that|them|me|my|you|one|ones|more than|more|less|budget|bundles?|bundle|kit|rush|preference|returns?|refurb(?:ished)?|used|new|warranty card|price|money|cost|tax|shipping cost|one of these|limit|cap|object|issues?|problems?|questions?|doubt|matter)$/i;
+const NOT_REQUIREMENT = /^(?:something|anything|everything|stuff|things?|it|this|that|them|me|my|you|one|ones|more than|more|less|budget|bundles?|bundle|kit|rush|preference|returns?|refurb(?:ished)?|used|new|warranty card|price|money|cost|tax|shipping cost|one of these|limit|cap|object|issues?|problems?|questions?|doubt|matter)$/i;
 const NOT_REQUIREMENT_START = /^(?:no (?:bundles?|kits?|more than|budget|rush|preference)|more than|less than|later than|earlier than|longer than|budget|price|money|cost|i |me |my |you |we |us |our |to buy|to order|to get|to pay|to spend|to know|to check|it (?:by|before|for)|bundle|bundles|kit|kits|rush|preference)\b/i;
 const negatedSpec = (clause: string, idx: number) => /\b(?:without|no|not|never)\s+(?:an?\s+)?$/i.test(clause.slice(Math.max(0, idx - 20), idx));
 const NUMBERISH = /^[\d\s.,$€£₩%+-]*$/;
@@ -102,6 +105,35 @@ function onlyRestates(phrase: string, targetWords: Set<string>): boolean {
   rest = rest.split(/\s+/).filter((w) => w && !targetWords.has(w.toLowerCase()) && !/^(?:a|an|the|of|in|and|or|for|to|one|color|colour|version|model|edition|screen|display|storage|memory|ram|capacity|size|finish)$/i.test(w)).join(" ");
   if (Object.keys(attrs).length && attrs.color) rest = rest.replace(new RegExp(`\\b${attrs.color}\\b`, "i"), " ").trim();
   return !rest.trim() || NUMBERISH.test(rest);
+}
+
+/** V2.5: words before a capability that do not narrow it (function words, quantity and intent words, negators). */
+const CAP_MOD_STOP = /^(?:a|an|the|with|without|and|or|has|have|having|had|that|which|is|are|be|it|its|any|some|no|not|never|must|should|needs?|need|want|wants|require|requires|good|great|decent|nice|real|proper|built-in|builtin|also|plus|both|full|fully|supports?|offers?|includes?|features?|comes|come|got|get|buy|find|me|my|for|of|in|on|to|by|via|over|from|at|but|so|ideally|preferably|very|really|quite|reliable|solid|strong|best|better|cheap|cheapest|affordable|new|single|dual|one|two|rated|proper|charges|charge|charging|that's|it's|i|we|you|please|recommend|suggest|show|looking|look|ones?|like|such|as|than|more|less|least|most|quality|excellent|working|functional|powerful|fast|quick|rapid)$/i;
+/** V2.5: parts a property applies to ("dishwasher-safe basket", "removable lid"). */
+const CAP_PART = /baskets?|lids?|jars?|bowls?|trays?|carafes?|parts|pots?|blades?|cups?|containers?|tanks?|bins?|pans?|inserts?|accessories|attachments|components|cases?|shells?|housings?|body/;
+/** V2.5: spans of context (lead-in before a colon, purpose phrases, relative clauses about a person). */
+export function contextSpans(text: string, targetSpan: [number, number] | null): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const colon = /^([^:;.!?]{1,80}):\s/.exec(text);
+  if (colon && !PRODUCT_NOUN_PHRASES.test(colon[1]!) && !requestCategory(colon[1]!) && !requestCapabilities(colon[1]!).length && !/\d/.test(colon[1]!)
+    && !(targetSpan && targetSpan[0] < colon[1]!.length)) out.push([0, colon[0].length - 1]);
+  for (const m of text.matchAll(/\bfor\s+(?:my|our|your|his|her|their|the|a|an|some)?\s*[^,;:.!?()]*/gi)) {
+    let ph = m[0];
+    const cut = /\s+(?:with(?:out)?|that|which|under|below|at least|at most|less than|more than|and (?:a|an|the|it|has|is)|but|max(?:imum)?|budget|ideally|preferably|please|if possible)\b/i.exec(ph);
+    if (cut) ph = ph.slice(0, cut.index);
+    const a = m.index!, b = a + ph.replace(/\s+$/, "").length;
+    const body = ph.replace(/^for\s+/i, "");
+    if (/^(?:less|under|about|around|up to|no more|at most|below|over|above|\$)/i.test(body) || /\d/.test(body) || /\b[A-Z][A-Za-z0-9]/.test(body.replace(/^(?:My|Our|Your|His|Her|Their|The|A|An)\b/, ""))) continue;
+    if (/^(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:people|persons?|adults|campers|users|players)\b/i.test(body) || /[$€£₩원]/.test(body) || !body.trim()) continue;
+    if (targetSpan && a < targetSpan[1] && b > targetSpan[0]) continue;
+    out.push([a, b]);
+  }
+  for (const m of text.matchAll(/\bwho\s+[^,;:.!?()]*/gi)) {
+    const cut = /\s+(?:with(?:out)?|that|which|under|below|and (?:a|an|the|it)|but)\b/i.exec(m[0]);
+    const ph = cut ? m[0].slice(0, cut.index) : m[0];
+    out.push([m.index!, m.index! + ph.replace(/\s+$/, "").length]);
+  }
+  return out;
 }
 
 /** V2.2 WP-4: style adjectives. Kept as OPTIONAL preferences (never mandatory capabilities, never dropped). */
@@ -148,14 +180,23 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   const out: StatedRequirement[] = [];
   const tw = new Set(targetWords.flatMap((w) => w.toLowerCase().split(/\s+/)).filter(Boolean));
   const inTarget = (abs: number) => !!targetSpan && abs >= targetSpan[0] && abs < targetSpan[1];
+  // V2.5: context the user gives about the purchase is not a product requirement: a lead-in before a colon ("gift for
+  // my dad who commutes by bike:", "something simple:"), a purpose phrase ("for my studio apartment", "for video calls
+  // from home", "for travel") and a relative clause about a person ("who commutes by bike"). It is kept as an optional
+  // CONTEXT row (shown, never verified, never blocking). A "for" phrase with a number or a capitalized name ("for 2
+  // people", "for a 15-inch laptop", "for my Wynd Beacon") is a requirement or an accessory target, not context.
+  const ctx = contextSpans(text, targetSpan);
+  const inCtx = (s: [number, number]) => ctx.some(([a, b]) => s[0] >= a && s[1] <= b);
   const add = (r: StatedRequirement) => {
+    if (r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && inCtx(r.span)) return;
     const same = out.find((x) => x.key === r.key);
     if (!same) { out.push(r); return; }
     if (same.strength === "NICE" && r.strength === "MUST") Object.assign(same, r); // MUST wins over NICE for the same item
   };
+  for (const [a, b] of ctx) add({ key: `context:${slugOf(text.slice(a, b))}`, text: text.slice(a, b), span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT" });
   let offset = 0;
   let prevTriggered = false;
-  for (const clause of text.split(/(?<=[;!?])\s*|(?<=\.)(?!\d)\s*|(?<=,)(?!\d{3}(?!\d))\s*|\s+(?=but\b)|\s+and\s+(?=(?:a|an|the|it|ideally|preferably|must|should|with|without|no)\b)|\s+(?=(?:그리고|하지만)\s)/i)) {
+  for (const clause of text.split(/(?<=[;!?])\s*|(?<=:)\s+|(?<=\.)(?!\d)\s*|(?<=,)(?!\d{3}(?!\d))\s*|\s+(?=but\b)|\s+and\s+(?=(?:a|an|the|it|ideally|preferably|must|should|with|without|no)\b)|\s+(?=(?:그리고|하지만)\s)/i)) {
     if (!clause.trim()) continue;
     const at = Math.max(0, text.indexOf(clause, offset)); offset = at + clause.length;
     const strength: RequirementStrength = NICE.test(clause) ? "NICE" : "MUST";
@@ -187,8 +228,19 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
         const sAbs = at + c.index - spec[0].length;
         add({ key: `unrecognized:${slugOf(phrase)}`, text: phrase, span: [sAbs, at + c.end], recognized: false, capability: null, polarity: negatedSpec(clause, c.index - spec[0].length) ? "EXCLUDED" : "REQUIRED", strength, source: "REQUEST_TEXT" });
       }
-      if (negated) add({ key: `not:${c.id}`, text: words, span: [abs, at + c.end], recognized: true, capability: c.id, polarity: "EXCLUDED", strength, source: "REQUEST_TEXT" });
-      else add({ key: c.id, text: words, span: [abs, at + c.end], recognized: true, capability: c.id, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+      // V2.5: an adjective right before the capability narrows it ("native 4K", "true wireless"): the phrase is its own
+      // MUST proposition (the capability alone would accept upscaled 4K). A part noun right after it ("dishwasher-safe
+      // basket", "waterproof case") says where the property applies; it is part of the requirement's words.
+      const adj = /(?:^|[\s(])([a-z][a-z-]{2,})\s+$/i.exec(clause.slice(Math.max(0, c.index - 24), c.index));
+      if (adj && !negated && !spec && !/^(?:battery|keeps_cold)_/.test(c.id) && /(?:ive|al|ic|able|ible|ful|less|proof|ous|ary|ent|ant)$/i.test(adj[1]!) && !CAP_MOD_STOP.test(adj[1]!) && !parseAttributes(adj[1]!).color && !/^[A-Z]/.test(adj[1]!) && !GENERIC_WORDS.has(adj[1]!.toLowerCase()) && !requestCapabilities(adj[1]!).length && !requestCategory(adj[1]!) && !isDecorative(adj[1]!)) {
+        const phrase = `${adj[1]} ${words}`;
+        const s0 = at + clause.lastIndexOf(adj[1]!, c.index);
+        if (!inTarget(s0)) add({ key: `unrecognized:${slugOf(phrase)}`, text: phrase, span: [s0, at + c.end], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+      }
+      const part = new RegExp(`^(?:[- ]?safe)?\\s+(${CAP_PART.source})\\b`, "i").exec(clause.slice(c.end));
+      const cEnd = part ? c.end + part[0].length : c.end;
+      if (negated) add({ key: `not:${c.id}`, text: words, span: [abs, at + cEnd], recognized: true, capability: c.id, polarity: "EXCLUDED", strength, source: "REQUEST_TEXT" });
+      else add({ key: c.id, text: words, span: [abs, at + cEnd], recognized: true, capability: c.id, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
     }
     // 2. Requirement phrases the vocabulary does not cover.
     const tryPhrase = (m: RegExpExecArray | null, polarity: RequirementPolarity) => {
@@ -218,6 +270,7 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
         // V2.4: a numeric threshold is extracted on its own (number, unit and direction); a verb that only introduces a
         // measurement ("weighs less than 1.2 kg", "outputs at least 500 W") is not a requirement by itself.
         if (/^(?:at least|at most|no less than|no more than|more than|less than|over|above|under|below|up to|minimum|maximum)\b/i.test(piece.text)) continue;
+        if (/\d[^]*\bor\s+(?:more|higher|greater|above|better|less|lower|fewer|below|under)$/i.test(piece.text)) continue;
         if (/^(?:weighs?|weighing|measures?|outputs?|delivers?|offers?|runs?|lasts?|holds?|stores?|draws?|produces?|rated|reaches|reach|gets?|has|have|is|are|be)$/i.test(piece.text)) continue;
         const a = abs + piece.at;
         // V2.4: "empties itself" / "cleans itself" is how a spec sheet says "self-emptying" / "self-cleaning".
@@ -229,7 +282,7 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     };
     // V2.3: numeric thresholds ("at least 30 grind settings", "quieter than 30 dB", "over 300 m3/h") are their own
     // MUST propositions; the number and its direction are never dropped (see thresholdStatement in capabilities.ts).
-    for (const t of clause.matchAll(/\b(at least|minimum(?: of)?|no less than|more than|over|above|at most|no more than|less than|under|below|up to|maximum(?: of)?|(?:quiet|light|small|thin|short)er than|(?:big|bigg|long|larg|bright|fast|strong|high)er than)\s+(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([a-z%][a-z0-9/%]*(?:\s+(?!and\b|or\b|under\b|with\b)[a-z]+){0,2})/gi)) {
+    for (const t of clause.matchAll(/\b(at least|minimum(?: of)?|no less than|more than|over|above|at most|no more than|less than|under|below|up to|maximum(?: of)?|(?:quiet|light|small|thin|short)er than|(?:big|bigg|long|larg|bright|fast|strong|high)er than)\s+(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([a-z%][a-z0-9/%]*(?:\s+(?!(?:and|or|under|with|that|which|who|for|to|can|could|is|are|it|and|but|so|from|at|in|on|of)\b)[a-z]+){0,2})/gi)) {
       if (recognizedSpans.some(([s, e]) => s <= t.index! + t[0].length && e >= t.index!)) continue;
       const dir = /^(?:at most|no more than|less than|under|below|up to|maximum|(?:quiet|light|small|thin|short)er than)/i.test(t[1]!) ? "at-most" : "at-least";
       const unit = t[3]!.trim().replace(/\s+(?:a|per|each|on|in|at|its|of|the|day)$/i, "");
@@ -237,6 +290,21 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       const abs = at + t.index!;
       if (inTarget(abs)) continue;
       add({ key: `unrecognized:${slugOf(phrase)}`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+    }
+    // V2.5: "20,000 mAh or more", "100 W or higher", "40 dB or less" are thresholds too.
+    for (const t of clause.matchAll(/(?<![\w.,$€£₩])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([a-z%][a-z0-9/%]*(?:\s+(?!or\b)[a-z]+)?)\s+or\s+(more|higher|greater|above|better|less|lower|fewer|below|under)\b/gi)) {
+      if (recognizedSpans.some(([s, e]) => s <= t.index! + t[0].length && e >= t.index!)) continue;
+      const dir = /^(?:less|lower|fewer|below|under)$/i.test(t[3]!) ? "at-most" : "at-least";
+      const phrase = `${dir === "at-most" ? "at most" : "at least"} ${t[1]!.replace(/,/g, "")} ${t[2]!.trim()}`;
+      const abs = at + t.index!;
+      if (inTarget(abs)) continue;
+      add({ key: `unrecognized:${slugOf(phrase)}`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+    }
+    // V2.5: an ingress rating ("IPX7", "IP68") is a stated property, verified by the same rating on the page.
+    for (const t of clause.matchAll(/(?<![\w-])(IPX?\d{1,2})(?![\w-])/gi)) {
+      const abs = at + t.index!;
+      if (inTarget(abs) || recognizedSpans.some(([s, e]) => s <= t.index! && e >= t.index! + t[0].length)) continue;
+      add({ key: `unrecognized:${t[1]!.toLowerCase()}`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: negatedSpec(clause, t.index!) ? "EXCLUDED" : "REQUIRED", strength, source: "REQUEST_TEXT" });
     }
     // V2.3: a spec token before a product noun ("100W charger", "4000mAh power bank") is a MUST proposition.
     for (const t of clause.matchAll(/(?<![\w.,$€£₩])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(w|watts?|mah|wh|hz|mbps|gbps|nits|db)\b/gi)) {
@@ -281,11 +349,11 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // not a second claim about the whole product (a 60 W fridge on the same page must not contradict it).
   for (const r of [...out]) {
     if (!/^unrecognized:\d+(?:\.\d+)?[a-z]+$/.test(r.key) || r.source !== "REQUEST_TEXT") continue;
-    if (out.some((q) => q !== r && q.source === "REQUEST_TEXT" && q.key.startsWith(`${r.key}-`) && q.span[0] <= r.span[0] && q.span[1] >= r.span[1])) out.splice(out.indexOf(r), 1);
+    if (out.some((q) => q !== r && q.source === "REQUEST_TEXT" && q.note !== "CONTEXT" && (q.key.startsWith(`${r.key}-`) || /^unrecognized:at-(?:least|most)-/.test(q.key)) && q.span[0] <= r.span[0] && q.span[1] >= r.span[1])) out.splice(out.indexOf(r), 1);
   }
   // V2.4: "that is good with pet hair" is one performance claim ("good with pet hair"), not "is good" plus "pet hair".
   for (const r of [...out]) {
-    const ev = /^(?:is|are)\s+((?:very\s+|really\s+)?(?:good|great|excellent|ideal|perfect|better|best|effective|great))$/i.exec(r.text);
+    const ev = /^(?:(?:is|are)\s+)?((?:very\s+|really\s+)?(?:good|great|excellent|ideal|perfect|better|best|effective|great))$/i.exec(r.text);
     if (!ev || r.source !== "REQUEST_TEXT") continue;
     const next = out.filter((q) => q !== r && q.source === "REQUEST_TEXT" && q.span[0] >= r.span[1]).sort((a, b) => a.span[0] - b.span[0])[0];
     const between = next ? text.slice(r.span[1], next.span[0]) : "";
@@ -306,7 +374,7 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   }
   // V2.2 WP-4: the generic proposition of each requirement.
   for (const r of out) {
-    if (r.note === "CATEGORY_WORD") { r.evidenceCapability = null; continue; }
+    if (r.note === "CATEGORY_WORD" || r.note === "CONTEXT") { r.evidenceCapability = null; continue; }
     const cap = r.recognized && r.polarity === "REQUIRED" ? r.capability! : evidenceCapabilityOf(r.key);
     r.evidenceCapability = cap;
     r.claimType = isPerformanceClaim(cap) ? "PERFORMANCE" : "PROPERTY";
