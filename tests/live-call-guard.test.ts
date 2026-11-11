@@ -20,7 +20,7 @@ describe("LiveCallGuard (bounded live tests only)", () => {
       await expect(g.fetch(bad, tavilyBody())).rejects.toBeInstanceOf(LiveStop);
       expect(seen).toEqual([]); expect(g.stopped).toBeTruthy();
     }
-    const { f, seen } = fake(() => json(200, { usage: { credits: 1 }, request_id: "r1" }));
+    const { f, seen } = fake(() => json(200, { results: [], usage: { credits: 1 }, request_id: "r1" }));
     const g = new LiveCallGuard(LIMITS, f);
     await g.fetch("https://api.tavily.com/search", tavilyBody());
     expect(seen[0]).toEqual({ url: "https://api.tavily.com/search", redirect: "manual" });
@@ -36,7 +36,7 @@ describe("LiveCallGuard (bounded live tests only)", () => {
     expect(seen.length).toBe(1);
   });
   it("checks call and credit caps before sending; product detail is free but counted as a call", async () => {
-    const { f, seen } = fake(() => json(200));
+    const { f, seen } = fake((u) => json(200, u.endsWith("/v1/search") ? { products: [] } : { id: "p" }));
     const g = new LiveCallGuard(LIMITS, f);
     await g.fetch("https://api.trychannel3.com/v1/search", { method: "POST", body: "{}" });
     await g.fetch("https://api.trychannel3.com/v1/products/p1");
@@ -44,19 +44,19 @@ describe("LiveCallGuard (bounded live tests only)", () => {
     await g.fetch("https://api.trychannel3.com/v1/search", { method: "POST", body: "{}" });
     await expect(g.fetch("https://api.trychannel3.com/v1/products/p2")).rejects.toThrow(/call cap 3/);
     expect(seen.length).toBe(3);
-    const t = new LiveCallGuard({ calls: { CHANNEL3: 9, TAVILY: 9 }, credits: { CHANNEL3: 9, TAVILY: 1 } }, fake(() => json(200, { usage: { credits: 1 } })).f);
+    const t = new LiveCallGuard({ calls: { CHANNEL3: 9, TAVILY: 9 }, credits: { CHANNEL3: 9, TAVILY: 1 } }, fake(() => json(200, { results: [], usage: { credits: 1 } })).f);
     await t.fetch("https://api.tavily.com/search", tavilyBody());
     await expect(t.fetch("https://api.tavily.com/search", tavilyBody())).rejects.toThrow(/credit cap 1/);
   });
-  it("refuses advanced depth, auto_parameters and paths outside the plan; charges reported credits when higher", async () => {
+  it("refuses advanced depth, auto_parameters and paths outside the plan; more credits than the contract stop the run (V2.1, was: charge and continue)", async () => {
     for (const body of [tavilyBody({ search_depth: "advanced" }), tavilyBody({ auto_parameters: true })]) {
       const g = new LiveCallGuard(LIMITS, fake(() => json(200)).f);
       await expect(g.fetch("https://api.tavily.com/search", body)).rejects.toBeInstanceOf(LiveStop);
     }
     await expect(new LiveCallGuard(LIMITS, fake(() => json(200)).f).fetch("https://api.tavily.com/extract", tavilyBody())).rejects.toThrow(/not in plan/);
-    const g = new LiveCallGuard(LIMITS, fake(() => json(200, { usage: { credits: 2 } })).f);
-    await g.fetch("https://api.tavily.com/search", tavilyBody());
-    expect(g.credits.TAVILY).toBe(2); expect(g.costUsdUpperBound()).toBe(0.016);
+    const g = new LiveCallGuard(LIMITS, fake(() => json(200, { results: [], usage: { credits: 2 } })).f);
+    await expect(g.fetch("https://api.tavily.com/search", tavilyBody())).rejects.toThrow(/unexpected billing/);
+    expect(g.credits.TAVILY).toBe(2); expect(g.costUsdUpperBound()).toBe(0.016); expect(g.stopped).toMatch(/unexpected billing/);
   });
   it("stops on auth or credit errors, and on a 429 that survives one retry", async () => {
     for (const status of [401, 403, 402, 432, 433]) {
