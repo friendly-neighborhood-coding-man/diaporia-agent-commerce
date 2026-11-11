@@ -1,0 +1,7 @@
+{
+  "file": "scripts/research-eval-v2/holdout2.ts",
+  "sha256": "63ca23948305889f8b523736077236c8c10f3413b9b24e76f52fb28aecaa63b9",
+  "frozenAt": "2026-11-10T21:37:06Z",
+  "cases": 22,
+  "note": "Clean holdout written after holdout 1 was inspected during V2 development. Frozen before any system ran on it."
+}

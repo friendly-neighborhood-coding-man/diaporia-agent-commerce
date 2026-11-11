@@ -1,0 +1,3181 @@
+{
+  "schema": "diaporia.research-eval.v2",
+  "evidenceClass": "OFFLINE_AGENT_AUTHORED_FIXTURE_EVAL",
+  "label": "v2-pre-holdout2",
+  "root": "/home/user/rdv2",
+  "commit": "205f292",
+  "generatedAt": "2026-11-10T21:35:43.434Z",
+  "holdoutSha256": "adec5184345249f4510cc9b984e4cc3e1ee1dd7bfbf145d456e2653bd5d04b18",
+  "results": [
+    {
+      "id": "d01",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black"
+      ],
+      "lockedGroup": "cx500-black",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 34.96
+    },
+    {
+      "id": "d02",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "variant-ambiguous",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 10.88
+    },
+    {
+      "id": "d03",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "variant",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-white",
+      "topGroups": [
+        "cx500-white"
+      ],
+      "lockedGroup": "cx500-white",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 4.16
+    },
+    {
+      "id": "d04",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "variant-missing",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 3.26
+    },
+    {
+      "id": "d05",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "bundle",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-bundle",
+      "topGroups": [
+        "cx500-bundle"
+      ],
+      "lockedGroup": "cx500-bundle",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 3.38
+    },
+    {
+      "id": "d06",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "accessory",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-pads",
+      "topGroups": [
+        "cx500-pads"
+      ],
+      "lockedGroup": "cx500-pads",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 3.65
+    },
+    {
+      "id": "d07",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "condition-used",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black"
+      ],
+      "lockedGroup": "cx500-black",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.64
+    },
+    {
+      "id": "d08",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black",
+        "cx500-white",
+        "nw200",
+        "aria",
+        "fab-lite",
+        "cx500-pads",
+        "cx500-bundle"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 0.965,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 3,
+        "strong": 3
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 21.1
+    },
+    {
+      "id": "d09",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "expensive-suitable",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "tailspin-pro",
+      "topGroups": [
+        "tailspin-pro",
+        "lumen-q5",
+        "nw200",
+        "fab-lite",
+        "aria",
+        "cx500-black",
+        "cx500-white",
+        "cx500-pads",
+        "cx500-bundle"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 4,
+        "strong": 4
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 4,
+        "channel3Credits": 2,
+        "tavilyCredits": 4,
+        "usd": 0.046
+      },
+      "latencyMs": 17.87
+    },
+    {
+      "id": "d10",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "cheap-unsuitable",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black",
+        "cx500-white",
+        "nw200",
+        "tailspin-pro",
+        "lumen-q5"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 0.8333333333333334,
+      "ndcgAt5": 0.981,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 3,
+        "strong": 3
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 1,
+        "tavilyCredits": 2,
+        "usd": 0.023
+      },
+      "latencyMs": 8.98
+    },
+    {
+      "id": "d11",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "must-vs-nice",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "nw200",
+        "aria",
+        "fab-lite",
+        "cx500-pads"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 3,
+        "channel3Credits": 2,
+        "tavilyCredits": 3,
+        "usd": 0.038
+      },
+      "latencyMs": 10.8
+    },
+    {
+      "id": "d12",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "missing-spec",
+        "backpacks"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "day20",
+        "day30",
+        "ridge-10"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 8.24
+    },
+    {
+      "id": "d13",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "contradictory-reviews",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black",
+        "cx500-white",
+        "lumen-q5",
+        "nw200",
+        "fab-lite",
+        "aria",
+        "cx500-pads",
+        "cx500-bundle"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 0.97,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 4,
+        "strong": 4
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 14.53
+    },
+    {
+      "id": "d14",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "unavailable",
+        "shoes"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 1,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 4.42
+    },
+    {
+      "id": "d15",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "named-model",
+        "shoes"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "trail-10",
+      "topGroups": [
+        "trail-10"
+      ],
+      "lockedGroup": "trail-10",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.45
+    },
+    {
+      "id": "d16",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "named-model",
+        "chairs"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "ergo",
+      "topGroups": [
+        "ergo"
+      ],
+      "lockedGroup": "ergo",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.52
+    },
+    {
+      "id": "d17",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "model-family",
+        "phones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "nova9-256",
+      "topGroups": [
+        "nova9-256"
+      ],
+      "lockedGroup": "nova9-256",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.93
+    },
+    {
+      "id": "d18",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "model-family",
+        "phones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "nova9pro-256",
+      "topGroups": [
+        "nova9pro-256"
+      ],
+      "lockedGroup": "nova9pro-256",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.55
+    },
+    {
+      "id": "d19",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "capacity",
+        "bottles"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "summit24",
+      "topGroups": [
+        "summit24"
+      ],
+      "lockedGroup": "summit24",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.92
+    },
+    {
+      "id": "d20",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "pack",
+        "bottles"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "summit32",
+      "topGroups": [
+        "summit32"
+      ],
+      "lockedGroup": "summit32",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.57
+    },
+    {
+      "id": "d21",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "unknown-fees",
+        "compare",
+        "phones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "nova9-256",
+      "topGroups": [
+        "nova9-256"
+      ],
+      "lockedGroup": "nova9-256",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "lowestVerified": {
+        "expected": "https://charlie-mart.example/p/p_nova9_256",
+        "observed": "https://charlie-mart.example/p/p_nova9_256",
+        "falseCheapest": false
+      },
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 11.07
+    },
+    {
+      "id": "d22",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "unknown-tax",
+        "compare",
+        "laptops"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "aero14-16",
+      "topGroups": [
+        "aero14-16"
+      ],
+      "lockedGroup": "aero14-16",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "lowestVerified": {
+        "expected": null,
+        "observed": null,
+        "falseCheapest": false
+      },
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 7.17
+    },
+    {
+      "id": "d23",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "currency-eur",
+        "monitors"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "view27",
+      "topGroups": [
+        "view27"
+      ],
+      "lockedGroup": "view27",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 1,
+        "strong": 1
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 1,
+        "tavilyCredits": 1,
+        "usd": 0.015
+      },
+      "latencyMs": 4.25
+    },
+    {
+      "id": "d24",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "korean",
+        "headphones"
+      ],
+      "lang": "ko",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black",
+        "cx500-white",
+        "nw200",
+        "aria",
+        "fab-lite",
+        "cx500-pads",
+        "cx500-bundle"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 0.965,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 3,
+        "strong": 3
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 12.72
+    },
+    {
+      "id": "d25",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "korean",
+        "currency-krw",
+        "headphones"
+      ],
+      "lang": "ko",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE",
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "cx500-black",
+        "cx500-white",
+        "nw200",
+        "aria",
+        "tailspin-pro"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 4,
+        "channel3Credits": 1,
+        "tavilyCredits": 4,
+        "usd": 0.039
+      },
+      "latencyMs": 7.62
+    },
+    {
+      "id": "d26",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "injection",
+        "vacuums"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "s5"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 5.36
+    },
+    {
+      "id": "d27",
+      "split": "dev",
+      "tags": [
+        "exact",
+        "injection",
+        "vacuums"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "s7",
+      "topGroups": [
+        "s7"
+      ],
+      "lockedGroup": "s7",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.56
+    },
+    {
+      "id": "d28",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "laptops",
+        "condition-trap"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "aero14-16",
+      "topGroups": [
+        "aero14-16",
+        "tsbook-air",
+        "aero-charger",
+        "aero14-renewed"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 4,
+        "strong": 4
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 9.6
+    },
+    {
+      "id": "d29",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "accessory-trap",
+        "laptops"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "RECOMMEND",
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "aero14-16",
+        "aero-charger",
+        "aero14-renewed"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.75
+    },
+    {
+      "id": "d30",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "coffee"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "thermobrew",
+      "topGroups": [
+        "thermobrew",
+        "brew12",
+        "brew8",
+        "brew-carafe"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 3,
+        "strong": 3
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 7.2
+    },
+    {
+      "id": "d31",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "must-vs-nice",
+        "coffee"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "brew12",
+      "topGroups": [
+        "brew12",
+        "brew8",
+        "brew-carafe"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 2,
+        "strong": 2
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 8
+    },
+    {
+      "id": "d32",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "all-violate",
+        "bottles"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": false,
+      "recommendedGroup": null,
+      "topGroups": [
+        "basic-bottle",
+        "summit24",
+        "summit32",
+        "summit32-2pk"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 10.44
+    },
+    {
+      "id": "d33",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "chairs"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "ergo-pro",
+      "topGroups": [
+        "ergo-pro",
+        "ergo",
+        "task"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 2,
+        "strong": 2
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 3,
+        "channel3Credits": 2,
+        "tavilyCredits": 3,
+        "usd": 0.038
+      },
+      "latencyMs": 8.4
+    },
+    {
+      "id": "d34",
+      "split": "dev",
+      "tags": [
+        "discovery",
+        "monitors"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "view27",
+      "topGroups": [
+        "view27",
+        "view27fhd"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 2,
+        "strong": 2
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 4.45
+    },
+    {
+      "id": "h01",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black"
+      ],
+      "lockedGroup": "cx500-black",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.35
+    },
+    {
+      "id": "h02",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "variant-ambiguous",
+        "phones"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.51
+    },
+    {
+      "id": "h03",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "variant",
+        "phones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "nova9-128",
+      "topGroups": [
+        "nova9-128"
+      ],
+      "lockedGroup": "nova9-128",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.21
+    },
+    {
+      "id": "h04",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "condition-used",
+        "phones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "nova9-128",
+      "topGroups": [
+        "nova9-128"
+      ],
+      "lockedGroup": "nova9-128",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 1.95
+    },
+    {
+      "id": "h05",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "pack",
+        "bottles"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "summit32-2pk",
+      "topGroups": [
+        "summit32-2pk"
+      ],
+      "lockedGroup": "summit32-2pk",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.23
+    },
+    {
+      "id": "h06",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "variant",
+        "laptops"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "aero14-32",
+      "topGroups": [
+        "aero14-32"
+      ],
+      "lockedGroup": "aero14-32",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.54
+    },
+    {
+      "id": "h07",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "variant-missing",
+        "laptops"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.32
+    },
+    {
+      "id": "h08",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "named-model",
+        "size",
+        "shoes"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "trail-105",
+      "topGroups": [
+        "trail-105"
+      ],
+      "lockedGroup": "trail-105",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.29
+    },
+    {
+      "id": "h09",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "variant-missing",
+        "size",
+        "shoes"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 1.95
+    },
+    {
+      "id": "h10",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "named-model",
+        "chairs"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "ergo-pro",
+      "topGroups": [
+        "ergo-pro"
+      ],
+      "lockedGroup": "ergo-pro",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 3.65
+    },
+    {
+      "id": "h11",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "capacity",
+        "coffee"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "brew8",
+      "topGroups": [
+        "brew8"
+      ],
+      "lockedGroup": "brew8",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 3.29
+    },
+    {
+      "id": "h12",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "accessory",
+        "coffee"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "brew-carafe",
+      "topGroups": [
+        "brew-carafe"
+      ],
+      "lockedGroup": "brew-carafe",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.53
+    },
+    {
+      "id": "h13",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "missing-spec",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "nw200",
+        "fab-lite",
+        "aria",
+        "cx500-pads"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 3,
+        "channel3Credits": 2,
+        "tavilyCredits": 3,
+        "usd": 0.038
+      },
+      "latencyMs": 5.83
+    },
+    {
+      "id": "h14",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black",
+        "cx500-white",
+        "tailspin-pro",
+        "nw200",
+        "lumen-q5"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 0.8333333333333334,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 5,
+        "strong": 5
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 1,
+        "tavilyCredits": 2,
+        "usd": 0.023
+      },
+      "latencyMs": 6.8
+    },
+    {
+      "id": "h15",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "unknowns-only",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "fab-lite",
+        "nw200",
+        "lumen-q5",
+        "cx500-black",
+        "cx500-white",
+        "aria",
+        "cx500-pads",
+        "cx500-bundle"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 0.693,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 4,
+        "channel3Credits": 2,
+        "tavilyCredits": 4,
+        "usd": 0.046
+      },
+      "latencyMs": 7.73
+    },
+    {
+      "id": "h16",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "all-violate",
+        "laptops"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "tsbook-air",
+        "aero-charger"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 3.57
+    },
+    {
+      "id": "h17",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "laptops"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "aero14-16",
+      "topGroups": [
+        "aero14-16",
+        "aero14-32",
+        "tsbook-pro16",
+        "tsbook-air",
+        "aero-charger",
+        "tailspin-pro",
+        "aero14-renewed"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 2,
+        "strong": 2
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 7.55
+    },
+    {
+      "id": "h18",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "tight-budget",
+        "phones"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "nova9-128",
+        "aero-charger",
+        "nova9-case",
+        "view27"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 4.86
+    },
+    {
+      "id": "h19",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "boots"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "ridge-10",
+      "topGroups": [
+        "ridge-10"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 1,
+        "strong": 1
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 4.17
+    },
+    {
+      "id": "h20",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "bottles"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "summit24",
+      "topGroups": [
+        "summit24",
+        "summit32",
+        "basic-bottle"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 2,
+        "strong": 2
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 6.72
+    },
+    {
+      "id": "h21",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "all-violate",
+        "chairs"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "task"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 4.51
+    },
+    {
+      "id": "h22",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "all-violate",
+        "monitors"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "view27fhd"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 4.61
+    },
+    {
+      "id": "h23",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "currency-eur",
+        "monitors"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD",
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 1.67
+    },
+    {
+      "id": "h24",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "korean",
+        "boots"
+      ],
+      "lang": "ko",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "ridge-10",
+      "topGroups": [
+        "ridge-10"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 1,
+        "strong": 1
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 4.84
+    },
+    {
+      "id": "h25",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "korean",
+        "bottles"
+      ],
+      "lang": "ko",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": false,
+      "recommendedGroup": null,
+      "topGroups": [
+        "basic-bottle",
+        "summit24",
+        "summit32",
+        "summit32-2pk"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 5.65
+    },
+    {
+      "id": "h26",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "korean",
+        "variant",
+        "headphones"
+      ],
+      "lang": "ko",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-white",
+      "topGroups": [
+        "cx500-white"
+      ],
+      "lockedGroup": "cx500-white",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 5.81
+    },
+    {
+      "id": "h27",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "korean",
+        "currency-krw",
+        "headphones"
+      ],
+      "lang": "ko",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE",
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "cx500-black",
+        "cx500-white",
+        "tailspin-pro",
+        "lumen-q5",
+        "nw200"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 4,
+        "channel3Credits": 1,
+        "tavilyCredits": 4,
+        "usd": 0.039
+      },
+      "latencyMs": 8.48
+    },
+    {
+      "id": "h28",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "injection",
+        "vacuums"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "s7",
+      "topGroups": [
+        "s7",
+        "s5"
+      ],
+      "lockedGroup": null,
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 2,
+        "strong": 2
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 2,
+        "channel3Credits": 2,
+        "tavilyCredits": 2,
+        "usd": 0.03
+      },
+      "latencyMs": 5.83
+    },
+    {
+      "id": "h29",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "over-budget",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "cx500-black"
+      ],
+      "lockedGroup": "cx500-black",
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.4
+    },
+    {
+      "id": "h30",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "missing-spec",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "INVESTIGATE",
+      "expectedStates": [
+        "INVESTIGATE"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "nw200"
+      ],
+      "lockedGroup": "nw200",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 1,
+        "tavilyCredits": 1,
+        "usd": 0.015
+      },
+      "latencyMs": 2.95
+    },
+    {
+      "id": "h31",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "duplicate-listing",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black"
+      ],
+      "lockedGroup": "cx500-black",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "lowestVerified": {
+        "expected": "https://alpha-audio.example/p/h_cx500_b",
+        "observed": "https://alpha-audio.example/p/h_cx500_b",
+        "falseCheapest": false
+      },
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 3.95
+    },
+    {
+      "id": "h32",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "bundle-exclusion",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "cx500-black",
+      "topGroups": [
+        "cx500-black"
+      ],
+      "lockedGroup": "cx500-black",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.44
+    },
+    {
+      "id": "h33",
+      "split": "holdout",
+      "tags": [
+        "exact",
+        "named-model",
+        "headphones"
+      ],
+      "lang": "en",
+      "state": "RECOMMEND",
+      "expectedStates": [
+        "RECOMMEND"
+      ],
+      "stateOk": true,
+      "recommendedGroup": "tailspin-pro",
+      "topGroups": [
+        "tailspin-pro"
+      ],
+      "lockedGroup": "tailspin-pro",
+      "recallAt10": 1,
+      "ndcgAt5": 1,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": true,
+      "lockOk": true,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 1,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 0,
+        "channel3Credits": 1,
+        "tavilyCredits": 0,
+        "usd": 0.007
+      },
+      "latencyMs": 2.01
+    },
+    {
+      "id": "h34",
+      "split": "holdout",
+      "tags": [
+        "discovery",
+        "all-violate",
+        "coffee"
+      ],
+      "lang": "en",
+      "state": "HOLD",
+      "expectedStates": [
+        "HOLD"
+      ],
+      "stateOk": true,
+      "recommendedGroup": null,
+      "topGroups": [
+        "brew8",
+        "brew-carafe"
+      ],
+      "lockedGroup": null,
+      "recallAt10": null,
+      "ndcgAt5": null,
+      "unsafeForbidden": false,
+      "unsafeShouldNotRecommend": false,
+      "topOk": null,
+      "lockOk": null,
+      "falseLock": false,
+      "wrongVariantLock": false,
+      "attribution": {
+        "cited": 0,
+        "strong": 0
+      },
+      "calls": {
+        "channel3Search": 2,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 1,
+        "channel3Credits": 2,
+        "tavilyCredits": 1,
+        "usd": 0.022
+      },
+      "latencyMs": 4.06
+    }
+  ],
+  "summary": {
+    "all": {
+      "cases": 68,
+      "errors": 0,
+      "decisionStateAccuracy": {
+        "n": 66,
+        "d": 68,
+        "rate": 0.971
+      },
+      "recallAt10": 0.994,
+      "ndcgAt5": 0.992,
+      "exactIdentity": {
+        "lockCorrect": {
+          "n": 35,
+          "d": 35,
+          "rate": 1
+        },
+        "lockPrecision": {
+          "n": 29,
+          "d": 29,
+          "rate": 1
+        },
+        "falseLocks": 0,
+        "wrongVariantLocks": 0
+      },
+      "constraintViolationRate": {
+        "n": 0,
+        "d": 44,
+        "rate": 0
+      },
+      "unsafeRecommendationRate": {
+        "n": 0,
+        "d": 68,
+        "rate": 0
+      },
+      "correctHoldRate": {
+        "n": 12,
+        "d": 13,
+        "rate": 0.923
+      },
+      "falseHoldRate": {
+        "n": 0,
+        "d": 45,
+        "rate": 0
+      },
+      "recommendationTopAccuracy": {
+        "n": 44,
+        "d": 44,
+        "rate": 1
+      },
+      "falseVerifiedCheapest": {
+        "n": 0,
+        "d": 3,
+        "rate": 0
+      },
+      "evidenceAttribution": {
+        "cited": 44,
+        "strongSourceShare": 1
+      },
+      "providerCalls": {
+        "channel3Search": 94,
+        "channel3Detail": 1,
+        "channel3Lookup": 0,
+        "tavily": 61,
+        "perCase": 2.294,
+        "documentedUsdPerCase": 0.017,
+        "maxUsdPerCase": 0.046
+      },
+      "latencyMs": {
+        "p50": 4.25,
+        "p95": 14.53,
+        "note": "local in-process with fake providers; not network latency"
+      }
+    },
+    "dev": {
+      "cases": 34,
+      "errors": 0,
+      "decisionStateAccuracy": {
+        "n": 33,
+        "d": 34,
+        "rate": 0.971
+      },
+      "recallAt10": 0.994,
+      "ndcgAt5": 0.996,
+      "exactIdentity": {
+        "lockCorrect": {
+          "n": 18,
+          "d": 18,
+          "rate": 1
+        },
+        "lockPrecision": {
+          "n": 15,
+          "d": 15,
+          "rate": 1
+        },
+        "falseLocks": 0,
+        "wrongVariantLocks": 0
+      },
+      "constraintViolationRate": {
+        "n": 0,
+        "d": 25,
+        "rate": 0
+      },
+      "unsafeRecommendationRate": {
+        "n": 0,
+        "d": 34,
+        "rate": 0
+      },
+      "correctHoldRate": {
+        "n": 4,
+        "d": 5,
+        "rate": 0.8
+      },
+      "falseHoldRate": {
+        "n": 0,
+        "d": 25,
+        "rate": 0
+      },
+      "recommendationTopAccuracy": {
+        "n": 25,
+        "d": 25,
+        "rate": 1
+      },
+      "falseVerifiedCheapest": {
+        "n": 0,
+        "d": 2,
+        "rate": 0
+      },
+      "evidenceAttribution": {
+        "cited": 31,
+        "strongSourceShare": 1
+      },
+      "providerCalls": {
+        "channel3Search": 47,
+        "channel3Detail": 1,
+        "channel3Lookup": 0,
+        "tavily": 32,
+        "perCase": 2.353,
+        "documentedUsdPerCase": 0.017,
+        "maxUsdPerCase": 0.046
+      },
+      "latencyMs": {
+        "p50": 7.17,
+        "p95": 21.1,
+        "note": "local in-process with fake providers; not network latency"
+      }
+    },
+    "holdout": {
+      "cases": 34,
+      "errors": 0,
+      "decisionStateAccuracy": {
+        "n": 33,
+        "d": 34,
+        "rate": 0.971
+      },
+      "recallAt10": 0.993,
+      "ndcgAt5": 0.987,
+      "exactIdentity": {
+        "lockCorrect": {
+          "n": 17,
+          "d": 17,
+          "rate": 1
+        },
+        "lockPrecision": {
+          "n": 14,
+          "d": 14,
+          "rate": 1
+        },
+        "falseLocks": 0,
+        "wrongVariantLocks": 0
+      },
+      "constraintViolationRate": {
+        "n": 0,
+        "d": 19,
+        "rate": 0
+      },
+      "unsafeRecommendationRate": {
+        "n": 0,
+        "d": 34,
+        "rate": 0
+      },
+      "correctHoldRate": {
+        "n": 8,
+        "d": 8,
+        "rate": 1
+      },
+      "falseHoldRate": {
+        "n": 0,
+        "d": 20,
+        "rate": 0
+      },
+      "recommendationTopAccuracy": {
+        "n": 19,
+        "d": 19,
+        "rate": 1
+      },
+      "falseVerifiedCheapest": {
+        "n": 0,
+        "d": 1,
+        "rate": 0
+      },
+      "evidenceAttribution": {
+        "cited": 13,
+        "strongSourceShare": 1
+      },
+      "providerCalls": {
+        "channel3Search": 47,
+        "channel3Detail": 0,
+        "channel3Lookup": 0,
+        "tavily": 29,
+        "perCase": 2.235,
+        "documentedUsdPerCase": 0.017,
+        "maxUsdPerCase": 0.046
+      },
+      "latencyMs": {
+        "p50": 3.65,
+        "p95": 7.73,
+        "note": "local in-process with fake providers; not network latency"
+      }
+    }
+  }
+}

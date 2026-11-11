@@ -4,11 +4,26 @@ import { normalizeModel } from "../identity/ProductIdentityResolver.js";
 import type { Store } from "../store/Database.js";
 import { CAPABILITY_KEYWORDS, CAPABILITY_NEGATED, CAPABILITY_PHRASE } from "./capabilityText.js";
 import { UsageLimitError, type UsageLedger, type UsageProvenance } from "../metering/UsageLedger.js";
+import type { EvidenceSearchRequest, EvidenceSearchResponse } from "./providers.js";
+import { SourceRegistry, hostOf } from "./SourceRegistry.js";
+import { classifyItem, evidenceKindOf, judgeV2, statementFrom, type CapabilityVerdict, type EvidenceItem } from "./EvidenceV2.js";
+import { capabilityPhrase } from "../research/capabilities.js";
 
 /** Independent web search (e.g. Tavily). */
 export interface IndependentSearchProvider {
   readonly name: string; readonly provenance: UsageProvenance;
   search(query: string): Promise<Array<{ url: string; title: string; snippet: string }>>;
+  /** Optional research-V2 search with documented parameters (Tavily). Absent = plain `search`. */
+  searchV2?(req: EvidenceSearchRequest): Promise<EvidenceSearchResponse>;
+}
+/** Research V2 multi-capability verification result. */
+export interface VerifyManyResult {
+  verdicts: Record<string, CapabilityVerdict>;
+  steps: RouterStep[];
+  /** Tavily searches actually sent (cache hits excluded). */
+  searchesSent: number;
+  /** Capabilities left UNVERIFIED because a limit stopped verification (never treated as optional). */
+  blockedByLimit: string[];
 }
 /** Original-page inspection with a real browser (e.g. KERNEL). Returns explicit statements only. */
 export interface PageInspectionResult {
@@ -63,14 +78,87 @@ function fingerprint(text: string): string {
  */
 export class EvidenceRouter {
   constructor(private readonly store: Store, private readonly ledger: UsageLedger, private readonly search: IndependentSearchProvider | null,
-    private readonly inspector: PageInspectionProvider | null, private readonly opts: { billable: boolean; now?: () => number } = { billable: false }) {
+    private readonly inspector: PageInspectionProvider | null,
+    private readonly opts: { billable: boolean; now?: () => number; policy?: "v1" | "v2"; sources?: { expertReviewDomains?: string[]; forumDomains?: string[]; retailerDomains?: string[]; officialDomains?: Record<string, string[]> } } = { billable: false }) {
+    this.policy = opts.policy ?? "v1";
+    this.registry = new SourceRegistry(opts.sources ?? {});
     store.db.exec(`CREATE TABLE IF NOT EXISTS evidence_items (id TEXT PRIMARY KEY, product_key TEXT NOT NULL, capability TEXT NOT NULL, value INTEGER NOT NULL,
         kind TEXT NOT NULL, host TEXT NOT NULL, url TEXT NOT NULL, provider TEXT NOT NULL, provenance TEXT NOT NULL, quote TEXT NOT NULL, observed_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS evidence_by_product ON evidence_items(product_key, capability);
       CREATE TABLE IF NOT EXISTS evidence_query_cache (query_key TEXT PRIMARY KEY, provider TEXT NOT NULL, hits_json TEXT NOT NULL, observed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS evidence_page_cache (page_key TEXT PRIMARY KEY, provider TEXT NOT NULL, result_json TEXT NOT NULL, observed_at INTEGER NOT NULL);`);
   }
+  /** "v1": legacy per-capability `verify`. "v2": `verifyMany` with source classes and the V2 sufficiency rule. */
+  readonly policy: "v1" | "v2";
+  readonly registry: SourceRegistry;
   private now() { return (this.opts.now ?? Date.now)(); }
+
+  /**
+   * Research V2: verifies several capabilities of one product with ONE combined search (cached), classifies every
+   * source, applies the V2 sufficiency rule (EvidenceV2.ts) and returns traceable evidence for each capability.
+   * `sellers` = domains that sell any candidate in this session (always retailer-class). Fails closed on limits.
+   */
+  async verifyMany(product: CatalogProduct, capabilities: string[], ctx: { userId: string; requestId: string }, o: { sellers?: string[]; maxSearches?: number } = {}): Promise<VerifyManyResult> {
+    const steps: RouterStep[] = [];
+    const sellers = o.sellers ?? [];
+    const brand = product.identity.brand || null;
+    const productKey = `v2|${product.identity.brand}|${normalizeModel(product.identity.model || product.title)}|${product.identity.variant ?? ""}`.toLowerCase();
+    const items: Record<string, EvidenceItem[]> = Object.fromEntries(capabilities.map((c) => [c, [] as EvidenceItem[]]));
+    const nowIso = new Date(this.now()).toISOString();
+    // Stored evidence is reclassified with the CURRENT registry on read (a registry change takes effect immediately).
+    for (const cap of capabilities) for (const r of this.store.db.prepare("SELECT * FROM evidence_items WHERE product_key=? AND capability=? AND observed_at>?").all(productKey, cap, this.now() - EVIDENCE_TTL_MS) as Array<Record<string, string | number>>) {
+      const [quote, publishedDate, requestId] = String(r.quote).split("\u0000");
+      items[cap]!.push(classifyItem({ url: String(r.url), domain: String(r.host), sourceClass: this.registry.classify(String(r.url), brand, sellers), value: Number(r.value) === 1, quote: quote ?? "",
+        publishedDate: publishedDate || null, provider: String(r.provider), requestId: requestId || null, observedAt: new Date(Number(r.observed_at)).toISOString() }, this.now()));
+    }
+    // Manufacturer/independent claims already on the product (fixtures) count under the same rule.
+    for (const c of product.capabilities) if (items[c.capability] && c.source.kind !== "CATALOG_LISTING")
+      items[c.capability]!.push(classifyItem({ url: c.source.url, domain: hostOf(c.source.url), sourceClass: c.source.kind === "MANUFACTURER" ? "MANUFACTURER" : c.source.kind === "INDEPENDENT_REVIEW" ? "EXPERT_REVIEW" : "UNKNOWN",
+        value: c.value, quote: c.source.title, publishedDate: null, provider: "CATALOG_FIXTURE", requestId: null, observedAt: c.source.retrievedAt }, this.now()));
+    const verdicts = (): Record<string, CapabilityVerdict> => Object.fromEntries(capabilities.map((c) => [c, judgeV2(c, items[c]!)]));
+    let v = verdicts();
+    const pending = () => capabilities.filter((c) => v[c]!.status === "UNVERIFIED");
+    if (capabilities.length && !pending().length) steps.push({ provider: "STORE", action: "SKIPPED_SUFFICIENT", capability: capabilities.join(","), detail: "stored evidence meets the V2 sufficiency rule" });
+    const blocked: string[] = [];
+    let sent = 0;
+    const maxSearches = o.maxSearches ?? 2;
+    for (let round = 0; this.search && pending().length && round < maxSearches; round++) {
+      // One combined query for up to three pending capabilities, the model quoted for precision; sellers excluded.
+      const caps = pending().slice(0, 3);
+      const subject = product.identity.model ? `"${[product.identity.brand, product.identity.model].filter(Boolean).join(" ")}"` : `"${product.identity.brand}" ${product.title.replace(new RegExp(product.identity.brand, "i"), "").slice(0, 60)}`;
+      const query = `${subject} ${caps.map(capabilityPhrase).join(" ")} specs review`.replace(/\s+/g, " ").trim();
+      const req: EvidenceSearchRequest = { query, maxResults: 10, exactMatch: !!product.identity.model, excludeDomains: [...new Set(sellers)].slice(0, 150), depth: "basic" };
+      const queryKey = createHash("sha256").update(`${this.search.name}|v2|${JSON.stringify(req).toLowerCase()}`).digest("hex");
+      let resp: EvidenceSearchResponse;
+      const cached = this.store.db.prepare("SELECT hits_json, observed_at FROM evidence_query_cache WHERE query_key=?").get(queryKey) as { hits_json: string; observed_at: number } | undefined;
+      if (cached && this.now() - cached.observed_at < EVIDENCE_TTL_MS) { resp = JSON.parse(cached.hits_json); steps.push({ provider: "TAVILY", action: "REUSED_CACHED_QUERY", capability: caps.join(","), detail: query, provenance: this.search.provenance }); }
+      else {
+        const r = await this.metered(ctx, "TAVILY", "search", "search", 1, `tavily:${queryKey}`, this.search.provenance,
+          async () => this.search!.searchV2 ? this.search!.searchV2(req) : { hits: (await this.search!.search(query)).map((h) => ({ ...h, publishedDate: null, score: null })), requestId: null, credits: 1, responseTimeS: null },
+          (x) => Math.max(1, x.credits));
+        if (!r.ok) { steps.push({ provider: "TAVILY", action: r.blocked ? "BLOCKED_BY_LIMIT" : "FAILED", capability: caps.join(","), detail: r.reason, provenance: this.search.provenance }); if (r.blocked) blocked.push(...caps); break; }
+        resp = r.value; sent++;
+        this.store.db.prepare("INSERT OR REPLACE INTO evidence_query_cache(query_key,provider,hits_json,observed_at) VALUES (?,?,?,?)").run(queryKey, this.search.name, JSON.stringify(resp), this.now());
+        steps.push({ provider: "TAVILY", action: "CALLED", capability: caps.join(","), detail: `${query} → ${resp.hits.length} results${resp.requestId ? ` (request ${resp.requestId})` : ""}`, provenance: this.search.provenance });
+      }
+      let gained = false;
+      for (const h of resp.hits) for (const cap of caps) {
+        const st = statementFrom(h, product, cap);
+        if (!st || items[cap]!.some((x) => x.url === h.url)) continue;
+        const it = classifyItem({ url: h.url, domain: hostOf(h.url), sourceClass: this.registry.classify(h.url, brand, sellers), value: st.value, quote: st.quote, publishedDate: h.publishedDate,
+          provider: this.search.name, requestId: resp.requestId, observedAt: nowIso }, this.now());
+        items[cap]!.push(it); gained = true;
+        const id = createHash("sha256").update(`${productKey}|${cap}|${h.url}`).digest("hex").slice(0, 24);
+        this.store.db.prepare("INSERT OR IGNORE INTO evidence_items(id,product_key,capability,value,kind,host,url,provider,provenance,quote,observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+          .run(id, productKey, cap, st.value ? 1 : 0, evidenceKindOf(it.sourceClass), it.domain, h.url, this.search.name, this.search.provenance, `${st.quote}\u0000${h.publishedDate ?? ""}\u0000${resp.requestId ?? ""}`, this.now());
+      }
+      v = verdicts();
+      // Stopping rule: another combined query only when this one taught us something and capabilities remain beyond the first three.
+      if (!gained || pending().every((c) => caps.includes(c))) break;
+    }
+    if (!this.search && pending().length) steps.push({ provider: "TAVILY", action: "FAILED", capability: pending().join(","), detail: "no independent search provider configured" });
+    return { verdicts: v, steps, searchesSent: sent, blockedByLimit: blocked };
+  }
 
   static judge(claims: CapabilityClaim[]): Sufficiency {
     const manu = claims.filter((c) => c.source.kind === "MANUFACTURER");

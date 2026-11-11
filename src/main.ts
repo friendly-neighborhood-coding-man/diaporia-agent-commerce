@@ -14,6 +14,7 @@ import { KernelPageInspector } from "./evidence/KernelPageInspector.js";
 import { MockPayPalBillingProvider } from "./billing/Billing.js";
 import { randomBytes } from "node:crypto";
 import { configureHandoffFromEnv } from "./handoff/config.js";
+import { SERVICE_LIVE_CAPS, SERVICE_LIVE_RETRY } from "./metering/LiveCallGuard.js";
 
 const env = process.env;
 const host = env.HOST ?? "127.0.0.1";
@@ -46,19 +47,22 @@ const deploymentMode = env.DIAPORIA_DEPLOYMENT_MODE === "managed" ? "managed" : 
 const servicePath = env.DIAPORIA_DB_PATH === ":memory:" ? ":memory:" : (env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite").replace(/\.sqlite$/, "") + "-service.sqlite";
 const serviceStore = new Store(servicePath);
 const byok = env.EVIDENCE_PROVIDERS === "byok" && env.TAVILY_API_KEY;
-const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY ? new Channel3ResearchAdapter(env.CHANNEL3_API_KEY) : null;
-// Live providers: supplier prices are UNKNOWN (never assumed), so explicit per-request call caps bound spending.
+const liveCatalog = env.RESEARCH_PROVIDER === "channel3" && env.CHANNEL3_API_KEY ? new Channel3ResearchAdapter(env.CHANNEL3_API_KEY, { retry: { ...SERVICE_LIVE_RETRY } }) : null;
+// Live providers: supplier prices are UNKNOWN (never assumed), so explicit per-request call caps bound spending. The live
+// adapters make ONE HTTP attempt per metered call (no internal retry) and never follow redirects, so the ledger's count is the
+// HTTP count (review R-08).
 const ledger = byok || liveCatalog
-  ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { CHANNEL3: 1, TAVILY: 2, KERNEL: 1 } })
+  ? new UsageLedger(serviceStore, LIVE_PRICES_UNKNOWN, { perRequestSupplierMicro: 0, monthlyBillableMinor: 0, perRequestCalls: { ...SERVICE_LIVE_CAPS } })
   : new UsageLedger(serviceStore, PLACEHOLDER_PRICING);
 // Independent explicit opt-in: merely keeping KERNEL_API_KEY in .env.local must NEVER trigger paid browsing.
 // The remote egress controls are defense-in-depth, not an audited DNS rebinding / IP-layer firewall.
 const kernelEnabled = !!byok && !!env.KERNEL_API_KEY && env.DIAPORIA_ENABLE_LIVE_KERNEL_INSPECTION === "1";
 const kernel = kernelEnabled ? new KernelPageInspector(env.KERNEL_API_KEY!, deploymentMode, { maxSessions: Number(env.KERNEL_MAX_SESSIONS ?? 20) }) : null;
 const evidenceRouter = new EvidenceRouter(serviceStore, ledger,
-  byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode) : new MockTavilySearch(),
+  byok ? new TavilySearch(env.TAVILY_API_KEY!, deploymentMode, fetch, { ...SERVICE_LIVE_RETRY }) : new MockTavilySearch(),
   byok ? kernel : new MockKernelInspector(),
-  { billable: deploymentMode === "managed" });
+  // Research V2 evidence policy (source classes + V2 sufficiency rule) unless explicitly pinned to the frozen V1 rule.
+  { billable: deploymentMode === "managed", policy: env.DIAPORIA_RESEARCH_POLICY === "v1" ? "v1" : "v2" });
 const service = { mode: deploymentMode as "community" | "managed", ledger, router: evidenceRouter,
   billing: deploymentMode === "managed" ? createManagedBilling(env, serviceStore, ledger, baseUrl) : null, // MANAGED_BILLING=legacy-mock keeps MockPayPalBillingProvider
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };

@@ -1,0 +1,1141 @@
+{
+  "schema": "diaporia.research-eval.v1",
+  "evidenceClass": "OFFLINE_FIXTURE_EVAL",
+  "generatedAt": "2026-11-10T20:48:17.082Z",
+  "commit": "c46a0f4",
+  "cases": [
+    {
+      "id": "R01",
+      "category": "EXACT",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lockedSku",
+          "expected": "CX500-B",
+          "observed": "CX500-B",
+          "pass": true,
+          "critical": true
+        },
+        {
+          "field": "budgetSource",
+          "expected": "PARSED_FROM_TEXT",
+          "observed": "PARSED_FROM_TEXT",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cx_alpha",
+          "observed": "ev_cx_alpha",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestPayPal",
+          "expected": "ev_cx_alpha",
+          "observed": "ev_cx_alpha",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_delta",
+          "expected": "IDENTITY_MISMATCH_VARIANT",
+          "observed": [
+            "IDENTITY_MISMATCH_VARIANT",
+            "IDENTITY_MISMATCH_SKU"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_echo",
+          "expected": "IDENTITY_MISMATCH_CONDITION",
+          "observed": [
+            "IDENTITY_MISMATCH_CONDITION"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_foxtrot",
+          "expected": "SUSPICIOUS_LISTING_CONTENT",
+          "observed": [
+            "MERCHANT_IDENTITY_MISMATCH",
+            "SUSPICIOUS_LISTING_CONTENT"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_imposter",
+          "expected": "MERCHANT_IDENTITY_MISMATCH",
+          "observed": [
+            "MERCHANT_IDENTITY_MISMATCH"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_golf",
+          "expected": "TOTAL_UNKNOWN",
+          "observed": [
+            "TOTAL_UNKNOWN"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_bravo",
+          "expected": "QUOTE_STALE",
+          "observed": [
+            "QUOTE_STALE"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_india",
+          "expected": "OVER_BUDGET",
+          "observed": [
+            "OVER_BUDGET"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "eligible:ev_cx_charlie",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "eligible:ev_cx_fee",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 21.16,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R02",
+      "category": "MISLEADING_PRICE",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "budgetSource",
+          "expected": "NONE",
+          "observed": "NONE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cx_alpha",
+          "observed": "ev_cx_alpha",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_delta",
+          "expected": "IDENTITY_MISMATCH_VARIANT",
+          "observed": [
+            "IDENTITY_MISMATCH_VARIANT",
+            "IDENTITY_MISMATCH_SKU"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_echo",
+          "expected": "IDENTITY_MISMATCH_CONDITION",
+          "observed": [
+            "IDENTITY_MISMATCH_CONDITION"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_foxtrot",
+          "expected": "SUSPICIOUS_LISTING_CONTENT",
+          "observed": [
+            "MERCHANT_IDENTITY_MISMATCH",
+            "SUSPICIOUS_LISTING_CONTENT"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_imposter",
+          "expected": "MERCHANT_IDENTITY_MISMATCH",
+          "observed": [
+            "MERCHANT_IDENTITY_MISMATCH"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_golf",
+          "expected": "TOTAL_UNKNOWN",
+          "observed": [
+            "TOTAL_UNKNOWN"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_bravo",
+          "expected": "QUOTE_STALE",
+          "observed": [
+            "QUOTE_STALE"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "eligible:ev_cx_charlie",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 2.75,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R03",
+      "category": "HIDDEN_FEES",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cx_alpha",
+          "observed": "ev_cx_alpha",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_golf",
+          "expected": "TOTAL_UNKNOWN",
+          "observed": [
+            "TOTAL_UNKNOWN"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "eligible:ev_cx_fee",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 3.24,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R04",
+      "category": "UNKNOWN_COST",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "HOLD",
+          "observed": "HOLD",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": null,
+          "observed": null,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestPayPal",
+          "expected": null,
+          "observed": null,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_alpha",
+          "expected": "TOTAL_UNKNOWN",
+          "observed": [
+            "TOTAL_UNKNOWN"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_fee",
+          "expected": "TOTAL_UNKNOWN",
+          "observed": [
+            "TOTAL_UNKNOWN"
+          ],
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 2.14,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R05",
+      "category": "AMBIGUOUS",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "AMBIGUOUS",
+          "observed": "AMBIGUOUS",
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 2.74,
+      "adapterCalls": 3
+    },
+    {
+      "id": "R06",
+      "category": "EXACT",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lockedSku",
+          "expected": "CX500-W",
+          "observed": "CX500-W",
+          "pass": true,
+          "critical": true
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cx_delta",
+          "observed": "ev_cx_delta",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "eligible:ev_cxw_alpha",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "eligible:ev_cxw_delta",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 3.92,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R07",
+      "category": "CONDITION",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lockedSku",
+          "expected": "CX500-B-R",
+          "observed": "CX500-B-R",
+          "pass": true,
+          "critical": true
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cxr_echo",
+          "observed": "ev_cxr_echo",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cxr_alpha_new",
+          "expected": "IDENTITY_MISMATCH_CONDITION",
+          "observed": [
+            "IDENTITY_MISMATCH_CONDITION",
+            "IDENTITY_MISMATCH_SKU"
+          ],
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 2.78,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R08",
+      "category": "EXACT",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "NOT_FOUND",
+          "observed": "NOT_FOUND",
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 0.83,
+      "adapterCalls": 1
+    },
+    {
+      "id": "R09",
+      "category": "BUNDLE",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lockedSku",
+          "expected": "NW200-G",
+          "observed": "NW200-G",
+          "pass": true,
+          "critical": true
+        },
+        {
+          "field": "flaggedUntrusted",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_nw_golf",
+          "observed": "ev_nw_golf",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestPayPal",
+          "expected": "ev_nw_alpha",
+          "observed": "ev_nw_alpha",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_nw_bundle",
+          "expected": "IDENTITY_MISMATCH_VARIANT",
+          "observed": [
+            "IDENTITY_MISMATCH_VARIANT",
+            "IDENTITY_MISMATCH_SKU"
+          ],
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 1.3,
+      "adapterCalls": 6
+    },
+    {
+      "id": "R10",
+      "category": "UNAVAILABLE",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "HOLD",
+          "observed": "HOLD",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": null,
+          "observed": null,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_q5_hotel",
+          "expected": "OUT_OF_STOCK",
+          "observed": [
+            "MERCHANT_IDENTITY_MISMATCH",
+            "OUT_OF_STOCK",
+            "NO_MERCHANT_QUOTE"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_q5_bravo",
+          "expected": "AVAILABILITY_UNKNOWN",
+          "observed": [
+            "AVAILABILITY_UNKNOWN",
+            "NO_MERCHANT_QUOTE"
+          ],
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 0.84,
+      "adapterCalls": 4
+    },
+    {
+      "id": "R11",
+      "category": "NO_QUOTE",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "HOLD",
+          "observed": "HOLD",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": null,
+          "observed": null,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx900_alpha",
+          "expected": "NO_MERCHANT_QUOTE",
+          "observed": [
+            "NO_MERCHANT_QUOTE"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx900_charlie",
+          "expected": "NO_MERCHANT_QUOTE",
+          "observed": [
+            "NO_MERCHANT_QUOTE"
+          ],
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 1.01,
+      "adapterCalls": 5
+    },
+    {
+      "id": "R12",
+      "category": "BUDGET",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "budgetSource",
+          "expected": "PARSED_FROM_TEXT",
+          "observed": "PARSED_FROM_TEXT",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "HOLD",
+          "observed": "HOLD",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": null,
+          "observed": null,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_alpha",
+          "expected": "OVER_BUDGET",
+          "observed": [
+            "OVER_BUDGET"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_fee",
+          "expected": "OVER_BUDGET",
+          "observed": [
+            "OVER_BUDGET"
+          ],
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 1.79,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R13",
+      "category": "INJECTION",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "budgetSource",
+          "expected": "NONE",
+          "observed": "NONE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cx_alpha",
+          "observed": "ev_cx_alpha",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_delta",
+          "expected": "IDENTITY_MISMATCH_VARIANT",
+          "observed": [
+            "IDENTITY_MISMATCH_VARIANT",
+            "IDENTITY_MISMATCH_SKU"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_echo",
+          "expected": "IDENTITY_MISMATCH_CONDITION",
+          "observed": [
+            "IDENTITY_MISMATCH_CONDITION"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_foxtrot",
+          "expected": "SUSPICIOUS_LISTING_CONTENT",
+          "observed": [
+            "MERCHANT_IDENTITY_MISMATCH",
+            "SUSPICIOUS_LISTING_CONTENT"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_imposter",
+          "expected": "MERCHANT_IDENTITY_MISMATCH",
+          "observed": [
+            "MERCHANT_IDENTITY_MISMATCH"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_golf",
+          "expected": "TOTAL_UNKNOWN",
+          "observed": [
+            "TOTAL_UNKNOWN"
+          ],
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "ineligible:ev_cx_bravo",
+          "expected": "QUOTE_STALE",
+          "observed": [
+            "QUOTE_STALE"
+          ],
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 1.66,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R14",
+      "category": "INJECTION",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "budgetSource",
+          "expected": "PARSED_FROM_TEXT",
+          "observed": "PARSED_FROM_TEXT",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "flaggedUntrusted",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_nw_golf",
+          "observed": "ev_nw_golf",
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 0.97,
+      "adapterCalls": 6
+    },
+    {
+      "id": "R15",
+      "category": "DISCOVERY",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "PRODUCT_DISCOVERY",
+          "observed": "PRODUCT_DISCOVERY",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "NOT_APPLICABLE",
+          "observed": "NOT_APPLICABLE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "notSuitable:ev_nw200_graphite",
+          "expected": "not SUITABLE",
+          "observed": "NEEDS_VERIFICATION",
+          "pass": true,
+          "critical": true
+        }
+      ],
+      "latencyMs": 1.7,
+      "adapterCalls": 7
+    },
+    {
+      "id": "R16",
+      "category": "EXACT",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lockedSku",
+          "expected": "CX500-W",
+          "observed": "CX500-W",
+          "pass": true,
+          "critical": true
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cx_delta",
+          "observed": "ev_cx_delta",
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 1.72,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R17",
+      "category": "CURRENCY",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "HOLD",
+          "observed": "HOLD",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": null,
+          "observed": null,
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 1.48,
+      "adapterCalls": 17
+    },
+    {
+      "id": "R18",
+      "category": "BUDGET",
+      "pass": true,
+      "checks": [
+        {
+          "field": "mode",
+          "expected": "EXACT_PRODUCT_PURCHASE",
+          "observed": "EXACT_PRODUCT_PURCHASE",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "identity",
+          "expected": "LOCKED",
+          "observed": "LOCKED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "budgetSource",
+          "expected": "STRUCTURED_INPUT",
+          "observed": "STRUCTURED_INPUT",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "compareState",
+          "expected": "OFFER_VERIFIED",
+          "observed": "OFFER_VERIFIED",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "lowestVerified",
+          "expected": "ev_cx_alpha",
+          "observed": "ev_cx_alpha",
+          "pass": true,
+          "critical": false
+        },
+        {
+          "field": "eligible:ev_cx_india",
+          "expected": true,
+          "observed": true,
+          "pass": true,
+          "critical": false
+        }
+      ],
+      "latencyMs": 1.69,
+      "adapterCalls": 17
+    }
+  ],
+  "metrics": {
+    "cases": 18,
+    "passed": 18,
+    "byDimension": {
+      "mode": {
+        "checked": 18,
+        "correct": 18
+      },
+      "identity": {
+        "checked": 18,
+        "correct": 18
+      },
+      "lockedSku": {
+        "checked": 5,
+        "correct": 5
+      },
+      "budgetSource": {
+        "checked": 6,
+        "correct": 6
+      },
+      "compareState": {
+        "checked": 15,
+        "correct": 15
+      },
+      "lowestVerified": {
+        "checked": 15,
+        "correct": 15
+      },
+      "lowestPayPal": {
+        "checked": 3,
+        "correct": 3
+      },
+      "ineligible": {
+        "checked": 30,
+        "correct": 30
+      },
+      "eligible": {
+        "checked": 7,
+        "correct": 7
+      },
+      "flaggedUntrusted": {
+        "checked": 2,
+        "correct": 2
+      },
+      "notSuitable": {
+        "checked": 1,
+        "correct": 1
+      }
+    },
+    "criticalErrors": 0,
+    "failureTypes": {},
+    "latencyMs": {
+      "p50": 1.72,
+      "max": 21.16,
+      "total": 54
+    },
+    "adapterCalls": 219,
+    "externalProviderCalls": 0,
+    "supplierCostMicro": 0
+  }
+}
