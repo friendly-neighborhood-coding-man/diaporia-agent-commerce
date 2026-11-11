@@ -22,7 +22,7 @@ export interface MoneyConstraint {
   span: [number, number] | null;
   provenance: MoneyProvenance;
   /** How the bound was read: an explicit limit word, a range, or an amount with no limit word (read as a maximum). */
-  basis: "LIMIT_WORD" | "RANGE" | "UNQUALIFIED_AMOUNT_AS_MAXIMUM" | "STRUCTURED";
+  basis: "LIMIT_WORD" | "RANGE" | "UNQUALIFIED_AMOUNT_AS_MAXIMUM" | "APPROXIMATE_AMOUNT_AS_MAXIMUM" | "STRUCTURED";
 }
 export type MoneyAmbiguityKind = "NO_CURRENCY" | "UNSUPPORTED_CURRENCY" | "CURRENCY_CONFLICT" | "MULTIPLE_CURRENCIES" | "APPROXIMATE_AMOUNT"
   | "INCONSISTENT_RANGE" | "WEIGHT_OR_CURRENCY" | "NOT_A_TOTAL" | "UNPARSEABLE_AMOUNT";
@@ -208,7 +208,9 @@ export function parseMoneyConstraints(text: string, structured?: string, opts: {
       const l = amountToMinor(lo.num, lo.mult, cur); const h = amountToMinor(hi.num, hi.mult, cur);
       if (l === null || h === null) { ambiguities.push({ kind: "UNPARSEABLE_AMOUNT", text: spanText, span, reason: `the amount cannot be represented in ${cur}` }); continue; }
       if (l > h) { ambiguities.push({ kind: "INCONSISTENT_RANGE", text: spanText, span, reason: "the lower end of the range is above the upper end" }); continue; }
-      if (/^\s*(?:정도|선)/.test(tail[0]) || BEFORE[0]![0].test(head)) { ambiguities.push({ kind: "APPROXIMATE_AMOUNT", text: spanText, span, reason: "an approximate range is not a limit" }); continue; }
+      // V2.2: an approximate range ("10~15만원 정도") is applied conservatively: its upper end is the maximum, and no lower
+      // bound is enforced. The approximation is recorded in the constraint's basis and as an assumption.
+      if (/^\s*(?:정도|선)/.test(tail[0]) || BEFORE[0]![0].test(head)) { constraints.push({ currency: cur, lowerMinor: null, lowerInclusive: true, upperMinor: h, upperInclusive: true, text: spanText, span, provenance: "REQUEST_TEXT", basis: "APPROXIMATE_AMOUNT_AS_MAXIMUM" }); continue; }
       constraints.push({ currency: cur, lowerMinor: l, lowerInclusive: true, upperMinor: h, upperInclusive: true, text: (/\b(between|from)\s*$/i.exec(head)?.[1] ? /\b(between|from)\s*$/i.exec(head)![1] + " " : "") + spanText, span, provenance: "REQUEST_TEXT", basis: "RANGE" });
       continue;
     }
@@ -222,7 +224,8 @@ export function parseMoneyConstraints(text: string, structured?: string, opts: {
       notes.push({ text: spanText, span, reason: "a discount, coupon or credit amount, not a price limit" }); continue;
     }
     if (afterKind === "NOT_TOTAL") { ambiguities.push({ kind: "NOT_A_TOTAL", text: spanText + after.slice(0, 16).trimEnd(), span, reason: "the amount is a recurring, shipping or fee amount, not a purchase total" }); continue; }
-    if (kind === "APPROX" || afterKind === "APPROX") { ambiguities.push({ kind: "APPROXIMATE_AMOUNT", text: spanText, span, reason: "an approximate amount is not a limit; confirm a maximum" }); continue; }
+    // V2.2: "around $250" / "20만원 정도" is applied conservatively as the maximum (never exceeded), with an assumption.
+    if (kind === "APPROX" || afterKind === "APPROX") { constraints.push({ currency: cur, lowerMinor: null, lowerInclusive: true, upperMinor: minor, upperInclusive: true, text: spanText, span, provenance: "REQUEST_TEXT", basis: "APPROXIMATE_AMOUNT_AS_MAXIMUM" }); continue; }
     if (afterKind === "BAND") {
       // "20만원대": the band from 200,000 up to (not including) the next unit of the leading digit.
       const step = amountToMinor("1", m.mult, cur)!;

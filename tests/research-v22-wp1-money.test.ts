@@ -58,9 +58,6 @@ describe("WP-1 never converted, never dropped: conflicts and ambiguities hold", 
     ["robot vacuum under C$150", {}, "budgetUnresolved"],
     ["robot vacuum under A$150", {}, "budgetUnresolved"],
     ["robot vacuum under ¥15000", {}, "budgetUnresolved"],
-    ["robot vacuum around $150", {}, "budgetUnresolved"],
-    ["robot vacuum, about 150 dollars", {}, "budgetUnresolved"],
-    ["로봇청소기 20만원 정도", {}, "budgetUnresolved"],
     ["robot vacuum under 50 pounds", {}, "budgetUnresolved"],
     ["robot vacuum with a $10/month filter plan", {}, "budgetUnresolved"],
     ["robot vacuum between $100", {}, "budgetUnresolved"],
@@ -167,5 +164,15 @@ describe("WP-1 end to end: an over-budget purchase reaches neither checkout-prep
     const row = hh.app.store.db.prepare("SELECT constraints_json FROM browser_handoffs WHERE id = ?").get(prep.handoffId) as { constraints_json: string };
     expect(JSON.parse(row.constraints_json).maximumSources).toContainEqual({ source: "RESEARCH_BUDGET", maximumMinor: 9_999 });
     await client.close();
+  });
+});
+
+describe("V2.2 approximate amounts are applied conservatively as the maximum (never dropped, never exceeded)", () => {
+  it.each([["robot vacuum around $150", 15000], ["robot vacuum, about 150 dollars", 15000], ["로봇청소기 20만원 정도", 200000]])("%s → max %d", (r, max) => {
+    const i = parseResearchIntent({ request: r, ...(r.includes("만원") ? { currency: "KRW" } : {}) } as any);
+    expect(i.budgetMaxMinor).toBe(max);
+    expect(i.budgetUnresolved).toBeNull();
+    expect(i.moneyConstraints[0]).toMatchObject({ basis: "APPROXIMATE_AMOUNT_AS_MAXIMUM", upperInclusive: true, lowerMinor: null });
+    expect(i.assumptions.join(" ")).toMatch(/approximate; it is applied as the maximum/);
   });
 });

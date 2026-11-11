@@ -146,6 +146,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (budgetConflict) assumptions.push(`Budget not applied: ${budgetConflict}. Confirm the budget in ${money.currency}.`);
   const budgetUnresolved = !budgetConflict ? money.unresolved : null;
   if (budgetUnresolved) assumptions.push(`Budget ${budgetMinor === null ? "not applied" : "needs confirmation"}: ${budgetUnresolved}. Confirm the amount and currency.`);
+  for (const c of money.parse.constraints) if (c.basis === "APPROXIMATE_AMOUNT_AS_MAXIMUM") assumptions.push(`"${c.text}" is approximate; it is applied as the maximum price (never exceeded). Confirm a different maximum if you want one.`);
   for (const c of money.parse.constraints) if (c.basis === "UNQUALIFIED_AMOUNT_AS_MAXIMUM") assumptions.push(`"${c.text}" has no limit word; it is applied as the maximum price.`);
   for (const n of money.parse.notes) assumptions.push(`"${n.text}" is ${n.reason}; it is not applied.`);
   if (/no object|no budget|any price|price doesn'?t matter|가격 상관/i.test(text)) assumptions.push("User stated no budget limit.");
