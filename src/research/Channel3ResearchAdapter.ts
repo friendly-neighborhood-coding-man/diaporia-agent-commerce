@@ -155,7 +155,10 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
       for (const v of Array.isArray(op?.values) ? op.values : []) if (typeof v?.product_id === "string" && v.product_id !== item.id)
         siblings.push({ axis: String(op.name ?? ""), label: String(v.label ?? ""), providerProductId: v.product_id });
     const variant = canonicalVariant(attrs, ex.kind, ex.accessoryNoun);
-    const identity: ProductIdentity = { brand: brand ?? "", model: ex.model ?? "", variant, condition: ex.titleCondition ?? "new", sku: null };
+    // N-06: a product with no model name/number keeps model "" and is identified by the provider's own product key
+    // (in `sku`), so two model-less products of one brand never share an identity.
+    const modelLess = !normalizeModel(ex.model ?? "");
+    const identity: ProductIdentity = { brand: brand ?? "", model: ex.model ?? "", variant, condition: ex.titleCondition ?? "new", sku: modelLess && item.id ? `ch3:${String(item.id).slice(0, 56)}` : null };
     const productId = `ch3:${String(item.id ?? title).slice(0, 80)}`;
     const offers: MerchantOffer[] = [];
     for (const [i, o] of (Array.isArray(item.offers) ? item.offers : []).entries()) {
@@ -226,6 +229,8 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
   }
 
   async findOffers(identity: ProductIdentity): Promise<MerchantOffer[]> {
+    // N-06: a model-less identity matches only the listing with the same provider product key, never the whole brand.
+    if (!normalizeModel(identity.model)) return identity.sku ? [...this.products.values()].filter((p) => p.product.identity.sku === identity.sku).flatMap((p) => structuredClone(p.offers)) : [];
     const key = familyKey(identity.brand, identity.model);
     return [...this.products.values()].filter((p) => familyKey(p.product.identity.brand, p.product.identity.model) === key).flatMap((p) => structuredClone(p.offers));
   }

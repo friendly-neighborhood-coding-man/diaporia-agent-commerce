@@ -157,9 +157,21 @@ export const CATEGORIES: CategorySpec[] = [
 ];
 const ACCESSORY_CATEGORY = /accessor|\bcases?\b|chargers?|\bparts?\b|replacement|\bpads?\b|cushions?|cables?|adapters?|protectors?|straps?/i;
 
+/** The category a request names even when it asks for an accessory of it ("노트북 충전기" → laptops). Query building only. */
+export function mentionedCategory(text: string): CategorySpec | null { return CATEGORIES.find((c) => c.request.test(text)) ?? null; }
+/** N-07: an accessory noun right after a category noun ("laptop charger", "노트북 충전기") names the accessory, not the category. */
+const ACCESSORY_AFTER = /^\s*(?:chargers?|charging|cases?|sleeves?|bags?|stands?|cables?|cords?|adapters?|docks?|covers?|mounts?|pads?|cushions?|batter(?:y|ies)|straps?|skins?|protectors?|replacement|parts?|충전기|케이스|파우치|가방|거치대|케이블|어댑터|커버|배터리|보호\s*필름)(?![a-z])/i;
+/** "a sleeve for a 14 inch laptop", "case that fits my tablet": the category is what the accessory is FOR. */
+const ACCESSORY_FOR = /\b(?:for|fits?|compatible with)\s+(?:an?\s+|the\s+|my\s+)?(?:[\w.-]+\s+){0,3}$/i;
 export function requestCategory(text: string): CategorySpec | null {
   // Most specific first: "hiking boots" before "boots"; "running shoes" before generic shoes.
-  for (const c of CATEGORIES) if (c.request.test(text)) return c;
+  for (const c of CATEGORIES) {
+    const m = new RegExp(c.request.source, c.request.flags.replace("g", "") + "g");
+    const hits = [...text.matchAll(m)];
+    const accessoryOf = (h: RegExpMatchArray) => ACCESSORY_AFTER.test(text.slice(h.index! + h[0].length)) || ACCESSORY_FOR.test(text.slice(0, h.index!));
+    if (hits.length && !hits.some(accessoryOf)) return c;
+    if (hits.length) return null; // "laptop charger", "a sleeve for a laptop charger…": an accessory request, not the category
+  }
   return null;
 }
 

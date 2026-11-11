@@ -1,7 +1,7 @@
 import type { CatalogProduct, ProductIdentity, ShippingDestination } from "../domain/types.js";
 import { isCurrency, isMinor } from "../domain/money.js";
 import { PurchaseIntentRouter, type PurchaseRequestInput } from "../intent/PurchaseIntentRouter.js";
-import { ProductIdentityResolver, identityEquals } from "../identity/ProductIdentityResolver.js";
+import { ProductIdentityResolver, identityEquals, normalizeModel } from "../identity/ProductIdentityResolver.js";
 import type { CommerceResearchAdapter } from "../research/CommerceResearchAdapter.js";
 import { MerchantOfferVerifier, type VerifiedOffer } from "../merchant/MerchantOfferVerifier.js";
 import { PurchasePolicyEngine, type PolicyDecision } from "../policy/PurchasePolicyEngine.js";
@@ -413,6 +413,10 @@ export class CommerceGateway {
     let ps = this.livePurchaseSession(input.researchSessionId, userId);
     const destination = input.destination ? validateDestination(input.destination) : ps.destination;
     let locked = ps.lockedIdentity;
+    // N-06: a model-less identity is only exact with its provider product key; without one it could name any product
+    // of the brand.
+    if (!normalizeModel(input.productIdentity?.model ?? "") && !String(input.productIdentity?.sku ?? "").trim())
+      throw new CommerceError("IDENTITY_MISMATCH", "A product without a model must be identified by its sku (the provider product key from research). DIAPORIA never guesses which product is meant.");
     if (ps.mode === "EXACT_PRODUCT_PURCHASE") {
       if (!locked) throw new CommerceError("INVALID_STATE", "No exact identity is locked for this session (see research unknowns).");
       if (!identityEquals(locked, normalizeIdentity(input.productIdentity)))

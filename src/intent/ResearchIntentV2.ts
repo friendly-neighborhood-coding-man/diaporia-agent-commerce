@@ -1,7 +1,7 @@
 import type { Condition, IntentMode } from "../domain/types.js";
 import { isCurrency, parseDecimalToMinor, type Currency } from "../domain/money.js";
 import { extractIdentity, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
-import { capabilityPhrase, requestCapabilities, requestCategory } from "../research/capabilities.js";
+import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { extractRequirements, type StatedRequirement } from "./Requirements.js";
 
@@ -88,13 +88,15 @@ function unresolvedLimit(t: string): string | null {
   return null;
 }
 
-function parseMoney(text: string, structured: string | undefined): { currency: Currency; currencySource: ResearchIntentV2["currencySource"]; budget: number | null; conflict: string | null; unresolved: string | null } {
+function parseMoney(text: string, structured: string | undefined): { currency: Currency; currencySource: ResearchIntentV2["currencySource"]; budget: number | null; conflict: string | null; unresolved: string | null;
+  bareAmount: { amount: string; multiplier: number } | null } {
   const t = text.normalize("NFKC");
   let currency: Currency | null = isCurrency(structured) ? structured : null;
   const source: ResearchIntentV2["currencySource"] = currency ? "STRUCTURED_INPUT" : "PARSED_FROM_TEXT";
   let budget: number | null = null;
   let conflict: string | null = null;
   let unresolved: string | null = null;
+  let bareAmount: { amount: string; multiplier: number } | null = null;
   // Korean won: "30만원", "20만 원", "150,000원", "₩150000". Korean dollars: "150달러".
   const man = /(\d+(?:\.\d+)?)\s*만\s*원/.exec(t);
   const won = /(?:₩\s*(\d[\d,]*)|(\d[\d,]*)\s*원)/.exec(t);
@@ -102,11 +104,12 @@ function parseMoney(text: string, structured: string | undefined): { currency: C
   const eurKo = /(\d[\d,]*(?:\.\d{1,2})?)\s*유로/.exec(t);
   // English budget (review R-04): every match is considered. A number followed by a unit (hours, cups, oz, weeks…) is a
   // quantity, never money. "up to / max / within N" needs a currency marker; a match with a marker wins.
-  const BUDGET_EN = /\b(under|below|less than|at most|max(?:imum)?(?: of)?|no more than|never (?:go over|exceed)|not exceed|up to|budget(?: of| is)?|within|cheaper than)\s*(?:(\$|€|£|usd|eur|gbp)\s*)?(\d[\d,]*(?:\.\d{1,2})?)(?!\s*(?:\+|-?\s*(?:hours?|hrs?|h|cups?|oz|ounces?|weeks?|wks?|days?|months?|years?|yrs?|minutes?|mins?|watts?|w|gb|tb|mb|mah|inch(?:es)?|ft|feet|lbs?|pounds? of|kg|g|mm|cm|m|l|liters?|litres?|ml|%|x|pack|pcs|pieces|items?|people|persons?|devices?|ports?|db|hz|khz|mph|km|miles?|steps?)\b|\s*["”'%]|\d|\.\d))\s*(usd|dollars?|bucks|eur|euros?|gbp|pounds?|€|\$)?/gi;
+  const BUDGET_EN = /\b(under|below|less than|at most|max(?:imum)?(?: of)?|no more than|never (?:go over|exceed)|not exceed|up to|budget(?: of| is)?|within|cheaper than)\s*(?:(\$|€|£|usd|eur|gbp)\s*)?(\d[\d,]*(?:\.\d{1,2})?)(?:\s?(k)\b|\s+(thousand)\b)?(?!\s*(?:\+|-?\s*(?:hours?|hrs?|h|cups?|oz|ounces?|weeks?|wks?|days?|months?|years?|yrs?|minutes?|mins?|watts?|w|gb|tb|mb|mah|inch(?:es)?|ft|feet|lbs?|pounds? of|kg|g|mm|cm|m|l|liters?|litres?|ml|%|x|pack|pcs|pieces|items?|people|persons?|devices?|ports?|db|hz|khz|mph|km|miles?|steps?)\b|\s*["”'%]|\d|\.\d))\s*(usd|dollars?|bucks|eur|euros?|gbp|pounds?|€|\$)?/gi;
   const NEEDS_MARKER = /^(?:up to|max(?:imum)?(?: of)?|within)$/i;
-  const enAll = [...t.matchAll(BUDGET_EN)].filter((m) => m[2] || m[4] || !NEEDS_MARKER.test(m[1]!.trim()));
-  const en = enAll.find((m) => m[2] || m[4]) ?? enAll[0] ?? null;
-  const en1 = en ? [en[0], en[2], en[3], en[4]] as const : null;
+  // N-03: a magnitude suffix ("$1.2k", "2 thousand dollars") multiplies the amount; it is never dropped.
+  const enAll = [...t.matchAll(BUDGET_EN)].filter((m) => m[2] || m[6] || !NEEDS_MARKER.test(m[1]!.trim()));
+  const en = enAll.find((m) => m[2] || m[6]) ?? enAll[0] ?? null;
+  const en1 = en ? [en[0], en[2], en[3], en[6], en[4] || en[5] ? 1000 : 1] as const : null;
   const clash = (found: string, cur: Currency) => { conflict = `${found.trim()} is in ${cur}, but the requested currency is ${currency}`; };
   if (man) { currency ??= "KRW"; if (currency === "KRW") budget = Math.round(Number(man[1]) * 10_000); else clash(man[0], "KRW"); }
   else if (won && /원|₩/.test(won[0])) { currency ??= "KRW"; if (currency === "KRW") budget = Number((won[1] ?? won[2])!.replace(/,/g, "")); else clash(won[0], "KRW"); }
@@ -117,20 +120,46 @@ function parseMoney(text: string, structured: string | undefined): { currency: C
     if (!sym && !currency) {
       // V21-01: a bare number with no currency anywhere is ambiguous. It is not assumed to be USD.
       unresolved = `"${en1[0].trim()}" has no currency`;
+      bareAmount = { amount: en1[2]!.replace(/,/g, ""), multiplier: en1[4] };
     } else {
       const cur: Currency = !sym ? currency! : /€|eur/.test(sym) ? "EUR" : /£|gbp|pound/.test(sym) ? "GBP" : "USD";
       currency ??= cur;
-      if (currency === cur) budget = parseDecimalToMinor(en1[2]!.replace(/,/g, ""), cur);
+      if (currency === cur) budget = parseDecimalToMinor(en1[2]!.replace(/,/g, ""), cur) * en1[4];
       else conflict = `${en1[0].trim()} is in ${cur}, but the requested currency is ${currency}`;
     }
   }
   if (budget === null && conflict === null && unresolved === null) {
     const u = unresolvedLimit(t);
-    if (u) unresolved = `"${u}" was not recognised as an amount with a currency`;
+    if (u) {
+      unresolved = `"${u}" was not recognised as an amount with a currency`;
+      const n = /(\d[\d,]*(?:\.\d{1,2})?)(?:\s?(k)\b|\s+(thousand)\b)?/i.exec(u);
+      if (n) bareAmount = { amount: n[1]!.replace(/,/g, ""), multiplier: n[2] || n[3] ? 1000 : 1 };
+    }
   }
   if (!currency) currency = /€|\beur\b|euro/i.test(t) ? "EUR" : /£|\bgbp\b/i.test(t) ? "GBP" : /₩|만\s*원|\bkrw\b/i.test(t) ? "KRW" : "USD";
-  return { currency, currencySource: isCurrency(structured) ? "STRUCTURED_INPUT" : budget !== null || /€|£|₩|eur|gbp|krw|원|달러|유로/i.test(t) ? source : "DEFAULT_USD", budget, conflict, unresolved };
+  return { currency, currencySource: isCurrency(structured) ? "STRUCTURED_INPUT" : budget !== null || /€|£|₩|eur|gbp|krw|원|달러|유로/i.test(t) ? source : "DEFAULT_USD", budget, conflict, unresolved, bareAmount };
 }
+
+/**
+ * R-C: the budget the request text itself states, read by the same parser as research (no structured currency):
+ * its currency and amount in that currency's minor units, or a bare number that had no currency. Display only.
+ */
+export function statedBudget(text: string): { currency: Currency; budgetMinor: number | null; bareAmountMinor: (cur: Currency) => number | null } {
+  const m = parseMoney(text, undefined);
+  return { currency: m.currency, budgetMinor: m.budget,
+    bareAmountMinor: (cur) => { if (!m.bareAmount) return null; try { return parseDecimalToMinor(m.bareAmount.amount, cur) * m.bareAmount.multiplier; } catch { return null; } } };
+}
+
+/**
+ * N-07: English search nouns for Korean product words (query building only; never a category or a requirement, so
+ * nothing here can widen or narrow what counts as the right product).
+ */
+const KO_QUERY_NOUNS: Array<[RegExp, string]> = [
+  [/전자책|이북\s*리더|e-?북/i, "e-reader"], [/밥솥/, "rice cooker"], [/전기\s*(?:포트|주전자)|커피\s*포트/, "electric kettle"], [/태블릿/, "tablet"],
+  [/스피커/, "speaker"], [/키보드/, "keyboard"], [/마우스/, "mouse"], [/공기\s*청정기/, "air purifier"], [/가습기/, "humidifier"], [/제습기/, "dehumidifier"],
+  [/선풍기/, "fan"], [/에어\s*프라이어/, "air fryer"], [/전자\s*레인지/, "microwave"], [/보조\s*배터리/, "power bank"], [/충전기/, "charger"], [/케이스/, "case"], [/파우치/, "pouch"], [/거치대/, "stand"], [/케이블/, "cable"],
+  [/카메라/, "camera"], [/프로젝터/, "projector"], [/믹서기|블렌더/, "blender"], [/토스터/, "toaster"], [/스마트\s*워치/, "smartwatch"], [/드라이기|헤어\s*드라이어/, "hair dryer"],
+];
 
 /** Brand = first capitalized Latin word (not a sentence word) that is followed by a model token or another capitalized word. */
 function findBrand(text: string): { brand: string; index: number } | null {
@@ -241,6 +270,16 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       primary = [...phrases, hint, noun].filter(Boolean).join(" ");
       fallback = [hint, noun].filter(Boolean).join(" ");
       if (fallback === primary) fallback = null;
+    } else if (language === "ko") {
+      // N-07: the provider has no Korean locale, so Korean text is never sent as the query. Latin tokens the user wrote
+      // (brand names, "IH", "USB-C") and known product nouns are kept in English; if nothing remains, no catalog
+      // search is made (research then finds nothing and asks, instead of searching for untranslated text).
+      const latin = (text.match(/[A-Za-z][A-Za-z0-9+.-]*/g) ?? []).filter((w) => !/^(?:usd|krw|won)$/i.test(w));
+      const nouns = KO_QUERY_NOUNS.filter(([re]) => re.test(text)).map(([, en]) => en);
+      const of = mentionedCategory(text)?.noun ?? null;
+      primary = [...phrases, ...latin, of, ...nouns.slice(0, 1)].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 120);
+      fallback = nouns.length && primary !== nouns[0] ? nouns[0]! : null;
+      if (!primary) assumptions.push("No English search could be formed from this Korean request; name the product type (for example in English) to search the catalog.");
     } else {
       primary = text.replace(/(?:under|below|less than|budget(?: of)?)\s*[$€£]?\s*\d[\d,.]*\s*\w*/gi, " ").replace(/[^\p{L}\p{N}\s-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120);
       fallback = null;

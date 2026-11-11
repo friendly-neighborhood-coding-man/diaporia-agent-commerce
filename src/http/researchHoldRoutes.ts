@@ -30,6 +30,7 @@ import { CommerceError } from "../engine/errors.js";
 import { formatMinor, MoneyError, parseOwnerAmountToMinor, type Currency } from "../domain/money.js";
 import type { ResearchHoldProposal } from "../engine/ResearchHoldProposals.js";
 import { researchHoldBinding, type OwnerConfirmationBoundary } from "../auth/OwnerConfirmation.js";
+import { statedBudget } from "../intent/ResearchIntentV2.js";
 import { esc, page } from "./html.js";
 
 const REVIEW_TTL_MS = 10 * 60_000;
@@ -156,13 +157,18 @@ function reviewBody(p: ResearchHoldProposal, s: { requestText: string; currency:
       : `<p class="state">This requirement is not verified for this product. If you drop it, the product may not have it.</p>`);
     parts.push(`<h2>Proposed change</h2><p>Drop the requirement <code>${esc(p.requirement)}</code> for this purchase session only.</p>`);
   } else {
-    const stated = /(\d+(?:[.,]\d+)?)/.exec(p.item.detail)?.[1];
-    const statedMinor = stated ? Math.round(Number(stated.replace(",", "")) * 10 ** (cur === "KRW" || cur === "JPY" ? 0 : 2)) : null;
-    const reference = s.budgetMinor ?? statedMinor;
+    // R-C: the stated amount is read by the research parser itself (currency and magnitude included), never by a regex
+    // over the item text. An amount in another currency is shown as such and never converted.
+    const st = statedBudget(s.requestText);
+    const sameCur = st.budgetMinor !== null && st.currency === cur ? st.budgetMinor : null;
+    const bare = st.budgetMinor === null ? st.bareAmountMinor(cur) : null;
+    const reference = s.budgetMinor ?? sameCur ?? bare;
     parts.push(`<h2>Unresolved budget</h2><table><tr><td>From your request</td><td>${esc(p.item.detail)}</td></tr><tr><td>Session budget</td><td>${esc(fmt(s.budgetMinor))}</td></tr></table>`);
     parts.push(`<h2>Proposed change</h2><p>Set the budget for this purchase session to <span class="state">${esc(fmt(p.budgetMinor))}</span>.</p>`);
-    if (reference !== null && p.budgetMinor !== null && p.budgetMinor > reference)
-      parts.push(`<p class="state" style="color:#b3261e">Warning: this is higher than the amount in your request (${esc(formatMinor(reference, cur))} ${esc(cur)}).</p>`);
+    if (st.budgetMinor !== null && st.currency !== cur)
+      parts.push(`<p class="state" style="color:#b3261e">Warning: your request states ${esc(formatMinor(st.budgetMinor, st.currency))} ${esc(st.currency)}, a different currency. DIAPORIA does not convert currencies; check that ${esc(fmt(p.budgetMinor))} is what you mean.</p>`);
+    else if (reference !== null && p.budgetMinor !== null && p.budgetMinor > reference)
+      parts.push(`<p class="state" style="color:#b3261e">Warning: this is higher than the amount in your request (${esc(formatMinor(reference, cur))} ${esc(cur)}${s.budgetMinor === null && sameCur === null ? ", which had no currency" : ""}).</p>`);
   }
   parts.push(`<h2>Written by the AI assistant</h2><p class="muted">This is the assistant's text. It is not verified as your words.</p><blockquote>${esc(p.agentText)}</blockquote>`);
   if ("unavailable" in human) parts.push(`<p class="state" style="color:#b3261e">Confirming is unavailable on this server: ${esc(human.unavailable)}.</p>

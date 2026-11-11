@@ -9,7 +9,8 @@ export const SERVER_INFO = { name: "diaporia-agent-commerce", version: "0.8.0" }
 
 const identitySchema = z.object({
   brand: z.string().min(1).max(60),
-  model: z.string().min(1).max(60),
+  // N-06: "" for a product that has no model name or number; such an identity must carry its sku (provider key).
+  model: z.string().max(60),
   variant: z.string().max(40).nullable().default(null),
   condition: z.enum(["new", "refurbished", "used", "open_box"]).default("new"),
   sku: z.string().max(60).nullable().default(null),

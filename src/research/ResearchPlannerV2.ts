@@ -110,7 +110,9 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   const runQueryGuarded = async (query: string, purpose: "PRIMARY" | "FALLBACK") => {
     if (first) { first = false; await runQuery(query, purpose); } else await optional(() => runQuery(query, purpose), `the ${purpose.toLowerCase()} query`);
   };
-  await runQueryGuarded(intent.queries.primary, "PRIMARY");
+  // N-07: no query could be formed in the provider's language: no catalog call (nothing to search for).
+  if (!intent.queries.primary.trim()) trace.stops.push("no search query could be formed in the provider's language; the request must name the product");
+  else await runQueryGuarded(intent.queries.primary, "PRIMARY");
   if (!exact && intent.queries.fallback && passing() < 5) await runQueryGuarded(intent.queries.fallback, "FALLBACK");
 
   let resolution: ResolutionV2 | null = null;

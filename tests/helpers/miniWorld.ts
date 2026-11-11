@@ -17,7 +17,7 @@ export interface MiniHit { match: RegExp; title: string; url: string; content: s
 export function miniWorld(products: MiniProduct[], hits: MiniHit[] = [], o: { officialDomains?: Record<string, string[]>; expertReviewDomains?: string[]; caps?: { CHANNEL3: number; TAVILY: number } } = {}) {
   const NOW = Date.parse("2026-11-10T12:00:00.000Z");
   const now = () => NOW;
-  const counters = { channel3Search: 0, tavilySearch: 0, tavilyQueries: [] as string[] };
+  const counters = { channel3Search: 0, channel3Queries: [] as string[], tavilySearch: 0, tavilyQueries: [] as string[] };
   const pub = (p: MiniProduct) => ({ id: p.id, title: p.title, description: null, brands: [{ id: `br_${p.brand.toLowerCase()}`, name: p.brand }], images: [],
     category: { slug: p.category, title: p.categoryTitle, path: [], has_children: false }, key_features: p.features ?? null, variants: null, structured_attributes: {},
     offers: [{ url: `https://${p.domain ?? "shop.example"}/p/${p.id}`, domain: p.domain ?? "shop.example", price: { price: p.price, compare_at_price: null, currency: "USD" }, availability: "InStock", condition: "new", max_commission_rate: 0 }] });
@@ -26,7 +26,7 @@ export function miniWorld(products: MiniProduct[], hits: MiniHit[] = [], o: { of
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     const body = init?.body ? JSON.parse(String(init.body)) : null;
     if (url.hostname === "api.trychannel3.com" && url.pathname === "/v1/search") {
-      counters.channel3Search++;
+      counters.channel3Search++; counters.channel3Queries.push(String(body?.query ?? ""));
       const q = new Set(words(String(body?.query ?? "")));
       const found = products.filter((p) => words(`${p.brand} ${p.title} ${p.categoryTitle}`).filter((w) => q.has(w)).length >= Math.max(1, Math.ceil(q.size * 0.4)));
       return Response.json({ products: found.map(pub), next_page_token: null });
