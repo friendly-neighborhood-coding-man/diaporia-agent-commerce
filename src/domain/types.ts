@@ -45,7 +45,7 @@ export interface CatalogProduct {
 export interface CatalogResearchInfo {
   kind: "STANDALONE" | "BUNDLE" | "ACCESSORY";
   modelBasis: "MODEL_NUMBER" | "NAMED_MODEL" | "NONE";
-  attributes: Partial<Record<"color" | "memory" | "storage" | "capacity" | "size" | "pack", string>>;
+  attributes: Partial<Record<"color" | "memory" | "storage" | "capacity" | "size" | "pack" | "year", string>>;
   /** Attribute axes whose value conflicts between the provider's structured variant data and the title. */
   conflictingAxes: string[];
   categoryTitle: string | null;

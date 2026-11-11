@@ -12,9 +12,32 @@
  * Nothing here invents a SKU: Channel3 has no SKU/GTIN field (docs/research/PROVIDER_CONTRACTS.md).
  */
 export type ProductKind = "STANDALONE" | "BUNDLE" | "ACCESSORY";
-export type AttributeAxis = "color" | "memory" | "storage" | "capacity" | "size" | "pack";
+export type AttributeAxis = "color" | "memory" | "storage" | "capacity" | "size" | "pack" | "year";
 export type VariantAttributes = Partial<Record<AttributeAxis, string>>;
-export const AXES: AttributeAxis[] = ["color", "memory", "storage", "capacity", "size", "pack"];
+export const AXES: AttributeAxis[] = ["color", "memory", "storage", "capacity", "size", "pack", "year"];
+
+/**
+ * Model year (V21-02): "(2025)", "2025 model/edition/version/release", "model year 2025", "2025년형", "'25 model", or a
+ * standalone year 2005..2035 that is not money, a limit or a quantity. A year is part of the product identity.
+ */
+const YEAR_PATTERNS: RegExp[] = [
+  /\((20[0-3]\d)\)/, /\bmodel year\s*(20[0-3]\d)\b/i, /\b(20[0-3]\d)\s*(?:model|edition|version|release|ver\.?)\b/i, /(20[0-3]\d)\s*년\s*형/, /'(\d{2})\s*(?:model|edition)\b/i,
+  /(?<![\w$€£₩.,-])(20[0-3]\d)(?![\w.,%-]|\s*(?:\$|usd|eur|원|달러|mah|w\b|hours?|시간|년(?!\s*형)))/i,
+];
+export function modelYear(text: string): string | null {
+  const t = text.normalize("NFKC");
+  for (const re of YEAR_PATTERNS) {
+    const m = re.exec(t);
+    if (!m) continue;
+    const before = t.slice(0, m.index);
+    if (/(?:under|below|max(?:imum)?|up to|budget|less than|within|no more than|\$|€|£|₩)\s*$/i.test(before)) continue;
+    const y = m[1]!.length === 2 ? `20${m[1]}` : m[1]!;
+    if (Number(y) >= 2005 && Number(y) <= 2035) return y;
+  }
+  return null;
+}
+/** The model string without a trailing model-year token ("Drift 15 2024" → "Drift 15"). */
+export const stripYear = (model: string | null): string | null => model ? (model.replace(/\s*\(?\b20[0-3]\d\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, "").trim() || model) : model;
 
 /** English colour words plus Korean equivalents (normalized to the English name). */
 export const COLOR_WORDS: Record<string, string> = Object.fromEntries([
@@ -74,6 +97,8 @@ export function parseAttributes(text: string): VariantAttributes {
     const inch = /(?<![\d.])(\d{2}(?:\.\d)?)\s?(?:-?\s?inch(?:es)?\b|"|”|-in\b|인치)/i.exec(t);
     if (inch) out.size = `${inch[1]} in`;
   }
+  const year = modelYear(t);
+  if (year) out.year = year;
   const pack = /\b(\d+)[- ]?(?:pack|pk|count|ct)\b|\bpack of (\d+)\b|\bset of (\d+)\b|\b(twin)[- ]pack\b|(\d+)\s?개입/i.exec(t);
   if (pack) out.pack = pack[4] ? "2" : (pack[1] ?? pack[2] ?? pack[3] ?? pack[5])!;
   return out;
@@ -92,7 +117,7 @@ export function attributesFromVariant(variant: string | null): VariantAttributes
   const out: VariantAttributes = {};
   if (!variant) return out;
   for (const part of variant.replace(/ BUNDLE$/, "").replace(/^ACCESSORY [^/]*\/?\s*/, "").split(" / ")) {
-    const m = /^(memory|storage|capacity|size|pack)=(.+)$/.exec(part.trim());
+    const m = /^(memory|storage|capacity|size|pack|year)=(.+)$/.exec(part.trim());
     if (m) out[m[1] as AttributeAxis] = m[2]!; else if (part.trim() && part.trim() !== "UNSPECIFIED") out.color = part.trim();
   }
   return out;
@@ -164,7 +189,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
     const num = modelNumberToken(target);
     const named = namedModelAfter(target, tb);
     const noun = (nounMatch?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, "");
-    return { brand, model: num ?? named, modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
+    return { brand, model: stripYear(num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
       attributes: { ...parseAttributes(head), ...(parseAttributes(target).capacity ? { capacity: parseAttributes(target).capacity } : {}) }, titleCondition };
   }
   const kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
@@ -176,7 +201,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
     model = named && normalizeKey(named).includes(normalizeKey(num)) ? named : num; basis = "MODEL_NUMBER";
     if (named && normalizeKey(named).includes(normalizeKey(num)) && named.split(" ").length > 1) basis = "NAMED_MODEL";
   } else if (named) { model = named; basis = "NAMED_MODEL"; }
-  return { brand, model, modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
+  return { brand, model: stripYear(model), modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
 }
 
 /**
