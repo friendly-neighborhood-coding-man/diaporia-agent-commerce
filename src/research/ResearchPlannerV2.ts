@@ -76,7 +76,7 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   const baseQuery = (query: string): ProductSearchQuery => ({ text: query, query, category: intent.category, brand: exact ? intent.target!.brand : null, model: exact ? intent.target!.model : null,
     currency: supported ? intent.currency : null, country: null,
     // Price filter in discovery only (an exact request must find the product to explain an over-budget price).
-    maxPriceMinor: !exact && supported && intent.budgetMinor !== null ? intent.budgetMinor : null,
+    maxPriceMinor: !exact && supported && (intent.budgetMaxMinor ?? intent.budgetMinor) !== null ? (intent.budgetMaxMinor ?? intent.budgetMinor) : null,
     conditions: intent.condition === "used" ? ["used"] : intent.condition === "new" ? ["new"] : undefined, limit: 20 });
   const fetchOffers = async (ps: CatalogProduct[]) => {
     for (const p of ps) if (!offers.has(p.productId)) offers.set(p.productId, (await d.research.findOffers(p.identity)).filter((o) => o.productId === p.productId));

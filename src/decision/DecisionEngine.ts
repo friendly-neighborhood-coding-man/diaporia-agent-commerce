@@ -23,7 +23,7 @@ export const DECISION_ENGINE_VERSION = "decision-v2.0.0";
 export const BUDGET_HEADROOM = 0.9;
 
 export type DecisionState = "RECOMMEND" | "INVESTIGATE" | "HOLD";
-export type Disqualifier = "CATEGORY_MISMATCH" | "NOT_STANDALONE" | "BUNDLE_EXCLUDED" | "ATTRIBUTE_MISMATCH" | "CONDITION_MISMATCH" | "OVER_BUDGET" | "UNAVAILABLE" | "MUST_HAVE_FALSE" | "NOT_LOCKED_IDENTITY";
+export type Disqualifier = "CATEGORY_MISMATCH" | "NOT_STANDALONE" | "BUNDLE_EXCLUDED" | "ATTRIBUTE_MISMATCH" | "CONDITION_MISMATCH" | "OVER_BUDGET" | "BELOW_STATED_RANGE" | "UNAVAILABLE" | "MUST_HAVE_FALSE" | "NOT_LOCKED_IDENTITY";
 export type Blocker = "MUST_HAVE_UNRECOGNIZED" | "MUST_NOT_UNVERIFIABLE" | "MUST_HAVE_UNVERIFIED" | "MUST_HAVE_CONTRADICTED" | "VERIFICATION_LIMIT_REACHED" | "PRICE_NOT_IN_REQUESTED_CURRENCY" | "BUDGET_TIGHT" | "AVAILABILITY_UNKNOWN" | "CONDITION_UNCONFIRMED" | "ATTRIBUTE_UNKNOWN";
 
 export interface CandidateInput {
@@ -186,10 +186,14 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   if (usable.length && !usable.some((o) => o.listedIdentity.condition === intent.condition)) bl.push({ code: "CONDITION_UNCONFIRMED", detail: `no offer confirms condition ${intent.condition}` });
   const priceOffers = [...usable].sort((a, b) => a.itemPriceMinor - b.itemPriceMinor);
   const lowest = priceOffers[0] ?? null;
-  if (lowest && intent.budgetMinor !== null) {
-    if (lowest.itemPriceMinor > intent.budgetMinor) dq.push({ code: "OVER_BUDGET", detail: `lowest eligible listing ${fmt(lowest.itemPriceMinor, intent.currency)} is over the budget ${fmt(intent.budgetMinor, intent.currency)}` });
-    else if (lowest.itemPriceMinor > intent.budgetMinor * BUDGET_HEADROOM) bl.push({ code: "BUDGET_TIGHT", detail: `listing ${fmt(lowest.itemPriceMinor, intent.currency)} is within 10% of the budget while shipping and tax are unknown` });
+  // V2.2 WP-1: the enforceable inclusive maximum ("under $120" allows at most $119.99) and the lower end of a stated range.
+  const maxMinor = intent.budgetMaxMinor !== undefined ? intent.budgetMaxMinor : intent.budgetMinor;
+  if (lowest && maxMinor !== null) {
+    if (lowest.itemPriceMinor > maxMinor) dq.push({ code: "OVER_BUDGET", detail: `lowest eligible listing ${fmt(lowest.itemPriceMinor, intent.currency)} is over the budget ${fmt(maxMinor, intent.currency)}` });
+    else if (lowest.itemPriceMinor > maxMinor * BUDGET_HEADROOM) bl.push({ code: "BUDGET_TIGHT", detail: `listing ${fmt(lowest.itemPriceMinor, intent.currency)} is within 10% of the budget while shipping and tax are unknown` });
   }
+  if (lowest && intent.budgetLowerMinor != null && lowest.itemPriceMinor < intent.budgetLowerMinor)
+    dq.push({ code: "BELOW_STATED_RANGE", detail: `lowest eligible listing ${fmt(lowest.itemPriceMinor, intent.currency)} is below the stated price range (from ${fmt(intent.budgetLowerMinor, intent.currency)})` });
   for (const m of intent.mustHave) {
     const v = c.must[m];
     if (v?.status === "VERIFIED_FALSE") dq.push({ code: "MUST_HAVE_FALSE", detail: `must-have "${m}" is false (${v.basis === "MANUFACTURER" ? "manufacturer" : "two expert sources"})` });

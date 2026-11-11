@@ -1,9 +1,10 @@
 import type { Condition, IntentMode } from "../domain/types.js";
-import { isCurrency, parseDecimalToMinor, type Currency } from "../domain/money.js";
+import { parseDecimalToMinor, type Currency } from "../domain/money.js";
 import { extractIdentity, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { extractRequirements, type StatedRequirement } from "./Requirements.js";
+import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
 
 /**
  * Research V2 intent: everything the discovery, identity and decision stages need, parsed deterministically from
@@ -26,6 +27,17 @@ export interface ResearchIntentV2 {
    * and currency.
    */
   budgetUnresolved: string | null;
+  /**
+   * V2.2 WP-1: the stated upper bound's semantics and the enforceable inclusive limits (integer minor units, session
+   * currency). `budgetMaxMinor` is what every eligibility and payment check uses ("under $120" allows at most $119.99).
+   * `budgetLowerMinor` is the lowest allowed listing price of a stated range ("between $100 and $150"), or null.
+   */
+  budgetUpperInclusive: boolean;
+  budgetMaxMinor: number | null;
+  budgetLowerMinor: number | null;
+  /** Every money statement of the request, with spans and provenance, and every amount that could not be read safely. */
+  moneyConstraints: MoneyConstraint[];
+  moneyAmbiguities: MoneyAmbiguity[];
   /** Exact-product target (exact mode) or family hint (discovery with a named model). */
   target: { brand: string | null; model: string | null; modelBasis: "MODEL_NUMBER" | "NAMED_MODEL" | "NONE"; kind: ProductKind; accessoryNoun: string | null; sku?: string | null } | null;
   /** Variant attributes the user stated (colour, size, capacity, storage, memory, pack). */
@@ -62,82 +74,17 @@ const NOT_BRAND = new Set(`i buy purchase order get please need want looking fin
   over-ear over office waterproof water programmable cordless insulated money phone smartphone shoes boots hiking running coffee monitor 4k backpack daypack chair vacuum
   bottle system note ignore new used refurbished renewed replacement standalone under budget with and for in on of`.split(/\s+/).filter(Boolean));
 
-/** Units that make a number a quantity, not money (shared by the budget parser and the unresolved-limit scan). */
-const QUANTITY_UNIT = String.raw`(?:\+|-?\s*(?:hours?|hrs?|h|cups?|oz|ounces?|weeks?|wks?|days?|months?|years?|yrs?|minutes?|mins?|watts?|w|gb|tb|mb|mah|inch(?:es)?|in|ft|feet|lbs?|pounds? of|kg|g|mm|cm|m|l|liters?|litres?|ml|%|x|pack|pcs|pieces|items?|people|persons?|devices?|ports?|db|hz|khz|mph|km|miles?|steps?|users?|seats?|players?|keys?|buttons?)\b|\s*["”'%]|\d|\.\d)`;
-const LIMIT_EN = new RegExp(String.raw`(?:^|[^A-Za-z])(under|below|less than|at most|max(?:imum)?(?: of)?|no more than|never (?:go over|exceed)|not exceed|up to|budget(?: of| is)?|within|cheaper than|cap(?:ped)? at|spend(?:ing)? (?:at most|up to)?)\s*[:=]?\s*(\d[\d,]*(?:\.\d+)?)(?!${QUANTITY_UNIT})`, "gi");
-const LIMIT_KO = /(\d[\d,]*(?:\.\d+)?)\s*(?:천|만|백)?\s*(이하|미만|까지|이내|안쪽|아래|선에서)|(예산|최대|상한)\s*[:은는이가]?\s*(\d[\d,]*(?:\.\d+)?)(?!\s*(?:시간|개|대|명|인치|와트|분|일|주|개월|년|%|mAh|W|kg|g|GB|TB))/g;
-const KO_UNIT_BEFORE_LIMIT = /(?:시간|개|대|명|인치|와트|분|일|주|개월|년|%|mah|w|kg|g|gb|tb|원|달러|유로|파운드)\s*$/i;
-
-/**
- * Limit phrases with a number that are not a recognised budget (V21-01). "Max" capitalised after a word is a model name
- * ("AirPods Max 2"), not a limit. Returns the phrase, or null.
- */
-function unresolvedLimit(t: string): string | null {
-  for (const m of t.matchAll(LIMIT_EN)) {
-    const word = m[1]!;
-    if (/^Max/.test(word) && /[A-Za-z]\s+$/.test(t.slice(0, m.index! + m[0].indexOf(word)))) continue;
-    return m[0].replace(/^[^A-Za-z]/, "").trim();
-  }
-  for (const m of t.matchAll(LIMIT_KO)) {
-    if (m[1] !== undefined) {
-      const between = t.slice(m.index!, m.index! + m[0].length).replace(/^\d[\d,]*(?:\.\d+)?/, "");
-      if (KO_UNIT_BEFORE_LIMIT.test(between.replace(/\s*(이하|미만|까지|이내|안쪽|아래|선에서)$/, ""))) continue;
-    }
-    return m[0].trim();
-  }
-  return null;
-}
-
-function parseMoney(text: string, structured: string | undefined): { currency: Currency; currencySource: ResearchIntentV2["currencySource"]; budget: number | null; conflict: string | null; unresolved: string | null;
-  bareAmount: { amount: string; multiplier: number } | null } {
-  const t = text.normalize("NFKC");
-  let currency: Currency | null = isCurrency(structured) ? structured : null;
-  const source: ResearchIntentV2["currencySource"] = currency ? "STRUCTURED_INPUT" : "PARSED_FROM_TEXT";
-  let budget: number | null = null;
-  let conflict: string | null = null;
-  let unresolved: string | null = null;
-  let bareAmount: { amount: string; multiplier: number } | null = null;
-  // Korean won: "30만원", "20만 원", "150,000원", "₩150000". Korean dollars: "150달러".
-  const man = /(\d+(?:\.\d+)?)\s*만\s*원/.exec(t);
-  const won = /(?:₩\s*(\d[\d,]*)|(\d[\d,]*)\s*원)/.exec(t);
-  const dollarsKo = /(\d[\d,]*(?:\.\d{1,2})?)\s*달러/.exec(t);
-  const eurKo = /(\d[\d,]*(?:\.\d{1,2})?)\s*유로/.exec(t);
-  // English budget (review R-04): every match is considered. A number followed by a unit (hours, cups, oz, weeks…) is a
-  // quantity, never money. "up to / max / within N" needs a currency marker; a match with a marker wins.
-  const BUDGET_EN = /\b(under|below|less than|at most|max(?:imum)?(?: of)?|no more than|never (?:go over|exceed)|not exceed|up to|budget(?: of| is)?|within|cheaper than)\s*(?:(\$|€|£|usd|eur|gbp)\s*)?(\d[\d,]*(?:\.\d{1,2})?)(?:\s?(k)\b|\s+(thousand)\b)?(?!\s*(?:\+|-?\s*(?:hours?|hrs?|h|cups?|oz|ounces?|weeks?|wks?|days?|months?|years?|yrs?|minutes?|mins?|watts?|w|gb|tb|mb|mah|inch(?:es)?|ft|feet|lbs?|pounds? of|kg|g|mm|cm|m|l|liters?|litres?|ml|%|x|pack|pcs|pieces|items?|people|persons?|devices?|ports?|db|hz|khz|mph|km|miles?|steps?)\b|\s*["”'%]|\d|\.\d))\s*(usd|dollars?|bucks|eur|euros?|gbp|pounds?|€|\$)?/gi;
-  const NEEDS_MARKER = /^(?:up to|max(?:imum)?(?: of)?|within)$/i;
-  // N-03: a magnitude suffix ("$1.2k", "2 thousand dollars") multiplies the amount; it is never dropped.
-  const enAll = [...t.matchAll(BUDGET_EN)].filter((m) => m[2] || m[6] || !NEEDS_MARKER.test(m[1]!.trim()));
-  const en = enAll.find((m) => m[2] || m[6]) ?? enAll[0] ?? null;
-  const en1 = en ? [en[0], en[2], en[3], en[6], en[4] || en[5] ? 1000 : 1] as const : null;
-  const clash = (found: string, cur: Currency) => { conflict = `${found.trim()} is in ${cur}, but the requested currency is ${currency}`; };
-  if (man) { currency ??= "KRW"; if (currency === "KRW") budget = Math.round(Number(man[1]) * 10_000); else clash(man[0], "KRW"); }
-  else if (won && /원|₩/.test(won[0])) { currency ??= "KRW"; if (currency === "KRW") budget = Number((won[1] ?? won[2])!.replace(/,/g, "")); else clash(won[0], "KRW"); }
-  else if (dollarsKo) { currency ??= "USD"; if (currency === "USD") budget = parseDecimalToMinor(dollarsKo[1]!.replace(/,/g, ""), "USD"); else clash(dollarsKo[0], "USD"); }
-  else if (eurKo) { currency ??= "EUR"; if (currency === "EUR") budget = parseDecimalToMinor(eurKo[1]!.replace(/,/g, ""), "EUR"); else clash(eurKo[0], "EUR"); }
-  else if (en1) {
-    const sym = `${en1[1] ?? ""}${en1[3] ?? ""}`.toLowerCase();
-    if (!sym && !currency) {
-      // V21-01: a bare number with no currency anywhere is ambiguous. It is not assumed to be USD.
-      unresolved = `"${en1[0].trim()}" has no currency`;
-      bareAmount = { amount: en1[2]!.replace(/,/g, ""), multiplier: en1[4] };
-    } else {
-      const cur: Currency = !sym ? currency! : /€|eur/.test(sym) ? "EUR" : /£|gbp|pound/.test(sym) ? "GBP" : "USD";
-      currency ??= cur;
-      if (currency === cur) budget = parseDecimalToMinor(en1[2]!.replace(/,/g, ""), cur) * en1[4];
-      else conflict = `${en1[0].trim()} is in ${cur}, but the requested currency is ${currency}`;
-    }
-  }
-  if (budget === null && conflict === null && unresolved === null) {
-    const u = unresolvedLimit(t);
-    if (u) {
-      unresolved = `"${u}" was not recognised as an amount with a currency`;
-      const n = /(\d[\d,]*(?:\.\d{1,2})?)(?:\s?(k)\b|\s+(thousand)\b)?/i.exec(u);
-      if (n) bareAmount = { amount: n[1]!.replace(/,/g, ""), multiplier: n[2] || n[3] ? 1000 : 1 };
-    }
-  }
-  if (!currency) currency = /€|\beur\b|euro/i.test(t) ? "EUR" : /£|\bgbp\b/i.test(t) ? "GBP" : /₩|만\s*원|\bkrw\b/i.test(t) ? "KRW" : "USD";
-  return { currency, currencySource: isCurrency(structured) ? "STRUCTURED_INPUT" : budget !== null || /€|£|₩|eur|gbp|krw|원|달러|유로/i.test(t) ? source : "DEFAULT_USD", budget, conflict, unresolved, bareAmount };
+function parseMoney(text: string, structured: string | undefined, structuredBudget = false): { currency: Currency; currencySource: ResearchIntentV2["currencySource"]; budget: number | null; conflict: string | null; unresolved: string | null;
+  bareAmount: { amount: string; multiplier: number } | null; parse: MoneyParse } {
+  // V2.2 WP-1: every stated amount is an explicit constraint or an explicit ambiguity (MoneyConstraints.ts).
+  const parse = parseMoneyConstraints(text, structured, { structuredBudget });
+  const CONFLICT = new Set(["CURRENCY_CONFLICT", "MULTIPLE_CURRENCIES", "INCONSISTENT_RANGE"]);
+  const conflictA = parse.ambiguities.find((a) => CONFLICT.has(a.kind)) ?? null;
+  const otherA = parse.ambiguities.find((a) => !CONFLICT.has(a.kind)) ?? null;
+  const conflict = conflictA ? conflictA.reason : null;
+  const unresolved = otherA ? (otherA.kind === "NO_CURRENCY" ? otherA.reason : `"${otherA.text}": ${otherA.reason}`) : null;
+  const budget = conflict ? null : parse.combined?.upperMinor ?? null;
+  return { currency: parse.currency, currencySource: parse.currencySource, budget, conflict, unresolved, bareAmount: parse.ambiguities.find((a) => a.bareAmount)?.bareAmount ?? null, parse };
 }
 
 /**
@@ -168,20 +115,33 @@ function findBrand(text: string): { brand: string; index: number } | null {
 export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntentV2 {
   const raw = input.request.slice(0, 2000).normalize("NFKC");
   // Instructions embedded in a request ("SYSTEM: ...", "ignore the budget") are content, not commands: cut them off.
-  const text = raw.split(/\b(?:SYSTEM|ASSISTANT|DEVELOPER)\s*:|\bignore (?:all |the |previous )/i)[0]!.trim() || raw;
+  const text = raw.split(/\b(?:SYSTEM|ASSISTANT|DEVELOPER)(?:\s+(?:NOTE|MESSAGE|PROMPT|INSTRUCTIONS?))?\s*:|\bignore (?:all |the |previous )/i)[0]!.trim() || raw;
   const assumptions: string[] = [];
   if (text !== raw) assumptions.push("Instruction-like text in the request was ignored (it cannot change budgets, approvals or verification).");
   const language: "en" | "ko" = /[가-힣]/.test(text) ? "ko" : "en";
 
-  const money = parseMoney(text, input.currency);
+  let money = parseMoney(text, input.currency, input.budgetMinor !== undefined);
+  // A structured budget without a structured currency is in the session currency: read bare amounts in that currency too.
+  if (input.budgetMinor !== undefined && input.currency === undefined) money = parseMoney(text, money.currency, true);
   let budgetMinor: number | null = null; let budgetSource: ResearchIntentV2["budgetSource"] = "NONE";
-  if (input.budgetMinor !== undefined) { budgetMinor = input.budgetMinor; budgetSource = "STRUCTURED_INPUT"; }
+  let budgetUpperInclusive = money.parse.combined?.upperInclusive ?? true;
+  const textMax = money.budget === null ? null : inclusiveMax(money.budget, budgetUpperInclusive);
+  if (input.budgetMinor !== undefined) {
+    // A structured budget can only TIGHTEN a budget stated in the text, never loosen it (an agent cannot raise the
+    // user's own limit by passing a larger budgetMinor).
+    if (textMax !== null && textMax < input.budgetMinor) { budgetMinor = money.budget; budgetSource = "PARSED_FROM_TEXT"; assumptions.push("The structured budget is higher than the budget in the request text; the lower (text) budget applies."); }
+    else { budgetMinor = input.budgetMinor; budgetSource = "STRUCTURED_INPUT"; budgetUpperInclusive = true; }
+  }
   else if (money.budget !== null) { budgetMinor = money.budget; budgetSource = "PARSED_FROM_TEXT"; }
+  const budgetMaxMinor = budgetMinor === null ? null : budgetSource === "STRUCTURED_INPUT" ? budgetMinor : inclusiveMax(budgetMinor, budgetUpperInclusive);
+  const budgetLowerMinor = money.budget === null && budgetSource !== "STRUCTURED_INPUT" ? null : inclusiveMin(money.parse.combined?.lowerMinor ?? null, money.parse.combined?.lowerInclusive ?? true);
   if (money.currencySource === "DEFAULT_USD") assumptions.push("Currency not given; using USD.");
-  const budgetConflict = budgetSource === "NONE" ? money.conflict : null;
+  const budgetConflict = money.conflict;
   if (budgetConflict) assumptions.push(`Budget not applied: ${budgetConflict}. Confirm the budget in ${money.currency}.`);
-  const budgetUnresolved = budgetSource === "NONE" && !budgetConflict ? money.unresolved : null;
-  if (budgetUnresolved) assumptions.push(`Budget not applied: ${budgetUnresolved}. Confirm the amount and currency.`);
+  const budgetUnresolved = !budgetConflict ? money.unresolved : null;
+  if (budgetUnresolved) assumptions.push(`Budget ${budgetMinor === null ? "not applied" : "needs confirmation"}: ${budgetUnresolved}. Confirm the amount and currency.`);
+  for (const c of money.parse.constraints) if (c.basis === "UNQUALIFIED_AMOUNT_AS_MAXIMUM") assumptions.push(`"${c.text}" has no limit word; it is applied as the maximum price.`);
+  for (const n of money.parse.notes) assumptions.push(`"${n.text}" is ${n.reason}; it is not applied.`);
   if (/no object|no budget|any price|price doesn'?t matter|가격 상관/i.test(text)) assumptions.push("User stated no budget limit.");
 
   // Exact target: a buy verb plus a brand followed by a model (or an explicit exactProduct).
@@ -236,7 +196,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // Requirements (N-01): lossless, per clause, with spans. "ideally X" is a nice-to-have; words inside the model name
   // are not requirements ("Tailspin Studio ANC Pro" does not ask for ANC). Structured input can only ADD requirements:
   // a structured niceToHave never softens a must-have stated in the text.
-  const requirements = extractRequirements(text, targetSpan, [target?.brand ?? "", target?.model ?? ""].filter(Boolean), { mustHave: input.mustHave ?? [], niceToHave: input.niceToHave ?? [] });
+  const requirements = extractRequirements(money.parse.masked, targetSpan, [target?.brand ?? "", target?.model ?? ""].filter(Boolean), { mustHave: input.mustHave ?? [], niceToHave: input.niceToHave ?? [] });
   const must = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "MUST").map((r) => r.capability!));
   const nice = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "NICE").map((r) => r.capability!).filter((c) => !must.has(c)));
   const unresolvedMust = requirements.filter((r) => r.strength === "MUST" && (!r.recognized || r.polarity === "EXCLUDED")).map((r) => r.key);
@@ -271,14 +231,15 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       fallback = nouns.length && primary !== nouns[0] ? nouns[0]! : null;
       if (!primary) assumptions.push("No English search could be formed from this Korean request; name the product type (for example in English) to search the catalog.");
     } else {
-      primary = text.replace(/(?:under|below|less than|budget(?: of)?)\s*[$€£]?\s*\d[\d,.]*\s*\w*/gi, " ").replace(/[^\p{L}\p{N}\s-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      primary = money.parse.masked.replace(/\b(?:under|below|less than|between|from|at least|at most|up to|max(?:imum)?|budget(?: of| is)?|around|about|for|or less|or more)\s*(?=\s|$)/gi, " ").replace(/[^\p{L}\p{N}\s-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120);
       fallback = null;
     }
   }
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
-  return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, target,
+  return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
+    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }

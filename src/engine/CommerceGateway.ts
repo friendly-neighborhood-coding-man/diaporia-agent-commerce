@@ -317,7 +317,8 @@ export class CommerceGateway {
       purchaseSessionId: ps.purchaseSessionId, state: ps.state, mode: intent.mode,
       intent: { currency: intent.currency, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource, mustHave: intent.mustHave, niceToHave: intent.niceToHave, objective: intent.objective, identityHints: intent.identityHints, assumptions: intent.assumptions,
         v2: { version: iv.version, language: iv.language, category: iv.category, attributes: iv.attributes, condition: iv.condition, conditionStated: iv.conditionStated, excludeBundles: iv.excludeBundles, target: iv.target, queries: iv.queries,
-          requirements: iv.requirements, unresolvedMust: iv.unresolvedMust } },
+          requirements: iv.requirements, unresolvedMust: iv.unresolvedMust,
+          money: { statedUpperMinor: iv.budgetMinor, upperInclusive: iv.budgetUpperInclusive, maxMinor: iv.budgetMaxMinor, lowerMinor: iv.budgetLowerMinor, constraints: iv.moneyConstraints, ambiguities: iv.moneyAmbiguities } } },
       identity: identityResult, candidates, unknowns, decision: plan.decision,
       researchTrace: { queries: plan.trace.queries, catalogCalls: plan.trace.catalogCalls, evidenceSearches: plan.trace.evidenceSearches, stops: plan.trace.stops, locale: plan.trace.locale,
         evidenceSteps: plan.trace.evidenceSteps.slice(0, 40) },
@@ -1508,7 +1509,8 @@ function errorText(e: unknown): string { return e instanceof Error ? e.message.s
 
 /** V1-shaped session intent from the V2 parse (stored on the purchase session; compare/checkout read currency and budget). */
 function routedFromV2(v: ResearchIntentV2): RoutedIntent {
-  return { mode: v.mode, currency: v.currency, budgetMinor: v.budgetMinor, budgetSource: v.budgetSource,
+  // V2.2 WP-1: the session budget is the enforceable inclusive maximum (every compare and prepare path reads it).
+  return { mode: v.mode, currency: v.currency, budgetMinor: v.budgetMaxMinor, budgetSource: v.budgetSource,
     identityHints: { brand: v.target?.brand ?? null, model: v.target?.model ?? null, variant: canonicalVariant(v.attributes, v.target?.kind ?? "STANDALONE", v.target?.accessoryNoun ?? null),
       condition: v.conditionStated ? v.condition : null, sku: null },
     category: v.category, mustHave: v.mustHave, niceToHave: v.niceToHave, objective: v.objective, assumptions: v.assumptions };
