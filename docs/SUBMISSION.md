@@ -22,7 +22,7 @@ AI assistants can already find products. The risky part is everything after that
 git clone <repo> && cd diaporia-agent-commerce
 npm ci                 # Node.js 22.13+
 npm run demo:full      # unattended end-to-end demo, offline, MOCK; writes demo-output/<run>/trace.json + transcript.md + trace.sha256
-npm test               # 909 automated tests (offline)
+npm test               # 913 automated tests (offline)
 npm run typecheck
 ```
 
@@ -47,22 +47,21 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 - No payment-gate bypass in any seen probe: IW-1.1 0/15, IW-2 0/19, IW-3 0/20, IW-4 0/48.
 - No unsafe recommendation on any seen set: builder eval 0/90 at both caps; IW-1.1, IW-2, IW-3 and IW-4 all 0.
 
-## Evaluation (state on HEAD e397ef9)
+## Evaluation (measured on code commit b2271bf)
 
 | Set | State correct | Unsafe | Gate bypasses | Notes |
 |---|---|---|---|---|
 | Builder eval (90, expanded / service caps) | 87/90 / 81/90 | 0 | 0 unsafe prepares | seen |
 | IW-1.1 (39) | 33/39 | 0 | 0/15 | seen |
-| IW-2 (48) | 46/48 | 0 | 0/19 | seen |
+| IW-2 (48) | 47/48 | 0 | 0/19 | seen |
 | IW-3 (46) | 38/46 | 0 | 0/20 | seen |
-| IW-4 (54) | 51/54, legitimate checkouts 19/21 | 0 | 0/48 | seen. It was 45/54 with 2 unsafe on V2.2 when first scored independently |
+| IW-4 (54) | 52/54, legitimate checkouts 20/21 | 0 | 0/48 | seen. It was 45/54 with 2 unsafe on V2.2 when first scored independently |
 | IW-5 (fresh, independent) | pending | | | Built and run by an independent evaluator; results go here unchanged |
 
 ## Open risks (not fixed, stated plainly)
 
 - **Payment routes accept the owner key without a passkey** (V22-05 / R-A-1). Research holds already require a passkey. Checkout authorization, owner-API mandates, the handoff and MOCK approval rely on the owner key, which is protected at rest by the OS-account boundary. Adding a passkey there is a deployment precondition. It is not done here, because a new approval step is the operator's decision.
 - **The service-isolation self-check trusts declared uids, and it runs only at startup** (V22-04, V22-08).
-- **An accessory sold by a third-party brand is refused** when requested for another brand's product (IW-4 i13). This is a false HOLD, which fails in the safe direction.
 - **Lexical evidence matching.** A manufacturer statement phrased very differently from the request can stay unverified. The outcome is INVESTIGATE, never an unsafe purchase.
 - **Nothing is deployed.** There is no remote host connector, no live PayPal, and no real merchant checkout.
 
@@ -70,7 +69,7 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 
 - [x] One-command reproducible demo with a verified trace (`npm run demo:full`)
 - [x] README quick start and an honest status table
-- [x] Automated tests pass (909) and the typecheck is clean
+- [x] Automated tests pass (913) and the typecheck is clean
 - [x] Secret scan clean (`npm run scan:secrets`)
 - [ ] Fresh independent IW-5 scored (pending)
 - [ ] CI status on the final HEAD (to be recorded at the final checkpoint)
