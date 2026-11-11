@@ -283,7 +283,7 @@ describe("R-A: the default dev startup writes no owner credential the AI host ca
   it("an owner key left in the file by 7d1fe4f is discarded and no longer accepted", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ra-dev-"));
     mkdirSync(join(cwd, ".data"));
-    const old = { clientToken: "dct_old_agent_token_0000000000000000", ownerKey: "dok_old_owner_key_00000000000000000", userId: "demo-user" };
+    const old = { clientToken: "dct_old_agent_token_test_00000", ownerKey: "dok_old_owner_key_test_000000", userId: "demo-user" };
     writeFileSync(join(cwd, ".data/dev-credentials.json"), JSON.stringify(old));
     const s = await boot(cwd);
     try {
