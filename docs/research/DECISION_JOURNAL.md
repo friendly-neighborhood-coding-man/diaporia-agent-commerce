@@ -181,3 +181,41 @@ thread, reproduced every HIGH finding).
 - **Offline dry run.** Fake providers at the real hostnames; every HTTP call accounted; $0.375 upper bound.
 - **Not re-verified.** The docs hosts are DNS-blocked from the cloud again, so the contracts were not re-verified. Live
   is still NOT AUTHORIZED.
+
+## J-18 · V21-01: an unrecognised budget is unresolved, never dropped (8c6d8d5)
+- **Root cause.** A budget had three outcomes: parsed, a currency conflict, or nothing. A limit word with a number and no
+  currency ("max 80", "150 이하") fell into "nothing", so no budget held anywhere.
+- **Change.** `ResearchIntentV2.budgetUnresolved`. It is set for an English or Korean limit word next to a number with
+  no currency when no structured currency applies. Quantities ("up to 30 hours"), model names ("AirPods Max 2") and
+  model numbers are excluded. The decision HOLDs, and the gate stores the item as an unresolved budget. Only an
+  owner-confirmed `CONFIRM_BUDGET` clears it (J-21).
+- **Tests.** tests/research-v2.1-remediation-budget.test.ts, reproduced failing first.
+
+## J-19 · V21-02: the model year is a hard identity attribute (050bae7)
+- **Root cause.** The year was part of the model string or ignored, so "Drift 15 (2025)" locked the 2024 listing.
+- **Change.** The extractor reads the year as a `year` variant axis and strips it from the model. A stated year excludes
+  other years and undated listings. No stated year with several years (or a dated and an undated listing) is AMBIGUOUS,
+  so the decision is HOLD with a question. In discovery, another year is ATTRIBUTE_MISMATCH and an undated listing is
+  ATTRIBUTE_UNKNOWN.
+- **Tests.** tests/research-v2.1-remediation-year.test.ts, on a builder-written mini world (tests/helpers/miniWorld.ts).
+  scripts/research-eval-v2/world.ts is untouched, so the frozen-case world pin holds.
+
+## J-20 · V21-03: evidence about one model year never counts for another (6d90ea3)
+- **Change.** In statementFrom:
+  - A dated product counts only a page that names its year.
+  - On a page that also names another year, only a clause that names this year counts.
+  - An undated product never counts a year-qualified page.
+  - Clauses about another generation ("last year's model", "전작") never count.
+- **Tests.** tests/research-v2.1-remediation-year-evidence.test.ts: the reviewer's scenario rebuilt with new products,
+  where only the other year's manufacturer page exists. It went from RECOMMEND to UNVERIFIED. Same-year controls
+  still count.
+
+## J-21 · V21-04 Option A: an agent proposes, only the owner confirms (292f1ec)
+- **Root cause.** `resolve_research_hold` appended a resolution from the agent's own `userStatement`. The server cannot
+  tell a relayed sentence from the user's words, so the agent could clear any open item. This is the SR-01 class.
+- **Change.** The tool now creates a single-use, expiring, digest-bound proposal and returns a link to the owner page
+  `/research-holds/<id>`. Confirming takes the owner key, then the review cookie, the CSRF token and an explicit tick, and
+  for a budget the amount typed again. Only resolutions marked `CONFIRMED_BY_OWNER` count.
+  Details: `docs/research/V2.1_REMEDIATION.md`.
+- **Residual.** A process that holds the owner key and forges browser headers looks the same as the human. The owner key
+  must stay outside the AI host's environment.
