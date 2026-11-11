@@ -1,10 +1,10 @@
 import type { Condition, IntentMode } from "../domain/types.js";
 import { parseDecimalToMinor, type Currency } from "../domain/money.js";
-import { ACCESSORY_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
+import { ACCESSORY_NOUN, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { extractRequirements, type StatedRequirement } from "./Requirements.js";
-import { uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
+import { productType, uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
 import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
 
 /**
@@ -49,6 +49,11 @@ export interface ResearchIntentV2 {
   requestedModel?: string | null;
   /** V2.3 structural guard: content words that became neither identity, requirement, category, money nor attribute. */
   uninterpreted?: UninterpretedWord[];
+  /** V2.4: product-type words not in the category vocabulary ("power station"); a candidate's title must contain them. */
+  productTypeWords?: string[];
+  /** V2.4: why the request is exact. NAMED (brand + model, no buy verb) falls back to discovery among the named model's
+   * variants when the variant is not stated, instead of holding. */
+  lockBasis?: "STRUCTURED" | "BUY" | "NAMED" | null;
   /** Variant attributes the user stated (colour, size, capacity, storage, memory, pack). */
   attributes: VariantAttributes;
   /** Requested condition; `conditionStated` false means "new" was assumed. */
@@ -76,7 +81,10 @@ export interface ResearchIntentV2 {
 }
 
 const BUY_EN = /\b(buy|purchase|order|checkout|get me|i want to buy|pick up)\b/i;
-const BUY_KO = /구매|구입|사줘|사 줘|주문|결제/;
+const BUY_KO = /구매|구입|사줘|사 줘|주문|결제|사고\s*싶|살래|사려고/;
+/** V2.4: words that compare or substitute a named product ("like the X", "X or Y", "cheaper than X"): no exact lock. */
+const COMPARE_WORDS = /\b(?:like|similar|alternatives?|instead|vs\.?|versus|compar\w*|than|except|rather|upgrade|successor|or|비슷한|대신|대체)\b/i;
+const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_NOUN.source}|${ACCESSORY_NOUN.source.replace(/^\\b|\\b$/g, "")}))s?\\s+(?:for|that fits?|compatible with|to fit)\\s+(?:(?:my|the|a|an|our|your)\\s+)?$`, "i");
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;
 /** Common words that are capitalized only because they start a sentence: never a brand. */
 const NOT_BRAND = new Set(`usd eur gbp jpy krw won dollars max min budget i buy purchase order get please need want looking find cheapest cheap best the a an my noise wireless laptop laptops headphones headphone
@@ -175,6 +183,11 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
         const end = new RegExp(`(?:^|\\s)(${ACCESSORY_NOUN.source.replace(/^\\b\(|\)\\b$/g, "")})e?s?\\s*$`, "i").exec(tail);
         if (tail && (end || /^(?:replacement|spare)\b/i.test(tail))) { kind = "ACCESSORY"; accessoryNoun = (end?.[1] ?? ACCESSORY_NOUN.exec(tail)?.[1] ?? "part").toLowerCase().replace(/\s+/g, " "); }
       }
+      // V2.4: "replacement ear tips for my Sonara Hush 2" asks for the part, named before the product it fits.
+      const lead = ACC_LEAD.exec(text.slice(0, brandHit.index));
+      if (kind === "STANDALONE" && lead) { kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, ""); }
+      // V2.4: "the Volteq PS-500 bundle with the 100W solar panel" asks for the bundle itself.
+      if (kind === "STANDALONE" && ex.model && /^\s*(?:bundle|kit|combo)\b/i.test(clause.slice(Math.max(0, clause.toLowerCase().indexOf(ex.model.toLowerCase())) + ex.model.length)) && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) kind = "BUNDLE";
       target = { brand: brandHit.brand, model, modelBasis: input.exactProduct?.model ? "MODEL_NUMBER" : ex.modelBasis, kind, accessoryNoun };
       const mi = text.toLowerCase().indexOf(model.toLowerCase());
       targetSpan = mi >= 0 ? [Math.min(brandHit.index, mi), mi + model.length] : [brandHit.index, brandHit.index + brandHit.brand.length];
@@ -185,7 +198,12 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     target = { brand: input.exactProduct.brand ?? target?.brand ?? null, model: input.exactProduct.model ?? target?.model ?? null, modelBasis: "MODEL_NUMBER",
       kind: target?.kind ?? "STANDALONE", accessoryNoun: target?.accessoryNoun ?? null, sku: input.exactProduct.sku ?? null };
   }
-  const exact = !!(input.exactProduct?.model || input.exactProduct?.sku) || (!!target && !!buy);
+  // V2.4: a request that names one product by brand and model ("Brisk RV-8 Pro", "Talus Ridge 2 tent", "I want the
+  // Lumora LP-1 projector") asks for that product, with or without a buy verb, unless it compares or substitutes.
+  const named = !!target && /^[A-Za-z][A-Za-z&'’-]+$/.test(target.brand ?? "") && !requestCapabilities(target.brand ?? "").length && !COMPARE_WORDS.test(text.replace(/\b(?:at least|at most|no more than|more than|less than)\b/gi, " "));
+  const structuredExact = !!(input.exactProduct?.model || input.exactProduct?.sku);
+  const exact = structuredExact || (!!target && (!!buy || named));
+  const lockBasis = structuredExact ? "STRUCTURED" as const : target && buy ? "BUY" as const : exact ? "NAMED" as const : null;
   const mode: IntentMode = exact ? "EXACT_PRODUCT_PURCHASE" : "PRODUCT_DISCOVERY";
   if (!exact && buy) assumptions.push("Purchase verb found but no exact model; running discovery first.");
 
@@ -272,12 +290,13 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   const covered: Array<[number, number]> = [...requirements.filter((r) => r.source === "REQUEST_TEXT").map((r) => r.span),
     ...[...money.parse.constraints.map((c) => c.span), ...money.parse.ambiguities.map((c) => c.span), ...money.parse.notes.map((c) => c.span)].filter((x): x is [number, number] => !!x), ...(targetSpan ? [targetSpan] : [])];
   const uninterpreted = uninterpretedWords(text, covered, [target?.brand ?? "", target?.model ?? "", target?.accessoryNoun ?? "", input.exactProduct?.brand ?? "", input.exactProduct?.model ?? "", input.exactProduct?.variant ?? ""]);
+  const productTypeWords = target ? [] : [...productType];
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
   return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
-    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted,
+    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted, productTypeWords, lockBasis,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }

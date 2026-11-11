@@ -61,6 +61,8 @@ export interface PlannerResult {
   legacyRouting: Map<string, RouterResult[]>;
   decision: Decision;
   trace: PlannerTrace;
+  /** V2.4: a NAMED request whose variant was open was researched as discovery among the named model's listings. */
+  namedFallback?: boolean;
 }
 
 export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): Promise<PlannerResult> {
@@ -131,7 +133,11 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
 
   // Candidates the decision will consider.
   let pool: CatalogProduct[];
-  if (exact) pool = resolution?.status === "LOCKED" ? [products.get(resolution.productId)!] : [];
+  // V2.4: a request that only names the product (no buy verb) and leaves its variant open ("Fabrikam Aero 14 laptop"
+  // when 16 GB and 32 GB exist) is researched as discovery among that model's listings; the model rule still excludes
+  // every other model, bundle and accessory.
+  const namedFallback = exact && resolution?.status === "AMBIGUOUS" && intent.lockBasis === "NAMED";
+  if (exact && !namedFallback) pool = resolution?.status === "LOCKED" ? [products.get(resolution.productId)!] : [];
   else pool = [...products.values()];
   const lock = resolution?.status === "LOCKED" ? { productId: resolution.productId } : null;
   // Exact-lock duplicates carry their offers on the locked product (Channel3 adapter merges them already).
@@ -208,9 +214,9 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
     return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, mustCaps), nice: pick(v, intent.niceToHave),
       listingClaims: [...intent.mustHave, ...propCaps.filter((x) => !x.startsWith("not:"))].filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length, notChecked: notChecked.get(p.productId) ?? (verdicts.has(p.productId) ? [] : caps.filter((c) => !v[c] || v[c]!.status === "UNVERIFIED")), limitReached };
   });
-  const exactFailure = exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
+  const exactFailure = namedFallback ? null : exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
   const decision = decide(intent, inputs, { exactLock: lock, exactFailure, weights: d.weights ?? null, now: d.now() });
-  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace };
+  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace, namedFallback };
 }
 
 /** V1 capability status (any non-listing claim decides; listing claims never do). */

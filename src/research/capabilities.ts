@@ -91,11 +91,17 @@ export function evidenceCapabilityOf(key: string): string {
 }
 const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** What one clause says about a proposition: all of its words in order (at most three words apart), negation governing them. */
-function propositionStatement(clause: string, id: string): boolean | null {
+const NUMBER_WORDS: Record<string, string> = { one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10" };
+/** V2.4: "two-person tent" states the same capacity as "2-person". */
+export const digitsForCounts = (s: string) => s.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)(?=[- ]?(?:persons?|people|man|seaters?|seats?|slices?|burners?|ports?|doors?|bays?)\b)/gi, (w) => NUMBER_WORDS[w.toLowerCase()]!);
+function propositionStatement(rawClause: string, id: string): boolean | null {
+  const clause = digitsForCounts(rawClause);
   const words = propositionWords(id);
   if (!words.length) return null;
   const num = numericProposition(id);
   if (num) return numericStatement(clause, num);
+  const ev = evaluativeStatement(clause, id);
+  if (ev !== undefined) return ev;
   const gap = "(?:[^\\p{L}\\p{N}]+[\\p{L}\\p{N}][\\p{L}\\p{N}'’-]*){0,3}?[^\\p{L}\\p{N}]*";
   const tok = (w: string) => /^\d+(?:\.\d+)?[a-z]+$/i.test(w) ? w.replace(/^(\d+(?:\.\d+)?)([a-z]+)$/i, (_, n: string, u: string) => `${escRe(n)}\\s?-?${escRe(u)}`) : /[가-힣]/.test(w) ? escRe(w).replace(/(?<=.)(?=.)/gu, "\\s*") : /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
   const re = new RegExp(`(?<![\\p{L}\\p{N}])${words.map(tok).join(gap)}(?![A-Za-z0-9])`, "iu");
@@ -112,7 +118,36 @@ function propositionStatement(clause: string, id: string): boolean | null {
   const rest = clause.normalize("NFKC").slice(m.index + m[0].length).replace(/\([^)]*\)/g, " ");
   if (/^\s*(?:기능|옵션|모드|장치)?\s*(?:이|가|은|는|도)?\s*(?:없|미지원|미탑재|불가|지원(?:하지|되지)\s*않|되지\s*않|안\s*(?:되|됨))/.test(rest)) return false;
   if (/^\s*(?:is|are|was|were)\s+(?:not|n't)\s+(?:included|supported|available|provided|offered)\b|^\s*(?:aren't|isn't)\s+(?:included|supported|available)\b|^[^.;]{0,30}\b(?:sold separately|not included|optional extra|purchased separately)\b/i.test(rest)) return false;
-  if (/없|않|미지원|불가|\b(?:not|no|never|without|lacks?|isn't|aren't|doesn't|don't|cannot|can't)\b/i.test(rest)) return null;
+  // V2.4: a negation in a separate predicate joined by "and"/"but" ("has soldered switches and is not hot-swappable")
+  // denies that other thing, not this one.
+  const sep = /^([^.;]*?)\s(?:and|but|while|whereas)\s/i.exec(rest);
+  const governed = sep ? sep[1]! : rest;
+  if (/없|않|미지원|불가|\b(?:not|no|never|without|lacks?|isn't|aren't|doesn't|don't|cannot|can't)\b/i.test(governed)) return null;
+  return true;
+}
+
+/**
+ * V2.4: an evaluative claim about a topic ("good with pet hair", "great for travel") is a judgement, so its wording
+ * varies: the clause must name the topic and judge it. A positive judgement ("excellent for pet hair", "handled pet hair
+ * very well") states it, a negative one ("struggled with pet hair", "poor on pet hair") denies it, and a negated
+ * positive ("not good with pet hair") denies it. Returns undefined when the proposition is not evaluative.
+ */
+const EVAL_POS = /\b(?:good|great|excellent|superb|outstanding|impressive|ideal|perfect|best|effective|strong|(?:very|really|extremely|remarkably)\s+well|well)\b/i;
+const EVAL_NEG = /\b(?:poor(?:ly)?|bad(?:ly)?|weak|mediocre|disappointing|terrible|awful|struggled|struggles|struggling|failed|fails|worst|ineffective)\b/i;
+function evaluativeStatement(clause: string, id: string): boolean | null | undefined {
+  const ws = id.slice(PROPOSITION_PREFIX.length).split("-");
+  if (!/^(?:good|great|excellent|ideal|perfect|best|effective)$/i.test(ws[0] ?? "") || !/^(?:with|for|at|on|against)$/i.test(ws[1] ?? "")) return undefined;
+  const topic = ws.slice(2).filter((w) => w && !PROP_STOP.has(w));
+  if (!topic.length) return null;
+  const c = clause.normalize("NFKC");
+  const tre = new RegExp(`(?<![\\p{L}\\p{N}])${topic.map((w) => escRe(w.replace(/s$/i, "")) + "s?").join("\\s+")}(?![\\p{L}\\p{N}])`, "iu");
+  const t = tre.exec(c);
+  if (!t) return null;
+  const win = c.slice(Math.max(0, t.index - 60), t.index + t[0].length + 40);
+  const pos = EVAL_POS.exec(win);
+  if (EVAL_NEG.test(win)) return pos ? null : false;
+  if (!pos) return null;
+  if (new RegExp(`\\b${NEG}\\b(?:\\s+\\S+){0,2}\\s*$`, "i").test(win.slice(0, pos.index))) return false;
   return true;
 }
 
@@ -141,14 +176,15 @@ function numericStatement(clause: string, p: NumericProposition): boolean | null
   // The other words ("USB-C power delivery") must be stated next to the number, before or after it ("USB-C with 90 W
   // power delivery", "90W USB-C charging"): within 40 characters on either side.
   const restRe = p.rest.map((w) => new RegExp(`(?<![\\p{L}\\p{N}])${tok(w)}(?![A-Za-z0-9])`, "iu"));
-  const re = new RegExp(`(?<![\\p{L}\\p{N}.])(\\d+(?:\\.\\d+)?)\\s?-?${unitRe}${p.unit ? "(?![A-Za-z])" : ""}`, "giu");
+  // V2.4: "4,000 Pa" and "2,000 ANSI lumens" are thousands, never "000".
+  const re = new RegExp(`(?<![\\p{L}\\p{N}.,])(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)\\s?-?${unitRe}${p.unit ? "(?![A-Za-z])" : ""}`, "giu");
   let verdict: boolean | null = null;
   for (const m of c.matchAll(re)) {
     const win = c.slice(Math.max(0, m.index! - 40), m.index! + m[0].length + 40);
     if (!restRe.every((r) => r.test(win))) continue;
     const before = c.slice(Math.max(0, m.index! - 40), m.index!);
     if (new RegExp(`\\b${NEG}\\b(?:\\s+\\S+){0,3}\\s*$`, "i").test(before)) return null;
-    const v = Number(m[1]);
+    const v = Number(m[1]!.replace(/,/g, ""));
     const ok = p.dir === "AT_LEAST" ? v >= p.n : p.dir === "AT_MOST" ? v <= p.n : v === p.n;
     if (verdict === null) verdict = ok; else if (verdict !== ok) return null;
   }
@@ -255,7 +291,9 @@ export const CATEGORIES: CategorySpec[] = [
 const ACCESSORY_CATEGORY = /accessor|\bcases?\b|chargers?|\bparts?\b|replacement|\bpads?\b|cushions?|cables?|adapters?|protectors?|straps?/i;
 
 /** The category a request names even when it asks for an accessory of it ("노트북 충전기" → laptops). Query building only. */
-export function mentionedCategory(text: string): CategorySpec | null { return CATEGORIES.find((c) => c.request.test(text)) ?? null; }
+export function mentionedCategory(text: string): CategorySpec | null {
+  return CATEGORIES.find((c) => [...text.matchAll(new RegExp(c.request.source, c.request.flags.replace("g", "") + "g"))].some((h) => !/^[a-z]/i.test(text.slice(h.index! + h[0].length, h.index! + h[0].length + 1)) || /[가-힣]/.test(h[0]))) ?? null;
+}
 /** N-07: an accessory noun right after a category noun ("laptop charger", "노트북 충전기") names the accessory, not the category. */
 const ACCESSORY_AFTER = /^\s*(?:chargers?|charging|cases?|sleeves?|bags?|stands?|cables?|cords?|adapters?|docks?|covers?|mounts?|pads?|cushions?|batter(?:y|ies)|straps?|skins?|protectors?|replacement|parts?|충전기|케이스|파우치|가방|거치대|케이블|어댑터|커버|배터리|보호\s*필름)(?![a-z])/i;
 /** "a sleeve for a 14 inch laptop", "case that fits my tablet": the category is what the accessory is FOR. */
@@ -264,7 +302,8 @@ export function requestCategory(text: string): CategorySpec | null {
   // Most specific first: "hiking boots" before "boots"; "running shoes" before generic shoes.
   for (const c of CATEGORIES) {
     const m = new RegExp(c.request.source, c.request.flags.replace("g", "") + "g");
-    const hits = [...text.matchAll(m)];
+    // V2.4: a category word inside a longer word is not the category ("backpacking tent" is not a backpack).
+    const hits = [...text.matchAll(m)].filter((h) => !/^[a-z]/i.test(text.slice(h.index! + h[0].length, h.index! + h[0].length + 1)) || /[가-힣]/.test(h[0]));
     const accessoryOf = (h: RegExpMatchArray) => ACCESSORY_AFTER.test(text.slice(h.index! + h[0].length)) || ACCESSORY_FOR.test(text.slice(0, h.index!));
     if (hits.length && !hits.some(accessoryOf)) return c;
     if (hits.length) return null; // "laptop charger", "a sleeve for a laptop charger…": an accessory request, not the category

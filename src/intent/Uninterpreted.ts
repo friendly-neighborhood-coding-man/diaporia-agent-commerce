@@ -29,6 +29,9 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
   usd eur gbp jpy krw dollar dollars euro euros won yen pound pounds bucks
   life keep keeps drinks drink safe adjustable built-in builtin setting lowest highest
   around near close range between ish dot com money object nothing else come comes came tool only travel
+  isn't aren't doesn't don't won't wasn't weren't hasn't haven't cannot can't shouldn't
+  weighs weigh weighing measures outputs rated
+  싶어요 싶어 싶다 싶습니다 싶은데 싶네요 해요 할래 할래요 사려고 살래 좀 요
   never exceed exceeds exceeding spend spending pay paying cap capped ceiling within tops go going wins win winner matters matter important priority day days week weeks business
   size sz oz fl inch inches in cm mm gen generation colour color edition 사이즈 인치 세대 색상 컬러
   추천 추천해줘 추천해 추천해주세요 사줘 사주세요 사고 사고싶어 구매 구매해줘 구매할 주문 주문해줘 찾아줘 찾아 찾고 찾는 원해 원합니다 필요 필요해 필요해요
@@ -37,6 +40,11 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
 
 export interface UninterpretedWord { text: string; span: [number, number] }
 
+/**
+ * The product-type words the last call accepted only because they name the product ("power station"). The decision
+ * engine requires them in a candidate's title, so they are checked, not trusted.
+ */
+export const productType: string[] = [];
 export function uninterpretedWords(text: string, covered: Array<[number, number]>, identityWords: string[] = []): UninterpretedWord[] {
   const ident = new Set(identityWords.flatMap((w) => w.toLowerCase().split(/[\s-]+/)).filter(Boolean));
   const inCovered = (a: number, b: number) => covered.some(([s, e]) => a >= s && b <= e);
@@ -46,8 +54,18 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
   for (const [re] of KO_QUERY_NOUNS) for (const m of text.matchAll(new RegExp(re.source, re.flags.replace("g", "") + "g"))) nounSpans.push([m.index!, m.index! + m[0].length]);
   for (const c of CATEGORIES) for (const m of text.matchAll(new RegExp(c.request.source, c.request.flags.replace("g", "") + "g"))) nounSpans.push([m.index!, m.index! + m[0].length]);
   for (const c of requestCapabilities(text)) nounSpans.push([c.index, c.end]);
+  // V2.4: the product the request names ("portable power station", "replacement ear tips", "파워스테이션") is what the
+  // catalog search and the category/identity checks are about: the last one or two words of the leading noun phrase
+  // are the product type, not an unchecked requirement. Adjective-like words in it stay subject to the guard.
+  const known = [...nounSpans];
+  for (const np of leadingNounPhrases(text, covered)) nounSpans.push(np);
+  productType.length = 0;
+  for (const [a, b] of nounSpans.slice(known.length)) if (!known.some(([s, e]) => a >= s && a < e) && !covered.some(([s, e]) => a >= s && a < e)) productType.push(text.slice(a, b));
   const out: UninterpretedWord[] = [];
-  for (const m of text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’+.-]*/gu)) {
+  const tokens = [...text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’+.-]*/gu)];
+  for (const [ti, m] of tokens.entries()) {
+    // "sleek design", "modern look": the noun of a decorative phrase is decorative too.
+    if (/^(?:design|look|looks|style|styling|finish|aesthetic)$/i.test(m[0]) && ti > 0 && DECORATIVE.test(tokens[ti - 1]![0])) continue;
     const raw = m[0].replace(/[.'’-]+$/, "");
     const a = m.index!, b = a + raw.length;
     const w = raw.toLowerCase().replace(/[’']s$/, "");
@@ -61,6 +79,32 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
     if (w.length < 2 && !/[가-힣]/.test(w)) continue;
     out.push({ text: raw, span: [a, b] });
   }
+  return out;
+}
+
+const ADJ_LIKE = /(?:ing|able|ible|ful|less|proof|ous|ive|al|ic|ish|ed|y)$/i;
+/** Spans of the product-type words: the last one or two words before the first function word, number or punctuation. */
+function leadingNounPhrases(text: string, covered: Array<[number, number]>): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const words = [...text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’+.-]*/gu)];
+  let run: RegExpMatchArray[] = [];
+  const flush = () => {
+    const content = run.filter((w) => !STOP.has(w[0].toLowerCase()));
+    // Only a phrase of ordinary nouns: the head (last word) and one noun before it ("power station", "ear tips").
+    const tail = content.slice(-2).filter((w, i, a) => i === a.length - 1 || !ADJ_LIKE.test(w[0]));
+    for (const w of tail) if (!/\d/.test(w[0]) && !ADJ_LIKE.test(w[0]) && !/[가-힣]/.test(w[0])) out.push([w.index!, w.index! + w[0].length]);
+  };
+  for (const w of words) {
+    const lw = w[0].toLowerCase();
+    const inCov = covered.some(([s, e]) => w.index! >= s && w.index! < e);
+    const fn = /^(?:with|without|that|which|for|under|below|over|above|at|and|or|but|in|on|to|from|by|than|is|are|can|must|should|ideally|preferably|max|budget|less|more)$/.test(lw);
+    if (fn || /^\d/.test(lw)) { if (run.length) { flush(); return out; } continue; }
+    if (inCov) { if (run.length) { flush(); return out; } continue; }
+    run.push(w);
+    const after = text.slice(w.index! + w[0].length, w.index! + w[0].length + 1);
+    if (/[,;.!?()]/.test(after)) { flush(); return out; }
+  }
+  if (run.length) flush();
   return out;
 }
 

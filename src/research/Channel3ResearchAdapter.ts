@@ -141,6 +141,10 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
     if (!title) return null;
     const brand = typeof item.brands?.[0]?.name === "string" ? item.brands[0].name.trim() : null;
     const ex = extractIdentity(title, brand);
+    // V2.4: the catalog's own accessory category ("tent-accessories", "Earbud Accessories") marks an accessory even when
+    // the title does not say so; a standalone category never overrides an accessory title.
+    const catText = `${typeof item.category?.slug === "string" ? item.category.slug : ""} ${typeof item.category?.title === "string" ? item.category.title : ""}`;
+    if (ex.kind === "STANDALONE" && /accessor|\bparts\b|spare/i.test(catText)) { ex.kind = "ACCESSORY"; ex.accessoryNoun = ex.accessoryNoun ?? "accessory"; }
     // Structured variant selection is authoritative; a title that disagrees makes that axis unknown (fail closed).
     const attrs: VariantAttributes = { ...ex.attributes };
     const conflicting: string[] = [];

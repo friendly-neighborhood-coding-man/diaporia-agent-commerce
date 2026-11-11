@@ -91,7 +91,7 @@ export const GENERIC_WORDS: ReadonlySet<string> = GENERIC;
 /** A word after a model mention that makes it a DIFFERENT model in the same family ("Nova 9" vs "Nova 9 Pro"). */
 export const MODEL_EXTENSIONS = new Set(["pro", "max", "plus", "ultra", "mini", "lite", "air", "se", "fe", "neo", "prime", "edge", "go", "xl", "fhd", "elite", "sport", "s", "x", "ii", "iii", "iv", "2", "3", "4", "5"]);
 
-export const ACCESSORY_NOUN = /\b(case|cover|sleeve|skin|charger|adapter|power supply|cable|cord|ear ?pads?|ear ?cushions?|ear ?tips|cushions?|carafe|strap|band|screen protector|protector|stand|mount|dock|filter|replacement battery|battery pack|remote|lid|brush head|bag|pouch|parts?|kit for)\b/i;
+export const ACCESSORY_NOUN = /\b(footprint|ground ?sheet|rain ?fly|brush ?kit|case|cover|sleeve|skin|charger|adapter|power supply|cable|cord|ear ?pads?|ear ?cushions?|ear ?tips|cushions?|carafe|strap|band|screen protector|protector|stand|mount|dock|filter|replacement battery|battery pack|remote|lid|brush head|bag|pouch|parts?|kit for)\b/i;
 export const BUNDLE_RE = /\bw\/|\bbundle\b|\bkit\b|\bcombo\b|\b\d+[- ]?(?:pack|pk|count|ct)\b|\bpack of \d+\b|\bset of \d+\b|\btwin[- ]pack\b|\s\+\s|\bwith (?:travel |carrying |charging |protective )?(?:case|charger|stand|dock|bag)\b/i;
 
 export function normalizeKey(s: string): string {
@@ -222,6 +222,10 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
     const w = raw.replace(/[,;:()|]+$/, "");
     const stop = /[,;:()|]$/.test(raw);
     const lw = w.toLowerCase().replace(/[’']s$/, "'s");
+    // V2.4: once the name has its number ("Ridge 2", "K75", "RV-8"), only a family extension ("Pro", "Lite", "Gen 2")
+    // or another number continues it. A descriptive or accessory word after it ("Ridge 2 Backpacking Tent", "K75 Lite
+    // Mechanical Keyboard", "Ridge 2 Footprint") is not part of the model.
+    if (words.some((x) => /\d/.test(x)) && !/\d/.test(w) && !isModelExtension(lw)) break;
     if (words.length && np === "MODEL") { words.push(w); if (stop || words.length >= 4) break; continue; }
     // V2.3: in a request, an all-lowercase word after a capitalized name ends it ("Nordvik Summit tent" → Summit).
     if (words.length && /^[a-z][a-z-]*$/.test(w) && words.every((x) => /^[A-Z0-9]/.test(x))) break;
@@ -263,7 +267,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
       attributes: { ...parseAttributes(head), ...(tAttr.capacity ? { capacity: tAttr.capacity } : {}), ...(tAttr.generation ? { generation: tAttr.generation } : {}) }, titleCondition,
       fitsBrand: targetNamesProduct && fitsBrand && (!brand || fitsBrand.toLowerCase() !== brand.toLowerCase()) ? fitsBrand : null };
   }
-  const kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
+  let kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
   const num = modelNumberToken(t.replace(/\(.*?\)/g, " "));
   let named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null);
   // V2.3 (V22-07): a technology acronym written after a model number describes it, it is not part of the model
@@ -281,8 +285,19 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
   const stripped = stripVersion(model);
   // V2.2 WP-3: "AP-400 Gen 2" is model number AP-400 plus generation 2 (an attribute), not a named model.
   if (basis === "NAMED_MODEL" && num && stripped && normalizeKey(stripped) === normalizeKey(num)) basis = "MODEL_NUMBER";
-  return { brand, model: stripped, modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
+  // V2.4: a part named right after the model ("Hush 2 Replacement Ear Tips", "Ridge 2 Footprint", "P7 Replacement Brush
+  // Heads, 4-Pack") is an accessory of that model, never the model itself, even without "for".
+  let accessoryNoun: string | null = null;
+  if (stripped) {
+    const at = t.toLowerCase().indexOf(stripped.toLowerCase());
+    const tail = at >= 0 ? t.slice(at + stripped.length).split(/[,(]|\s\+\s|\s+(?:with|for)\s/i)[0]!.trim() : "";
+    const part = new RegExp(`(?:^|\\s)(${PART_NOUN.source})s?$`, "i").exec(tail);
+    if (tail && (/^(?:replacement|spare)\b/i.test(tail) || part)) { kind = "ACCESSORY"; accessoryNoun = (part?.[1] ?? ACCESSORY_NOUN.exec(tail)?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, ""); }
+  }
+  return { brand, model: stripped, modelBasis: basis, kind, accessoryNoun, attributes, titleCondition };
 }
+/** Parts and consumables that only exist for another product (never a standalone product of their own). */
+export const PART_NOUN = /footprint|ground ?sheet|rain ?fly|ear ?tips?|ear ?pads?|ear ?cushions?|brush ?heads?|brush ?kit|side ?brush(?:es)?|mop ?pads?|dust ?bags?|filters?|refills?|cartridges?|nozzles?|attachments?|replacement parts?|spare parts?/;
 
 /**
  * Version / generation / tier suffixes that make a different model (V2.1): "Gen 2", "(2nd Gen)", "Mk II", "Mark II",

@@ -84,12 +84,16 @@ const isEntityToken = (tok: string, own: Set<string>) => {
  * of two capitalized words at the start of a clause ("Zorvex Aero has ..."). Used on snippets, never on page titles
  * (titles are Title Case). A single capitalized word that only starts a sentence is not detected (residual).
  */
-export function namesUnknownEntity(text: string, product: CatalogProduct): boolean {
-  const own = new Set([product.identity.brand, product.identity.model, product.identity.variant, product.title].filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9&'-]+/).filter(Boolean));
+export function namesUnknownEntity(text: string, product: CatalogProduct, asked: string[] = []): boolean {
+  const own = new Set([product.identity.brand, product.identity.model, product.identity.variant, product.title, ...asked].filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9&'-]+/).filter(Boolean));
   for (const sentence of text.split(/(?<=[.!?])\s+|;\s*|:\s+|\s+—\s+|\n+/)) {
     const toks = sentence.split(/[\s,()"“”]+/).map((t) => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9’']+$/g, "")).filter(Boolean);
     for (let i = 0; i < toks.length; i++) {
       if (!isEntityToken(toks[i]!, own)) continue;
+      // V2.4: a unit right after a number ("4,000 Pa", "2,000 ANSI lumens") and a component named by its type
+      // ("a LiFePO4 battery", "Cherry switches") describe this product; they are not another product.
+      if (i > 0 && /^\d[\d,.]*$/.test(toks[i - 1]!)) continue;
+      if (COMPONENT_NOUN.test(toks[i + 1] ?? "") || (/^[A-Z]{2,6}$/.test(toks[i]!) && COMPONENT_NOUN.test(toks[i + 2] ?? "") && /^[a-z]/.test(toks[i + 1] ?? ""))) continue;
       if (i > 0) return true;
       const next = toks[1];
       if (next && (/^[A-Z0-9]/.test(next)) && !NOT_ENTITY.has(next.toLowerCase())) return true;
@@ -97,6 +101,8 @@ export function namesUnknownEntity(text: string, product: CatalogProduct): boole
   }
   return false;
 }
+/** Parts and materials of a product: a capitalized word before one of these names a component or chemistry. */
+const COMPONENT_NOUN = /^(?:batter(?:y|ies)|cells?|chemistry|inverters?|switch(?:es)?|keycaps?|panels?|chips?|chipsets?|processors?|sensors?|motors?|drivers?|displays?|screens?|filters?|lens(?:es)?|lumens|codecs?|coatings?|fabric|leather|steel|aluminum|aluminium|glass|plastic|foam|membrane|stabilizers?|mounts?)$/i;
 /** Reported or second-hand speech: a review quoting another source, or a brand's claim, is not independent evidence. */
 const REPORTED = /\bper\s+(?:[a-z0-9-]+\.[a-z]{2,}|the\s+(?:manufacturer|brand|maker|company|vendor|seller))\b|\b(?:according to|via|says|said|claims?|claimed|reports?|reported|states?|stated|advertis(?:es|ed)|market(?:s|ed) as|touts?|touted|promises?)\b|^\s*source\s*:|(?:에 따르면|라고 (?:한다|밝혔|주장)|주장한다|광고한다)/i;
 
@@ -168,7 +174,8 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   if (generation ? !hitGens.has(generation) : hitGens.size > 0) return null;
   const otherGenInHit = !!generation && [...hitGens].some((g) => g !== generation);
   const otherYearInHit = (!!year && [...hitYears].some((y) => y !== year)) || otherGenInHit;
-  const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product) || otherYearInHit;
+  const asked = capability.startsWith(PROPOSITION_PREFIX) ? [capability.slice(PROPOSITION_PREFIX.length).replace(/-/g, " ")] : [];
+  const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit;
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
   const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+/));
   for (const clause of clauses) {
@@ -179,7 +186,7 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     const clauseGens = generationsIn(clause);
     if ([...clauseGens].some((g) => g !== generation)) continue;
     const clauseNamesThis = namesThis(clause) && (!otherYearInHit || (!!year && clauseYears.has(year)) || (!!generation && clauseGens.has(generation)));
-    if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product)) continue;
+    if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product, asked)) continue;
     if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
     // V2.2 WP-4: a clause about a kit, bundle or combo describes another configuration than a standalone product
     // ("the kit includes two batteries" says nothing about the tool-only listing).

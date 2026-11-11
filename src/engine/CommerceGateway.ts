@@ -273,6 +273,11 @@ export class CommerceGateway {
       } } : {}),
     });
     const res = plan.resolution;
+    if (plan.namedFallback) {
+      intent.mode = "PRODUCT_DISCOVERY";
+      ps = this.sessions.researchAsDiscovery(ps, intent);
+      this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_MODE_CHANGED", { from: "EXACT_PRODUCT_PURCHASE", to: "PRODUCT_DISCOVERY", reason: "named product with an open variant" });
+    }
     const unknowns: string[] = [];
     let identityResult: Record<string, unknown> = { status: "NOT_APPLICABLE" };
     let locked: { identity: ProductIdentity; productId: string } | null = null;
@@ -281,7 +286,7 @@ export class CommerceGateway {
     else if (res) { identityResult = { status: "NOT_FOUND", code: res.code, reason: res.reason, excluded: res.excluded.slice(0, 12) }; unknowns.push(res.reason); }
     const byId = new Map(plan.products.map((p) => [p.productId, p]));
     const order = plan.decision.ranking.map((r) => r.productId);
-    const shown = res?.status === "AMBIGUOUS" ? res.options.map((o) => o.productId) : res?.status === "NOT_FOUND" ? [] : order;
+    const shown = plan.namedFallback ? order : res?.status === "AMBIGUOUS" ? res.options.map((o) => o.productId) : res?.status === "NOT_FOUND" ? [] : order;
     const candidates = shown.map((pid) => byId.get(pid)!).filter(Boolean).map((p) => {
       const rk = plan.decision.ranking.find((r) => r.productId === p.productId);
       const v = plan.verdicts.get(p.productId) ?? {};
