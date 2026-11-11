@@ -179,6 +179,13 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
   return { brand, model, modelBasis: basis, kind, accessoryNoun: null, attributes, titleCondition };
 }
 
+/**
+ * Version / generation / tier suffixes that make a different model (V2.1): "Gen 2", "(2nd Gen)", "Mk II", "Mark II",
+ * "V2", "2nd generation", and Hangul tiers ("프로", "2세대"). A Hangul particle ("CX-500은") is not a suffix.
+ */
+const VERSION_SUFFIX = /^(?:gen\d*|generation|mk\d*|mkii+|mark|v\d+|\d+(?:st|nd|rd|th)|(?:\d+세대|세대|프로|맥스|플러스|울트라|미니|라이트|에어|엣지|신형)(?:는|은|의|가|이|를|을|와|과|도|에서|에|로)?)$/;
+export const isModelExtension = (token: string) => MODEL_EXTENSIONS.has(token) || VERSION_SUFFIX.test(token);
+
 /** Identity key: brand + model, separator- and case-insensitive. Equal keys = same product family. */
 export function familyKey(brand: string | null, model: string | null): string {
   return normalizeKey(`${brand ?? ""}${model ?? ""}`);
@@ -195,8 +202,8 @@ export function mentionsExactModel(text: string, model: string): boolean {
   const own = new Set(model.toLowerCase().split(/[^a-z0-9]+/));
   for (const m of text.matchAll(re)) {
     const after = text.slice((m.index ?? 0) + m[0].length).trimStart();
-    const next = /^[-\s]?([A-Za-z0-9]+)/.exec(after)?.[1]?.toLowerCase();
-    if (next && MODEL_EXTENSIONS.has(next) && !own.has(next)) continue;
+    const next = /^[-\s(]*([A-Za-z0-9가-힣]+)/.exec(after)?.[1]?.toLowerCase();
+    if (next && isModelExtension(next) && !own.has(next)) continue;
     return true;
   }
   return false;

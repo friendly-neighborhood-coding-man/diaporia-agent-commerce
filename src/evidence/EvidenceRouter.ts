@@ -5,7 +5,7 @@ import type { Store } from "../store/Database.js";
 import { CAPABILITY_KEYWORDS, CAPABILITY_NEGATED, CAPABILITY_PHRASE } from "./capabilityText.js";
 import { UsageLimitError, type UsageLedger, type UsageProvenance } from "../metering/UsageLedger.js";
 import type { EvidenceSearchRequest, EvidenceSearchResponse } from "./providers.js";
-import { SourceRegistry, hostOf } from "./SourceRegistry.js";
+import { SourceRegistry, hostOf, type DomainValidity } from "./SourceRegistry.js";
 import { classifyItem, evidenceKindOf, judgeV2, statementFrom, type CapabilityVerdict, type EvidenceItem } from "./EvidenceV2.js";
 import { capabilityPhrase } from "../research/capabilities.js";
 
@@ -79,9 +79,9 @@ function fingerprint(text: string): string {
 export class EvidenceRouter {
   constructor(private readonly store: Store, private readonly ledger: UsageLedger, private readonly search: IndependentSearchProvider | null,
     private readonly inspector: PageInspectionProvider | null,
-    private readonly opts: { billable: boolean; now?: () => number; policy?: "v1" | "v2"; sources?: { expertReviewDomains?: string[]; forumDomains?: string[]; retailerDomains?: string[]; officialDomains?: Record<string, string[]> } } = { billable: false }) {
+    private readonly opts: { billable: boolean; now?: () => number; policy?: "v1" | "v2"; sources?: { expertReviewDomains?: string[]; forumDomains?: string[]; retailerDomains?: string[]; officialDomains?: Record<string, string[]>; domainValidity?: Record<string, DomainValidity>; asOf?: string; maxAgeDays?: number } } = { billable: false }) {
     this.policy = opts.policy ?? "v1";
-    this.registry = new SourceRegistry(opts.sources ?? {});
+    this.registry = new SourceRegistry({ ...(opts.sources ?? {}), now: opts.now ?? Date.now });
     store.db.exec(`CREATE TABLE IF NOT EXISTS evidence_items (id TEXT PRIMARY KEY, product_key TEXT NOT NULL, capability TEXT NOT NULL, value INTEGER NOT NULL,
         kind TEXT NOT NULL, host TEXT NOT NULL, url TEXT NOT NULL, provider TEXT NOT NULL, provenance TEXT NOT NULL, quote TEXT NOT NULL, observed_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS evidence_by_product ON evidence_items(product_key, capability);
@@ -108,12 +108,12 @@ export class EvidenceRouter {
     // Stored evidence is reclassified with the CURRENT registry on read (a registry change takes effect immediately).
     for (const cap of capabilities) for (const r of this.store.db.prepare("SELECT * FROM evidence_items WHERE product_key=? AND capability=? AND observed_at>?").all(productKey, cap, this.now() - EVIDENCE_TTL_MS) as Array<Record<string, string | number>>) {
       const [quote, publishedDate, requestId] = String(r.quote).split("\u0000");
-      items[cap]!.push(classifyItem({ url: String(r.url), domain: String(r.host), sourceClass: this.registry.classify(String(r.url), brand, sellers), value: Number(r.value) === 1, quote: quote ?? "",
+      items[cap]!.push(classifyItem({ url: String(r.url), domain: String(r.host), sourceClass: this.registry.classify(String(r.url), brand, sellers, publishedDate || null), value: Number(r.value) === 1, quote: quote ?? "",
         publishedDate: publishedDate || null, provider: String(r.provider), requestId: requestId || null, observedAt: new Date(Number(r.observed_at)).toISOString() }, this.now()));
     }
-    // Manufacturer/independent claims already on the product (fixtures) count under the same rule.
+    // Claims already on the product (fixtures, catalog data) count only if the registry confirms their declared source (V2.1).
     for (const c of product.capabilities) if (items[c.capability] && c.source.kind !== "CATALOG_LISTING")
-      items[c.capability]!.push(classifyItem({ url: c.source.url, domain: hostOf(c.source.url), sourceClass: c.source.kind === "MANUFACTURER" ? "MANUFACTURER" : c.source.kind === "INDEPENDENT_REVIEW" ? "EXPERT_REVIEW" : "UNKNOWN",
+      items[c.capability]!.push(classifyItem({ url: c.source.url, domain: hostOf(c.source.url), sourceClass: this.registry.confirmDeclared(c.source.kind, c.source.url, brand, null),
         value: c.value, quote: c.source.title, publishedDate: null, provider: "CATALOG_FIXTURE", requestId: null, observedAt: c.source.retrievedAt }, this.now()));
     const verdicts = (): Record<string, CapabilityVerdict> => Object.fromEntries(capabilities.map((c) => [c, judgeV2(c, items[c]!)]));
     let v = verdicts();
@@ -145,7 +145,7 @@ export class EvidenceRouter {
       for (const h of resp.hits) for (const cap of caps) {
         const st = statementFrom(h, product, cap);
         if (!st || items[cap]!.some((x) => x.url === h.url)) continue;
-        const it = classifyItem({ url: h.url, domain: hostOf(h.url), sourceClass: this.registry.classify(h.url, brand, sellers), value: st.value, quote: st.quote, publishedDate: h.publishedDate,
+        const it = classifyItem({ url: h.url, domain: hostOf(h.url), sourceClass: this.registry.classify(h.url, brand, sellers, h.publishedDate), value: st.value, quote: st.quote, publishedDate: h.publishedDate,
           provider: this.search.name, requestId: resp.requestId, observedAt: nowIso }, this.now());
         items[cap]!.push(it); gained = true;
         const id = createHash("sha256").update(`${productKey}|${cap}|${h.url}`).digest("hex").slice(0, 24);

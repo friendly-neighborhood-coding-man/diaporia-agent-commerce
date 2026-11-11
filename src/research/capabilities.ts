@@ -103,12 +103,33 @@ export function clauseStatement(clause: string, id: string): boolean | null {
   if (!spec) return null;
   if (spec.absent?.test(clause)) return false;
   const kw = spec.statement.exec(clause);
-  if (!kw) return null;
+  if (!kw) return koreanStatement(clause, id);
   const before = clause.slice(Math.max(0, kw.index - 40), kw.index);
   // The negator must sit right before the phrase (at most three words between): "has no active noise cancelling",
   // "is 1080p, not 4K", "does not have a backlit keyboard". "not as strong as" after the phrase is not a denial.
   if (new RegExp(`\\b${NEG}\\b(?:\\s+(?:have|has|support|supports|offer|offers|come with|include|includes|a|an|any|the|real|true|active|truly|fully|really|keep|keeps|drinks)){0,3}\\s*$`, "i").test(before)) return false;
   return true;
+}
+
+/**
+ * Korean statements (V2.1). The negation must follow the phrase directly, with at most a feature noun and a particle
+ * between ("노이즈 캔슬링 기능이 없습니다", "멀티포인트를 지원하지 않습니다", "멀티포인트 미지원"), or be a 비/미 prefix
+ * ("비방수"). Anything looser ("소음 걱정 없이") is not a denial.
+ */
+const KO_STATEMENT: Record<string, RegExp> = {
+  active_noise_cancellation: /노이즈\s*캔슬링|노이즈\s*캔슬레이션|노캔|액티브\s*노이즈\s*캔슬링/, wireless: /무선|블루투스/, multipoint: /멀티\s*포인트|두\s*기기\s*동시\s*연결/,
+  over_ear: /오버\s*이어/, waterproof: /방수/, usb_c_charging: /(?:USB[- ]?C|C\s*타입|타입\s*C)\s*(?:포트\s*)?(?:로\s*)?충전/i, backlit_keyboard: /키보드\s*백라이트|백라이트\s*키보드/,
+  programmable: /예약\s*기능/, thermal_carafe: /보온\s*(?:포트|카라페|서버)/, dishwasher_safe: /식기\s*세척기/, lumbar_support: /요추\s*지지|허리\s*지지/,
+  adjustable_armrests: /팔걸이\s*(?:높이\s*)?조절|조절\s*(?:식|가능한)\s*팔걸이/,
+};
+const KO_NEG_AFTER = /^\s*(?:기능|모드|지원|성능)?\s*(?:은|는|이|가|을|를|도)?\s*(?:지원\s*(?:하지|되지|을\s*하지)\s*않|지원\s*안|미지원|없|불가|안\s*(?:됨|된|되|돼)|되지\s*않|하지\s*않)/;
+export function koreanStatement(clause: string, id: string): boolean | null {
+  const re = KO_STATEMENT[id];
+  if (!re) return null;
+  const m = re.exec(clause);
+  if (!m) return null;
+  if (/(?:비|미|무)$/.test(clause.slice(0, m.index))) return false;
+  return !KO_NEG_AFTER.test(clause.slice(m.index + m[0].length));
 }
 
 // ------------------------------------------------------------------------------------------------ categories
