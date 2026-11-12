@@ -127,7 +127,8 @@ describe("N-01 (IW-2 seen regression): a word that narrows the product noun is a
     expect([...i.unresolvedMust].sort()).toEqual([...keys].sort());
     for (const k of keys) expect(i.requirements.find((x) => x.key === k)).toMatchObject({ recognized: false, strength: "MUST", source: "REQUEST_TEXT" });
   });
-  it.each(["cheap wireless headphones", "the best office chair", "electric kettle under $100", "Buy Adatum Summit 24 oz bottle", "Buy the Contoso CX-500 + Travel Case Bundle", "가성비 좋은 무선 이어폰", "insulated water bottle 32 oz"])(
+  it.each(["cheap wireless headphones", "the best office chair", "electric kettle under $100", "Buy Adatum Summit 24 oz bottle", "Buy the Contoso CX-500 + Travel Case Bundle", "가성비 좋은 무선 이어폰"])(
+    // V2.17: "insulated" in "insulated water bottle 32 oz" is now a must-have the listing title or evidence must state.
     "controls (price/quality words, units, recognized capabilities, the exact product's own name): %s → nothing unrecognized", (r) => {
       expect(parse(r).unresolvedMust).toEqual([]);
     });

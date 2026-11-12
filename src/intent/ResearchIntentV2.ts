@@ -498,7 +498,20 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     unresolvedMust.push(key);
     assumptions.push(`"${u.text}" describes the product asked for, so it is a must-have: the listing title or evidence about the product must state it.`);
   }
-  const contextWords = leftover.filter((u) => !uninterpreted0.includes(u) && !modifierWords.includes(u));
+  const contextAll = leftover.filter((u) => !uninterpreted0.includes(u) && !modifierWords.includes(u));
+  // V2.17 (IW-17 d22, hard word accounting): a leftover word is background only inside a purpose phrase ("for my
+  // camping trips", "because my son ...") or conversation; any other word ("cooling only") is a must-have that must
+  // be checked, never dropped as context.
+  const purpose = (u: UninterpretedWord) => /\b(?:for|because|since|so|when|while|as|my|our|his|her|their)\b[^,.;!?]{0,40}$/i.test(text.slice(Math.max(0, u.span[0] - 48), u.span[0]));
+  const contextWords = contextAll.filter(purpose);
+  const tailWords = new Set(requestTail.map((w) => w.toLowerCase()));
+  for (const u of contextAll.filter((x) => !purpose(x) && !tailWords.has(x.text.toLowerCase()) && !(target && /^[A-Z]/.test(x.text)))) {
+    const key = `unrecognized:${slugOf(u.text)}`;
+    if (requirements.some((r) => r.key === key)) continue;
+    requirements.push({ key, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT", note: "TYPE_MODIFIER" } as StatedRequirement);
+    unresolvedMust.push(key);
+    assumptions.push(`"${u.text}" is stated in the request and nothing else accounts for it, so it is a must-have research has to confirm.`);
+  }
   for (const u of contextWords) requirements.push({ key: `context:${slugOf(u.text)}`, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT", evidenceCapability: null });
   if (contextWords.length) assumptions.push(`Read as context, not as requirements: ${contextWords.map((u) => `"${u.text}"`).join(", ")}. State a requirement explicitly ("with ...", "must ...") to have it checked.`);
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);

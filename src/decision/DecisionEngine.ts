@@ -246,7 +246,9 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   if (live.length && !inCur.length) bl.push({ code: "PRICE_NOT_IN_REQUESTED_CURRENCY", detail: `no listing priced in ${intent.currency}` });
   if (usable.length && !usable.some((o) => o.availability === "IN_STOCK")) bl.push({ code: "AVAILABILITY_UNKNOWN", detail: "stock is not stated by any offer" });
   if (usable.length && !usable.some((o) => o.listedIdentity.condition === intent.condition)) bl.push({ code: "CONDITION_UNCONFIRMED", detail: `no offer confirms condition ${intent.condition}` });
-  const priceOffers = [...usable].sort((a, b) => a.itemPriceMinor - b.itemPriceMinor);
+  // V2.17 (IW-17 b08): only offers in the requested condition price the product (a refurbished listing never meets a
+  // budget for a new purchase); with none, there is no price.
+  const priceOffers = usable.filter((o) => o.listedIdentity.condition === intent.condition).sort((a, b) => a.itemPriceMinor - b.itemPriceMinor);
   const lowest = priceOffers[0] ?? null;
   // V2.2 WP-1: the enforceable inclusive maximum ("under $120" allows at most $119.99) and the lower end of a stated range.
   const maxMinor = intent.budgetMaxMinor !== undefined ? intent.budgetMaxMinor : intent.budgetMinor;

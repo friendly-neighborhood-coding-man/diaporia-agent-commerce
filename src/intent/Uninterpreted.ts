@@ -43,6 +43,12 @@ const KO_CONVERSATIONAL = /^(?:안녕하세요|안녕|감사합니다|고맙습�
 
 /** V2.15 (IW-15 d04): materials ("stainless steel", "glass") describe what the product is made of: never dropped as generic. */
 const MATERIAL_WORD = /^(?:stainless|steel|plastic|glass|leather|mesh|aluminium|aluminum|wood|wooden|bamboo|ceramic|titanium|carbon|cast|iron|copper|brass|silicone|cotton|wool|linen|nylon|canvas)$/i;
+/**
+ * V2.17 (IW-17 d07/d22): a generic word that can still describe what the product is or does ("water", "cooling",
+ * "electric", "manual") is never dropped; only page and shopping words stay generic. Closed list.
+ */
+const GENERIC_SKIP = new Set(`product products item items thing things unit units device devices model models version edition series set kit pack bundle combo new latest best top good great nice popular cheap quality brand official genuine original standard regular basic classic premium deluxe value budget home house everyday daily`.split(/\s+/));
+const GENERIC_CHECKED = (w: string) => !GENERIC_SKIP.has(w) && /^[a-z]{3,}$/.test(w);
 export interface UninterpretedWord { text: string; span: [number, number] }
 
 /**
@@ -94,7 +100,7 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
     }
     if (inCovered(a, b) || covered.some(([s, e]) => a >= s && a < e) || nounSpans.some(([s, e]) => a >= s && a < e) || nounSpans.some(([s, e]) => a >= s && b <= e)) continue;
     if (/^\d+(?:st|nd|rd|th)$/.test(w) || /^\d+(?:인분|인용|구|세대)$/.test(w) || DECORATIVE.test(w)) continue;
-    if (STOP.has(w) || STOP.has(bare) || ident.has(w) || ident.has(bare) || (GENERIC_WORDS.has(w) && !MATERIAL_WORD.test(w)) || COLOR_WORDS[w] || COLOR_WORDS[bare]) continue;
+    if (STOP.has(w) || STOP.has(bare) || ident.has(w) || ident.has(bare) || (GENERIC_WORDS.has(w) && !MATERIAL_WORD.test(w) && !(GENERIC_CHECKED(w) && /^[a-z]/.test(raw))) || COLOR_WORDS[w] || COLOR_WORDS[bare]) continue;
     if (Object.keys(parseAttributes(raw)).length || /^\d+(?:\.\d+)?[a-z]{1,4}$/i.test(w) && Object.keys(parseAttributes(raw.replace(/(\d)([a-z])/i, "$1 $2"))).length) continue;
     // V2.16 (IW-16 d03): "sealed" is the condition only next to a condition word ("factory sealed", "new sealed",
     // "sealed box"); otherwise it describes the product ("saltwater sealed") and is checked.
