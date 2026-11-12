@@ -300,7 +300,12 @@ export class CommerceGateway {
     const res = plan.resolution;
     // Post-submission cycle 1: a lowercase brand guess the catalog did not confirm was researched as discovery.
     const ivUsed = plan.intent ?? iv;
-    if (ivUsed !== iv && ivUsed.mode === "PRODUCT_DISCOVERY" && intent.mode !== "PRODUCT_DISCOVERY") {
+    if (iv.brandProposal && ivUsed === iv.brandProposal.fallback) {
+      // EXPERIMENT (typed-semantic-v02): the proposed brand spelling was not verified; the session keeps the as-written reading.
+      Object.assign(intent, routedFromV2(ivUsed));
+      if (intent.mode === "PRODUCT_DISCOVERY") ps = this.sessions.researchAsDiscovery(ps, intent);
+      this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_MODE_CHANGED", { from: routedFromV2(iv).mode, to: intent.mode, reason: "proposed brand spelling not verified by the catalog" });
+    } else if (ivUsed !== iv && ivUsed.mode === "PRODUCT_DISCOVERY" && intent.mode !== "PRODUCT_DISCOVERY") {
       Object.assign(intent, routedFromV2(ivUsed));
       ps = this.sessions.researchAsDiscovery(ps, intent);
       this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_MODE_CHANGED", { from: "EXACT_PRODUCT_PURCHASE", to: "PRODUCT_DISCOVERY", reason: "lowercase brand guess not listed by the catalog" });

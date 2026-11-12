@@ -139,6 +139,25 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
       if (exact && !familyFound()) await optional(() => runQuery(intent.queries.primary, "PRIMARY"), "the exact-product query");
     }
   }
+  if (intentIn.brandProposal) {
+    // EXPERIMENT (typed-semantic-v02): verify an interpreter's Latin brand spelling against the catalog brands this
+    // request's own primary query returned. Exact normalized equality only; an alternative spelling that is also listed,
+    // or the request's own spelling being a catalog brand, makes the mapping ambiguous. Unverified: the results are
+    // discarded and the request is researched as the parser read it (fail closed to the original unresolved identity).
+    const bp = intentIn.brandProposal;
+    const nb = (x: string | null | undefined) => (x ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    const listed = new Set([...products.values()].map((p) => nb(p.identity.brand)).filter(Boolean));
+    const alt = bp.alternatives.map(nb).filter((a) => a && a !== nb(bp.brand));
+    const verified = listed.has(nb(bp.brand)) && !alt.some((a) => listed.has(a)) && !listed.has(nb(bp.original));
+    if (verified) trace.stops.push(`the catalog lists the brand "${bp.brand}" for "${bp.original}" (no alternative spelling listed)`);
+    else {
+      trace.stops.push(`the proposed brand spelling "${bp.brand}" for "${bp.original}" was not verified by the catalog (${listed.has(nb(bp.brand)) ? "ambiguous: another spelling or the original is also listed" : "not listed"}); researched as written`);
+      products.clear(); offers.clear(); excludedMerchantOffers.length = 0;
+      intent = bp.fallback;
+      exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
+      if (intent.queries.primary.trim()) await optional(() => runQuery(intent.queries.primary, "PRIMARY"), "the as-written query");
+    }
+  }
   if (!exact && intent.queries.fallback && passing() < 5) await runQueryGuarded(intent.queries.fallback, "FALLBACK");
 
   let resolution: ResolutionV2 | null = null;
