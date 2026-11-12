@@ -30,7 +30,8 @@ export function modelCode(model: string | null | undefined): string | null {
   return k < 0 ? null : ws.slice(0, k + 1).join(" ");
 }
 function codeRe(code: string): RegExp {
-  const body = code.split(/[\s-]+/).filter(Boolean).map(esc).join("[-\\s]*");
+  // V2.14: a unit model number matches spaced or joined ("40cm" / "40 cm").
+  const body = code.split(/[\s-]+/).filter(Boolean).map((w) => esc(w).replace(/^(\d+(?:\\\.\d+)?)([A-Za-z]+)$/, "$1\\s*$2")).join("[-\\s]*");
   return new RegExp(`(?<![A-Za-z0-9])${body}(?![A-Za-z0-9])`, "gi");
 }
 /** Words after one mention of the code, up to punctuation, a connector or 5 words. */

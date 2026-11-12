@@ -45,6 +45,8 @@ export interface PlannerDeps {
   now: () => number;
   weights?: RankingWeights | null;
   limits?: Partial<PlannerLimits>;
+  /** V2.14: true when the offer's merchant is known to be ineligible (registry not ACTIVE, payee revoked). */
+  merchantIneligible?: (offer: MerchantOffer) => Promise<boolean>;
 }
 export interface PlannerTrace {
   queries: Array<{ query: string; page: number; results: number; purpose: "PRIMARY" | "FALLBACK" | "NEXT_PAGE" | "VARIANT_DETAIL" }>;
@@ -74,6 +76,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   if (!supported) trace.stops.push(`Catalog cannot price in ${intent.currency}; listings come back in other currencies and cannot be compared with the budget.`);
   const products = new Map<string, CatalogProduct>();
   const offers = new Map<string, MerchantOffer[]>();
+  const excludedMerchantOffers: string[] = [];
   const exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
 
   const baseQuery = (query: string): ProductSearchQuery => ({ text: query, query, category: intent.category, brand: exact ? intent.target!.brand : null, model: exact ? intent.target!.model : null,
@@ -82,7 +85,14 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
     maxPriceMinor: !exact && supported && (intent.budgetMaxMinor ?? intent.budgetMinor) !== null ? (intent.budgetMaxMinor ?? intent.budgetMinor) : null,
     conditions: intent.condition === "used" ? ["used"] : intent.condition === "new" ? ["new"] : undefined, limit: 20 });
   const fetchOffers = async (ps: CatalogProduct[]) => {
-    for (const p of ps) if (!offers.has(p.productId)) offers.set(p.productId, (await d.research.findOffers(p.identity)).filter((o) => o.productId === p.productId));
+    for (const p of ps) if (!offers.has(p.productId)) {
+      const own = (await d.research.findOffers(p.identity)).filter((o) => o.productId === p.productId);
+      // V2.14 (IW-14 b15): an offer from a merchant known to be ineligible (suspended or closed registration, revoked
+      // payee) is never price evidence: it never counts for the budget, the lowest price or a recommendation.
+      const keep: MerchantOffer[] = [];
+      for (const o of own) { let bad = false; if (d.merchantIneligible) { try { bad = await d.merchantIneligible(o); } catch { bad = false; } } if (!bad) keep.push(o); else excludedMerchantOffers.push(o.offerId); }
+      offers.set(p.productId, keep);
+    }
   };
   const runQuery = async (query: string, purpose: "PRIMARY" | "FALLBACK"): Promise<void> => {
     let token: string | null = null;

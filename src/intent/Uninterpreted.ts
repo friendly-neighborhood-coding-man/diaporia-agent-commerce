@@ -79,7 +79,17 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
     const a = m.index!, b = a + raw.length;
     const w = raw.toLowerCase().replace(/[’']s$/, "");
     const bare = w.replace(/(?:은|는|이|가|을|를|의|도|에|로|으로|와|과|만|이나|나|이랑|랑|에서|까지|부터|보다|처럼|용)$/u, "");
-    if (!w || /^\d/.test(w) && !/[a-z가-힣]/i.test(w)) continue; // bare numbers belong to money/attributes
+    if (!w || /^\d/.test(w) && !/[a-z가-힣]/i.test(w)) {
+      // V2.14 (IW-14 i05): a bare number right after a name word, with no unit after it ("ostrevo sight 600"), may be a
+      // model number that no identity parse claimed: it blocks instead of vanishing.
+      const prev = tokens[ti - 1]?.[0] ?? ""; const next = tokens[ti + 1]?.[0] ?? "";
+      const prevEnd = ti > 0 ? tokens[ti - 1]!.index! + prev.length : -1;
+      const adjacent = prevEnd >= 0 && /^\s+$/.test(text.slice(prevEnd, a));
+      if (w && /^\d+$/.test(w) && adjacent && /^[A-Za-z][a-z]+$/i.test(prev) && !STOP.has(prev.toLowerCase()) && !/^(?:size|sz|gen|generation|series|mark|mk|version|v|no|number|top|under|over|for|of|than|least|most|about|around|to|from|between|and|or|at|by|x)$/i.test(prev)
+        && !(next && (Object.keys(parseAttributes(`${w} ${next}`)).length || /^(?:[a-z]{1,4}|%|°.*|x|-)$/i.test(next) && next.toLowerCase() !== "or"))
+        && !covered.some(([s0, e]) => a >= s0 && a < e) && !ident.has(w)) out.push({ text: raw, span: [a, b] });
+      continue;
+    }
     if (inCovered(a, b) || covered.some(([s, e]) => a >= s && a < e) || nounSpans.some(([s, e]) => a >= s && a < e) || nounSpans.some(([s, e]) => a >= s && b <= e)) continue;
     if (/^\d+(?:st|nd|rd|th)$/.test(w) || /^\d+(?:인분|인용|구|세대)$/.test(w) || DECORATIVE.test(w)) continue;
     if (STOP.has(w) || STOP.has(bare) || ident.has(w) || ident.has(bare) || GENERIC_WORDS.has(w) || COLOR_WORDS[w] || COLOR_WORDS[bare]) continue;

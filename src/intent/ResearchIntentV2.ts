@@ -96,7 +96,7 @@ const COMPARE_WORDS = /\b(?:like|similar|alternatives?|instead|vs\.?|versus|comp
  * V2.9: part nouns that a REQUEST names after (or before "for") a model: "Skyrell X4 battery", "Spinlo T3 Belt",
  * "dive housing for the Kestra A5". Request side only: a listing titled "… Frying Pan" is still a standalone pan.
  */
-const REQUEST_PART_NOUN = /^(?:batter(?:y|ies)|belts?|pans?|bread pans?|housings?|dive housings?|blades?|bulbs?|tips?|nozzles?|wheels?|tires?|tyres?|chargers?|straps?|cases?|covers?|lids?|pads?|filters?|brush(?:es)?|mounts?|propellers?|props?)$/i;
+const REQUEST_PART_NOUN = /^(?:batter(?:y|ies)|belts?|pans?|bread pans?|housings?|dive housings?|blades?|bulbs?|tips?|nozzles?|wheels?|tires?|tyres?|chargers?|straps?|cases?|covers?|lids?|pads?|filters?|brush(?:es)?|mounts?|propellers?|props?|discs?|disks?|chains?|baskets?|cables?|inserts?|guards?)$/i;
 const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_NOUN.source}|${ACCESSORY_NOUN.source.replace(/^\\b|\\b$/g, "")}|${REQUEST_PART_NOUN.source.replace(/^\^\(\?:|\)\$$/g, "")}))s?\\s+(?:for|that fits?|compatible with|to fit)\\s+(?:(?:my|the|a|an|our|your)\\s+)?$`, "i");
 /**
  * V2.12 (IW-12 a09): "<noun phrase> for the <brand> <model>" asks for something that goes with that model, whatever the
@@ -109,7 +109,11 @@ function anyAccessoryLead(before: string): string | null {
   const m = ANY_ACC_LEAD.exec(before);
   if (!m) return null;
   const ws = m[1]!.split(/\s+/).filter((w) => !/^(?:a|an|the|new|spare|replacement|extra|second|another)$/i.test(w));
-  if (!ws.length || ws.some((w) => NOT_PART_LEAD.test(w) || /(?:ing|ed|ly)$/i.test(w) || GENERIC_WORDS.has(w.toLowerCase()) && !REQUEST_PART_NOUN.test(w))) return null;
+  // V2.14 (IW-14 a21): an -ing/-ed modifier before a noun is part of the noun phrase ("grinding discs", "cutting
+  // wheels"); only the head word must be a noun (never "looking", "shopping around").
+  const head = ws.at(-1)!;
+  const nounHead = REQUEST_PART_NOUN.test(head) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(head) || ACCESSORY_NOUN.test(head) || (/^[a-z]{3,}s$/i.test(head) && !/(?:ss|us|is|ous)$/i.test(head));
+  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)) || GENERIC_WORDS.has(w.toLowerCase()) && !REQUEST_PART_NOUN.test(w))) return null;
   return ws.join(" ").replace(/s$/, "");
 }
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;
@@ -245,7 +249,12 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       const lead = ACC_LEAD.exec(text.slice(0, brandHit.index));
       const anyLead = !lead && kind === "STANDALONE" ? anyAccessoryLead(text.slice(segStart <= brandHit.index ? segStart : 0, brandHit.index)) : null;
       if (anyLead) { kind = "ACCESSORY"; accessoryNoun = anyLead; }
-      if ((kind === "STANDALONE" || (kind === "ACCESSORY" && accessoryNoun === "part")) && lead) { kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, ""); }
+      if ((kind === "STANDALONE" || (kind === "ACCESSORY" && accessoryNoun === "part")) && lead) {
+        kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, "");
+        // V2.14: the whole noun phrase before "for" is the part ("grinding disc", never just "disc").
+        const wide = anyAccessoryLead(text.slice(segStart <= brandHit.index ? segStart : 0, brandHit.index));
+        if (wide && wide.endsWith(accessoryNoun) && wide.length > accessoryNoun.length) accessoryNoun = wide;
+      }
       // V2.4: "the Volteq PS-500 bundle with the 100W solar panel" asks for the bundle itself.
       if (kind === "STANDALONE" && ex.model && /^\s*(?:bundle|kit|combo)\b/i.test(clause.slice(Math.max(0, clause.toLowerCase().indexOf(ex.model.toLowerCase())) + ex.model.length)) && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) kind = "BUNDLE";
       // V2.5: "the GV-12 with the pet tool kit bundle" asks for that bundle; its named contents must be in the title.
@@ -256,8 +265,14 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
         if (withBundle && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) { kind = "BUNDLE"; bundleWords = withBundle[1]!.trim().split(/\s+/).filter((w) => w && !/^(?:and|the|a|an|of)$/i.test(w)); } else withBundle = null;
       }
       target = { brand: brandHit.brand, model, modelBasis: input.exactProduct?.model ? "MODEL_NUMBER" : ex.modelBasis, kind, accessoryNoun };
-      const mi = text.toLowerCase().indexOf(model.toLowerCase());
-      targetSpan = mi >= 0 ? [Math.min(brandHit.index, mi), mi + model.length + (withBundle ? withBundle[0].length : 0)] : [brandHit.index, brandHit.index + brandHit.brand.length];
+      let mi = text.toLowerCase().indexOf(model.toLowerCase());
+      // V2.14: the request may space a unit model number ("Bough 40 cm") that the model joins ("Bough 40cm").
+      let mlen = model.length;
+      if (mi < 0) {
+        const re = new RegExp(model.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/^(-?\d+(?:\\\.\d+)?)([a-z]+)$/i, "$1\\s*$2")).join("\\s+"), "i").exec(text);
+        if (re) { mi = re.index; mlen = re[0].length; }
+      }
+      targetSpan = mi >= 0 ? [Math.min(brandHit.index, mi), mi + mlen + (withBundle ? withBundle[0].length : 0)] : [brandHit.index, brandHit.index + brandHit.brand.length];
     }
   }
   // Structured exact input wins over text parsing (brand/model/SKU given by the caller).
@@ -431,7 +446,38 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     if (beforeType) productTypeWords.push(lw); else nounModifiers.push(lw);
     return false;
   });
-  const contextWords = leftover.filter((u) => !uninterpreted0.includes(u));
+  // V2.14 (IW-14 d10/d12, global token accounting): in a discovery request, a word written right before the product
+  // noun ("folding trekking poles", "very quiet portable fridge") says what kind of product is wanted. It is a MUST
+  // requirement checked like any other, never background context.
+  const typeHeads = new Set([...productTypeWords, ...(cat?.noun ? cat.noun.split(/\s+/) : [])].map((w) => w.toLowerCase()));
+  const nounAt = (k: number) => [...text.matchAll(new RegExp(PRODUCT_NOUN_PHRASES.source, "gi"))].some((m) => m.index === k);
+  const modifiesType = (u: UninterpretedWord) => {
+    if (target || language !== "en" || !(/^[a-z][a-z-]+$/.test(u.text) || (u.span[0] === 0 && /^[A-Z][a-z-]+$/.test(u.text) && /(?:ing|ed|y|ful|less|able|ible|ive|ous|al|ic|proof)$/.test(u.text)))) return false;
+    let k = u.span[1];
+    for (let n = 0; n < 4; n++) {
+      const m = /^\s+([A-Za-z][A-Za-z-]*)/.exec(text.slice(k));
+      if (!m) return false;
+      const w = m[1]!.toLowerCase(); const at = k + m[0].length - m[1]!.length;
+      if (typeHeads.has(w) || nounAt(at)) {
+        // A word that is part of a category's own name ("electric scooter", "robot vacuum") names the category.
+        const phrase = text.slice(u.span[0], at + m[1]!.length).toLowerCase();
+        const pc = requestCategory(phrase); const hc = requestCategory(w);
+        return !(pc && (!hc || pc.id === hc.id) && new RegExp(pc.request.source, "i").exec(phrase)?.index === 0);
+      }
+      if (!/^(?:very|really|super|extra|and)$/.test(w) && !GENERIC_WORDS.has(w) && !leftover.some((x) => x.span[0] === at)) return false;
+      k = at + m[1]!.length;
+    }
+    return false;
+  };
+  const modifierWords = leftover.filter((u) => !uninterpreted0.includes(u) && modifiesType(u));
+  for (const u of modifierWords) {
+    const key = `unrecognized:${slugOf(u.text)}`;
+    if (requirements.some((r) => r.key === key)) continue;
+    requirements.push({ key, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT", note: "TYPE_MODIFIER" } as StatedRequirement);
+    unresolvedMust.push(key);
+    assumptions.push(`"${u.text}" describes the product asked for, so it is a must-have: the listing title or evidence about the product must state it.`);
+  }
+  const contextWords = leftover.filter((u) => !uninterpreted0.includes(u) && !modifierWords.includes(u));
   for (const u of contextWords) requirements.push({ key: `context:${slugOf(u.text)}`, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT", evidenceCapability: null });
   if (contextWords.length) assumptions.push(`Read as context, not as requirements: ${contextWords.map((u) => `"${u.text}"`).join(", ")}. State a requirement explicitly ("with ...", "must ...") to have it checked.`);
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);

@@ -179,7 +179,11 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   if (lock && p.productId !== lock.productId) dq.push({ code: "NOT_LOCKED_IDENTITY", detail: "not the locked exact product" });
   // V2.2 WP-3 (H-3): a listing of another model (AP-250 for an AP-400 request) is never eligible, locked or not.
   const wanted = intent.requestedModel;
-  if (wanted && !(normalizeKey(p.identity.model ?? "") === normalizeKey(wanted) || mentionsExactModel(p.title, wanted, { generation: f.attributes.generation ?? null })))
+  // V2.14 (IW-14 i17): the locked listing's model is the requested model plus the tail the request wrote ("Icebox -22"
+  // + "Dual Zone"); the resolver already required every tail word, so the locked model is the requested one.
+  const lockedTail = !!lock && p.productId === lock.productId && normalizeKey(p.identity.model ?? "").startsWith(normalizeKey(wanted ?? "")) && !!wanted
+    && normalizeKey(p.identity.model ?? "") === normalizeKey([wanted, ...(intent.requestTail ?? [])].join(" ")).slice(0, normalizeKey(p.identity.model ?? "").length);
+  if (wanted && !lockedTail && !(normalizeKey(p.identity.model ?? "") === normalizeKey(wanted) || mentionsExactModel(p.title, wanted, { generation: f.attributes.generation ?? null })))
     dq.push({ code: "NOT_REQUESTED_MODEL", detail: `not model ${wanted} (listing: ${p.identity.model || "model not stated"})` });
   // V2.4: the product type the request names outside the category vocabulary ("power station", "ear tips") must be
   // in the listing's title; otherwise the candidate is a different kind of product as far as research can tell.
@@ -279,6 +283,8 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
     const negative = key.startsWith("not:");
     const v = c.must[evidenceCapabilityOf(key)];
     if (!negative && identityWord(key, p)) { satisfied.push({ key, basis: "CATALOG_IDENTITY", sources: [] }); continue; }
+    // V2.14: a word that describes the product type ("folding" trekking poles) is stated by a listing title that names it.
+    if (!negative && (r as { note?: string } | undefined)?.note === "TYPE_MODIFIER" && r && new RegExp(`(?<![A-Za-z])${r.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z])`, "i").test(p.title)) { satisfied.push({ key, basis: "CATALOG_IDENTITY", sources: [] }); continue; }
     const holds = negative ? v?.status === "VERIFIED_FALSE" : v?.status === "VERIFIED_TRUE";
     const fails = negative ? v?.status === "VERIFIED_TRUE" : v?.status === "VERIFIED_FALSE";
     if (holds) { satisfied.push({ key, basis: v!.basis === "MANUFACTURER" ? "MANUFACTURER" : "TWO_EXPERT_GROUPS", sources: v!.evidence.filter((e) => e.counts).map((e) => e.url).slice(0, 4) }); continue; }

@@ -42,7 +42,7 @@ export interface StatedRequirement {
   proposition?: string;
   evidenceCapability?: string | null;
   claimType?: "PROPERTY" | "PERFORMANCE";
-  note?: "DECORATIVE" | "CATEGORY_WORD" | "CONTEXT";
+  note?: "DECORATIVE" | "CATEGORY_WORD" | "CONTEXT" | "TYPE_MODIFIER";
 }
 
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red|ably)?|bonus|if possible|if available|optional(?:ly)?|a plus|would love|bonus points)\b|있으면 좋|선호|가능하면|되면 좋/i;

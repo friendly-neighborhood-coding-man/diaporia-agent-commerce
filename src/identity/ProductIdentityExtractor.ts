@@ -249,8 +249,16 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
   }
   const words: string[] = [];
   const parts = rest.split(/\s+/).filter(Boolean);
+  let skip = false;
   for (const [i, raw0] of parts.entries()) {
+    if (skip) { skip = false; continue; }
     const raw = raw0.replace(/^[\u2212\u2013](?=\d)/, "-");
+    // V2.14 (IW-14 i06/i09/i32): the spaced form of a unit model number ("Bough 30 cm", "Grit 18 V") is the same model
+    // number as "Bough 30cm" / "Grit 18V".
+    const unitNext = (parts[i + 1] ?? "").replace(/[,;:()|]+$/, "");
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?$/.test(raw) && /^(?:l|ml|v|w|kw|wh|mah|qt|cm|mm)$/i.test(unitNext)) {
+      words.push(`${raw}${unitNext}`); skip = true; if (/[,;:()|]$/.test(parts[i + 1] ?? "") || words.length >= 4) break; continue;
+    }
     // V2.13 (IW-13 i04): a signed number right after the name ("Cinder -10") is the model number, sign included.
     if (words.length && !words.some((x) => /\d/.test(x)) && /^-\d+(?:\.\d+)?[,;:()|]*$/.test(raw)) { words.push(raw.replace(/[,;:()|]+$/, "")); if (/[,;:()|]$/.test(raw) || words.length >= 4) break; continue; }
     if (/^[,;:()|/–—+&-]/.test(raw)) break;
@@ -281,7 +289,7 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // V2.13 (IW-13 i24/i27, Swath 40V): a number with a unit right after a name that has no number yet ("Mikra 30L",
     // "Swath 40V") is the model number that tells the siblings apart, never only a spec. Storage, pack and size units
     // stay attributes.
-    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?(?:l|ml|v|w|kw|wh|mah|qt)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?(?:l|ml|v|w|kw|wh|mah|qt|cm|mm)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);

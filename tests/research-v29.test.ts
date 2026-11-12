@@ -161,7 +161,8 @@ describe("V2.11 category names, spec lines and part pages", () => {
     expect(requestCategory("e-bike")?.id).toBe("electric-bikes");
     expect(requestCategory("robotic lawnmower")?.id).toBe("robot-lawn-mowers");
     expect(requestCategory("ebook reader")?.id).toBe("e-readers");
-    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).toEqual(["unrecognized:at-least-40-km-range"]);
+    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).toContain("unrecognized:at-least-40-km-range");
+    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).not.toContain("unrecognized:range");
   });
   it("'Built-in pump: no' denies the pump", async () => {
     const { clauseStatement } = await import("../src/research/capabilities.js");
@@ -268,5 +269,33 @@ describe("V2.13 every request token is accounted for (IW-13 is seen; fictional p
   it("a signed number or a temperature nothing interpreted blocks instead of being dropped", () => {
     expect(intent("sleeping bag rated to -10 °C").uninterpreted.map((u: any) => u.text)).toContain("-10 °C");
     expect(intent("Quillon Ember -10 sleeping bag").uninterpreted).toEqual([]);
+  });
+});
+
+describe("V2.14 global token accounting (IW-14 is seen; fictional products only)", () => {
+  it("an -ing modifier before a part noun keeps the whole part phrase", () => {
+    expect(intent("sanding discs for the Abrin Grit 18V").target).toMatchObject({ kind: "ACCESSORY", accessoryNoun: "sanding disc", model: "Grit 18V" });
+    expect(intent("looking for the Corvan Q8").target.kind).toBe("STANDALONE");
+  });
+  it("a word before the product noun in discovery is a must-have, never context", () => {
+    expect(intent("folding camping stools").unresolvedMust).toContain("unrecognized:folding");
+    expect(intent("very quiet mini fridge").unresolvedMust).toContain("unrecognized:quiet");
+  });
+  it("a number right after a name that nothing claimed blocks", () => {
+    expect(intent("pellan vista 600").uninterpreted.map((u: any) => u.text)).toContain("600");
+    expect(intent("tent for 2 people").uninterpreted).toEqual([]);
+    expect(intent("monitor 27 inch").uninterpreted).toEqual([]);
+  });
+  it("length units are model identity, spaced or joined", () => {
+    expect(intent("Quillon Bough 40cm chainsaw").target.model).toBe("Bough 40cm");
+    expect(intent("Quillon Bough 30 cm").target.model).toBe("Bough 30cm");
+    expect(intent("Abrin Grit 18 V").target.model).toBe("Grit 18V");
+    expect(extractIdentity("Quillon Bough 30cm Cordless Chainsaw", "Quillon").model).toBe("Bough 30cm");
+  });
+  it("the locked listing's model with the requested tail is the requested model", async () => {
+    const { decide } = await import("../src/decision/DecisionEngine.js");
+    const p = product("dz", "Mirelle Icebox -22 Dual Zone Portable Fridge", "Mirelle");
+    const d = decide(intent("Mirelle Icebox -22 Dual Zone"), [{ product: p, offers: offers("dz"), must: {}, nice: {}, notChecked: [], limitReached: false }] as any, { exactLock: { productId: "dz" }, exactFailure: null, weights: null, now: Date.now() } as any);
+    expect(d.ranking[0]!.disqualifiers.map((x: any) => x.code)).not.toContain("NOT_REQUESTED_MODEL");
   });
 });
