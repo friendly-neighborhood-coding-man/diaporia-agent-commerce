@@ -1,6 +1,6 @@
 import json, sys, os, random, threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-sys.path.insert(0, "/tmp/kcat/hk"); from call import call
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from call import call
 # usage: run.py <requests.json> <trial> <arms,comma> <outdir> [workers]
 reqs = json.load(open(sys.argv[1])); trial = sys.argv[2]; arms = sys.argv[3].split(","); outdir = sys.argv[4]; W = int(sys.argv[5]) if len(sys.argv) > 5 else 10
 os.makedirs(outdir, exist_ok=True)

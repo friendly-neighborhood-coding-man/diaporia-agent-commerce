@@ -1,11 +1,12 @@
 import json, subprocess, sys, time, os
+HERE = os.path.dirname(os.path.abspath(__file__))
 # usage: call.py <arm> <request> -> prints JSON record
-def call(arm, request, root="/tmp/kcat/wt/research/category-count", timeout=240):
+def call(arm, request, root=os.environ.get("KCAT_ROOT", HERE), timeout=240):
     prompt = open(f"{root}/prompts/{arm}.txt").read() + json.dumps({"request": request}, ensure_ascii=False) + "\n"
     schema = open(f"{root}/schemas/{arm}.json").read()
     t0 = time.time()
     try:
-        p = subprocess.run(["/tmp/kcat/hk/hk.sh", "--json-schema", schema], input=prompt, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run([os.environ.get("KCAT_HK", os.path.join(HERE, "hk.sh")), "--json-schema", schema], input=prompt, capture_output=True, text=True, timeout=timeout)
         out = json.loads(p.stdout)
     except Exception as e:
         return {"arm": arm, "request": request, "error": repr(e)[:500], "wall_ms": int((time.time()-t0)*1000)}
