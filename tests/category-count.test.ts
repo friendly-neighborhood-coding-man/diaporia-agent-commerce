@@ -3,7 +3,7 @@ import { ARMS, FACETS, FINE, STATUSES, TAXONOMY, fineOf, groupOf, categoriesOf }
 import { validateDocument, projectToV11, classify, documentSchema } from "../src/intent/hybrid/category/CategoryIntent.js";
 import { SemanticIntentV1 } from "../src/intent/hybrid/SemanticIntent.js";
 
-const unit = (o: Record<string, unknown>) => ({ attribute: null, operator: null, value: null, unit: null, target: "item", component: null, resolution: "resolved", en: "x", brand_latin: null, brand_latin_alternatives: [], ...o });
+const unit = (o: Record<string, unknown>): any => ({ attribute: null, operator: null, value: null, unit: null, target: "item", component: null, resolution: "resolved", en: "x", brand_latin: null, brand_latin_alternatives: [], ...o });
 
 describe("category-count taxonomies", () => {
   it("every arm partitions the seven fine categories exactly once", () => {
@@ -16,8 +16,8 @@ describe("category-count taxonomies", () => {
   it("is a nested refinement chain K3 -> K7", () => {
     const order = ["K3", "K4", "K5", "K6", "K7"] as const;
     for (let i = 1; i < order.length; i++) for (const f of FINE) {
-      const fineGroup = TAXONOMY[order[i]].find((c) => c.fine.includes(f))!.fine;
-      const coarseGroup = TAXONOMY[order[i - 1]].find((c) => c.fine.includes(f))!.fine;
+      const fineGroup = TAXONOMY[order[i]!].find((c) => c.fine.includes(f))!.fine;
+      const coarseGroup = TAXONOMY[order[i - 1]!].find((c) => c.fine.includes(f))!.fine;
       expect(fineGroup.every((x) => coarseGroup.includes(x))).toBe(true);
     }
   });
