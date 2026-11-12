@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { ARMS, FACETS, FINE, OPERATORS, RESOLUTIONS, STATUSES, TARGETS, categoriesOf, fineOf, groupOf, type Arm, type Fine } from "./CategoryTaxonomy.js";
 
-export const CATEGORY_SCHEMA_VERSION = "diaporia.semantic-category.v1.0.0" as const;
+export const CATEGORY_SCHEMA_VERSION = "diaporia.semantic-category.v1.1.0" as const;
 export const CATEGORY_PROJECTION_VERSION = "category-projection-1.0.0" as const;
 
 const Span = z.string().min(1).max(300);

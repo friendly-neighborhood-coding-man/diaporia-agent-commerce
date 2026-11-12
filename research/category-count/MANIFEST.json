@@ -1,11 +1,11 @@
 {
- "schema": "diaporia.semantic-category.v1.0.0",
- "template": "bd91fb3ba61220798e83a0945d588f84d5c807fc27c93583197cf78f2c46a022",
- "examples": "49312addc12c2383a4b3fd848e5a7a97cbab36f87b13ca1c6d859bde21881898",
+ "schema": "diaporia.semantic-category.v1.1.0",
+ "template": "c0c698ebab1c1619ce3c104c96aeebcb240a2159dac98086eb371a22348967e4",
+ "examples": "7ce30502acd66ae6b6e5aa7a27a9ba90132e0bc7170809c8bb8c4294794b8ccf",
  "arms": {
   "K3": {
-   "prompt": "9df50cc0a0b7e5a965f7fcd8dc0d73136c32110ee8c23a451fafca641bc1c329",
-   "promptChars": 11014,
+   "prompt": "535d5460bb75581e603ac6d0e517306fe59fff64019fce90286a1c797bbf734f",
+   "promptChars": 12298,
    "schema": "becb16eaea39c0d39b5ecde0c956e8943dbdb229cf83fcc704a53a85b8d5eeb2",
    "categories": [
     "IDENTITY",
@@ -14,8 +14,8 @@
    ]
   },
   "K4": {
-   "prompt": "e5999eea9eafe8fa7bf81b06e0896faeacfa7eda247ad193f18bada60797ef5b",
-   "promptChars": 11149,
+   "prompt": "5031e5c54dd367a8a63ee9567ad19f20f7363e1029db7957ac8eb46e71ec23ea",
+   "promptChars": 12433,
    "schema": "dac05f3920b02862ce1a064d6c5b940a4b67753001f95c7cf7b8a77d0a7b20bf",
    "categories": [
     "IDENTITY",
@@ -25,8 +25,8 @@
    ]
   },
   "K5": {
-   "prompt": "6188e1e8b606ee4ed32c24214a675b4b0c0111577b34a5f7fcf221cf87f3c7ff",
-   "promptChars": 11127,
+   "prompt": "d6d7e1391c6e8ec85388ef557bb4c2720925edcae9980361354b0f99cc098261",
+   "promptChars": 12411,
    "schema": "1c8b5304935329bad5388e6e77194d73d12fbbfd623172f660da033322cf4091",
    "categories": [
     "IDENTITY",
@@ -37,8 +37,8 @@
    ]
   },
   "K6": {
-   "prompt": "870aa1795d7735ac19a4126d26f79aee60648e95125dcda1689cbeb4797b6144",
-   "promptChars": 11148,
+   "prompt": "307c02b34e4a73cc26cfc311632e36aaf0976bf711f7d5dd153c2ef68d5836a7",
+   "promptChars": 12432,
    "schema": "315cf77776ce24324db96630b68543c03cc54c9aee1e7d0d5d3a9dbd603e4524",
    "categories": [
     "IDENTITY",
@@ -50,8 +50,8 @@
    ]
   },
   "K7": {
-   "prompt": "bf2b8438794e707979356a8ad6a2b5b8722eface9918ecfd305ad78c147d6bc5",
-   "promptChars": 11095,
+   "prompt": "686e9b761d2e4c0cbf91d19c72757ccd04fd257730eb0ccd5a2a58fdfb99c7a2",
+   "promptChars": 12379,
    "schema": "cd39115efb070a3ab8398cd05ba79dca5e9aa8dfcdb5c7bd8a78b5abb68d0da5",
    "categories": [
     "IDENTITY",
@@ -64,8 +64,8 @@
    ]
   },
   "K3F": {
-   "prompt": "f10f1cbbd37361cac728edb6903749b50cc95fd47576b82725e37f9d318f4f6f",
-   "promptChars": 11577,
+   "prompt": "5f4d98284dc5cb1a22d827a3d7e964a1d278b8f6369d58fa741d7f721b56952c",
+   "promptChars": 12892,
    "schema": "68d09c110b262e533247cc7b23550e88801688a9cca28a257aa4fd3021bbd821",
    "categories": [
     "IDENTITY",

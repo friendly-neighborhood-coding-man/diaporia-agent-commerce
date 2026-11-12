@@ -36,6 +36,7 @@ DOCUMENT FIELDS
 - taxonomy: "{{ARM}}". language: "en", "ko", "ja" or "other".
 - item_kind: "STANDALONE", "ACCESSORY" (a part or accessory for another product, the host), "BUNDLE" (the user asks for a set/bundle that includes the main product; a model NAME that contains "Kit" is not by itself a bundle request), or "UNKNOWN".
 - units: the units. unresolved: [{"span": string|null, "issue": string}].
+- Identity of accessories: when a brand/model is followed by the name of a part or accessory for it ("Varnell Okta 3 footprint", "<brand> <model> cover", "... 커버", "... 받침", "... 필터"), the item to buy is that ACCESSORY: the brand and model words are the "host" unit and the part noun is the "product_type"; the host's model is never the item's own "model". A part name ending in "set" or "kit" ("plate set", "lock kit") is still that accessory, not a bundle. The item is STANDALONE only when the noun after the model is the kind of product the model itself is ("KX-40 전기그릴").
 
 EXAMPLES (invented names; the same examples are shown for every taxonomy)
 {{EXAMPLES}}
