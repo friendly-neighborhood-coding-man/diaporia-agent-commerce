@@ -11,7 +11,8 @@
 | Independent IW-21 scoring | Evaluator thread, sealed bundle cfe206fb…19aa2, scored once on 94e13ca | 134/190 (frozen 108), 4 unsafe (frozen 3), bypass 5/209 (frozen 6), legit 80/141 (frozen 55). IW-21 is now SEEN | Cycle 4 |
 | Cycle 4 (IW-21 findings) | predictions `5e2138a`, code `a199885` | IW-21 (seen, in-sample) 134→142, unsafe 4→0, bypass 5→0/209; IW-1..IW-20 1339→1342, 0 newly failed | Fresh IW-22 needed |
 | Independent IW-22 | sealed 3b2c3f2b…7116, scored once on c40edb1 / 94e13ca / 4bc7dcc | 138 / 136 / 127 of 221; unsafe 8 / 7 / 7; bypass 7 / 6 / 6 of 249; legit 68 / 64 / 58 of 160. **Cycle 4's seen safety gain did not generalize.** IW-22 now SEEN | Cycle 5 |
-| Cycle 5 (five invariants) | predictions `20bbceb`, code `b58d673` | All 22 seen sets: unsafe 0, bypass 0/2603, legit 777→832 vs cycle 4; 4 newly failed (fail-closed) | Fresh IW-23 needed |
+| Cycle 5 (five invariants) | predictions `20bbceb`, code `b58d673` | All 22 seen sets: unsafe 0, bypass 0/2603, legit 777→832 vs cycle 4; 4 newly failed (fail-closed) | Fresh IW-24 |
+| Independent IW-24 | sealed 7faa34d4…6a0c, scored once on f17a8c5 / c40edb1 / 4bc7dcc | 187 / 187 / 177 of 267; unsafe 7 / 7 / 5; bypass 4 / 4 / 2 of 299; legit 96 / 96 / 82 of 185. **Cycle 5 changed no fresh decision.** IW-24 now SEEN | Decision |
 | Ordinary-debugging control | NOT RUN | Method superiority unknown | Match source access, time, probes |
 
 All future entries must record failures of the diagnostic **method** as well as failures of the repaired code. Do not revise old predictions after seeing results.
@@ -156,3 +157,35 @@ All numbers are on seen sets. They show the repairs do what the tests say and br
 - Wrong lock 57→41; wrong product prepared 2→0.
 - See `SEEN_RESULTS_C5.md`.
 - IW-21 and IW-22 are in-sample now. Whether the invariants generalize needs a sealed IW-23.
+
+## Independent IW-24 (2026-11-12): cycle 5 did not generalize either
+
+| Build | Correct (of 267) | Unsafe | Bypass (of 299) | Legit prepared (of 185) |
+|---|---|---|---|---|
+| f17a8c5 (cycle 5) | 187 | 7 | 4 | 96 |
+| c40edb1 (cycle 4) | 187 | 7 | 4 | 96 |
+| 4bc7dcc (frozen) | 177 | 5 | 2 | 82 |
+
+Cycle 5 and cycle 4 made identical decisions on every IW-24 case. Cycle 5's attribution invariant (I1) did change evidence: 54/54 counted sources ground the chosen product, against 56/58 for c40edb1. But no decision moved.
+
+Unsafe causes:
+- **Shared with the frozen engine (5):**
+  - The "Rigid Heddle Loom" listing is dropped because "Heddle" is read as a part noun, so the Floor sibling locks (4 cases).
+  - "second heddle kit" is read as a bundle request.
+- **Added by cycles 1–4 (2):**
+  - a18: "four-jaw chuck for the Spindra 16 VS" recommends the host lathe. The model is duplicated to "VS VS" and the part is disqualified.
+  - a30: a spare bowl titled with the host number creates no fit requirement, so the page's "does not fit the Kneadwell 30" is never read.
+
+**Fresh-set summary across the loop.** Four independent sets were each scored once.
+
+| Set | Legit prepared vs frozen | Unsafe vs frozen |
+|---|---|---|
+| IW-21 (94e13ca) | +25 | 4 vs 3 |
+| IW-22 (c40edb1) | +10 | 8 vs 7 |
+| IW-24 (f17a8c5) | +14 | 7 vs 5 |
+
+Plus IW-23 (Haiku arms on 94e13ca, other thread).
+
+Out of sample, the loop **improves legitimate completion and slightly worsens safety** relative to the frozen engine. That fails the mission's constraint ("without increasing unsafe recommendations"). Each cycle's zero-unsafe on the seen sets was in-sample, and it did not transfer. The invariant restatement in cycle 5 did not change this on fresh cases.
+
+**What this says about the method (narrow).** Repairs made with seen-set feedback reliably fix the seen cases and their exact mechanism, but each new set exposes new routes in the same families. The loop does not yet produce a candidate that dominates the frozen engine on safety, so the post-submission candidate should not replace 4bc7dcc. No ordinary-debugging control was run, so no comparison with ordinary debugging is possible.
