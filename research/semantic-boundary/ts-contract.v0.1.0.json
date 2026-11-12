@@ -262,7 +262,7 @@
   },
   {
    "id": "BUDGET_RANGE",
-   "key": "budgetLowerMinor/budgetMaxMinor",
+   "key": "intent fields budgetLowerMinor and budgetMaxMinor (no requirement key)",
    "textForm": "Acme Tilo 3, at least $300 and at most $400",
    "expectBudget": [
     30000,
