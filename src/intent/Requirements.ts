@@ -123,7 +123,13 @@ const THRESHOLD_VERB = /^(?:supports?|holds?|carr(?:y|ies)|covers?|handles?|take
 /** V2.10: words after which "up to N" is a maximum ("weighs up to 2 kg", "noise up to 40 dB"). */
 const MAX_CONTEXT = /\b(?:weighs?|weighing|weight|measures?|noise|loud|loudness|costs?|thick|thickness|tall|height|wide|width|deep|depth|long|length|sized?|draws?|uses?|consumes?)\s+(?:\w+\s+){0,2}$/i;
 
-export const PURPOSE_FOR = /^for\s+(?:(?:the\s+|a\s+)?(?:lowest|cheapest|best|least|lower|cheaper|lowest-priced|good|great|fair|reasonable|decent|total)\b|(?:\$|usd|eur|£|€|₩)|\d|(?:my|our|your|his|her|their|me|us|him|them|myself|ourselves|yourself|someone|somebody|everyone)\b|(?:the\s+|a\s+)?[\p{L}]+['’]s?\s+(?:room|bedroom|nursery|kitchen|office|house|home|apartment|flat|dorm|place|playroom)\b|(?:a|an|the|this|that|next|our|my)?\s*(?:(?:ski|beach|camping|road|business|family|weekend|holiday|summer|winter|spring|fall|autumn|christmas|birthday|wedding|anniversary|graduation|house|school|work)\s+)?(?:gift|gifts|present|presents|friend|change|while|bit|start|treat|living|price|reason|day|days|week|weeks|month|months|year|years|trip|trips|vacation|vacations|holiday|holidays|travel|traveling|travelling|commute|commuting|work|working|home|office|school|college|university|dorm|study|studying|fun|hobby|hobbies|everyday|daily|personal|occasional|regular|general|casual|light|heavy|long|short|now|later|today|tonight|tomorrow|christmas|birthday|birthdays|wedding|anniversary|graduation|party|parties|season|winter|summer|spring|fall|autumn|weekend|weekends|weekdays|mornings|evenings|nights|backup|emergencies|emergency|beginners?|learning|practice|training|exercise|fitness|gaming|streaming|reading|cooking|baking|camping|hiking|fishing|hunting|cycling|running|walking|picnics?|tailgating|events?|guests?|visitors?|family|families|kids|children|household|couple|me|use|using|sale|less|under|about|around)\b)/iu;
+const PURPOSE_FOR_RX = /^for\s+(?:(?:the\s+|a\s+)?(?:lowest|cheapest|best|least|lower|cheaper|lowest-priced|good|great|fair|reasonable|decent|total)\b|(?:\$|usd|eur|£|€|₩)|(?:my|our|your|his|her|their|me|us|him|them|myself|ourselves|yourself|someone|somebody|everyone)\b|(?:the\s+|a\s+)?[\p{L}]+['’]s?\s+(?:room|bedroom|nursery|kitchen|office|house|home|apartment|flat|dorm|place|playroom)\b|(?:a|an|the|this|that|next|our|my)?\s*(?:(?:ski|beach|camping|road|business|family|weekend|holiday|summer|winter|spring|fall|autumn|christmas|birthday|wedding|anniversary|graduation|house|school|work)\s+)?(?:gift|gifts|present|presents|friend|change|while|bit|start|treat|living|price|reason|day|days|week|weeks|month|months|year|years|trip|trips|vacation|vacations|holiday|holidays|travel|traveling|travelling|commute|commuting|work|working|home|office|school|college|university|dorm|study|studying|fun|hobby|hobbies|everyday|daily|personal|occasional|regular|general|casual|light|heavy|long|short|now|later|today|tonight|tomorrow|christmas|birthday|birthdays|wedding|anniversary|graduation|party|parties|season|winter|summer|spring|fall|autumn|weekend|weekends|weekdays|mornings|evenings|nights|backup|emergencies|emergency|beginners?|events?|guests?|visitors?|family|families|kids|children|household|couple|me|use|using|sale|less|under|about|around)\b)/iu;
+/**
+ * V2.19.2 (IW-20 seen findings): a "for ..." phrase is background only when it names an occasion, a person's own use or
+ * an objective, never an activity ("for cycling" is a use the product must be fit for) and never a quantity: a weight,
+ * a household size or an altitude ("for my 45 lb son", "for a family of 5", "for use at 3,800 m") is a checked limit.
+ */
+export const PURPOSE_FOR = { test: (t: string): boolean => PURPOSE_FOR_RX.test(t) && !/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b/i.test(t.replace(/(?:\$|usd|eur|£|€|₩)\s*\d[\d,.]*/gi, "")) };
 const CHAT_FILLER = /^(?:honestly|ugh+|lol|lmao|mostly|mainly|asap|pls|plz|kinda|sorta|probably|maybe|finally|literally|basically|actually|tbh|ngl|btw|anyway|anyways|whatever|fine|quit|died|broke|broken)$/i;
 export function contextSpans(text: string, targetSpan: [number, number] | null): Array<[number, number]> {
   const out: Array<[number, number]> = [];
@@ -217,9 +223,9 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // V2.18 (IW-18 d06/q07/d30): "for a/an/the <thing>" names what the product must fit or suit ("for an in-ground
   // pool", "for a 7 year old"): a must-have research has to confirm, never background. Only a person's own
   // ("for my dad", "for our studio") or an article-less use ("for travel", "for video calls") stays context.
-  for (const [a, b] of fitFor) { const t = text.slice(a, b); out.push({ key: `unrecognized:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" }); }
+  for (const [a, b] of fitFor) { const t = text.slice(a, b).replace(/\s+(?:too|as well|also)$/i, ""); out.push({ key: `unrecognized:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" }); }
   for (const [a, b] of ctx) {
-    const t = text.slice(a, b);
+    const t = text.slice(a, b).replace(/\s+(?:too|as well|also)$/i, "");
     // V2.19 (IW-19 d06/q02/d08): with or without an article, "for <thing>" is a fitment or audience requirement
     // ("for bare roof rails", "for e-bikes"); only a person's own use and a closed list of occasions and uses stay context.
     if (/^for\s+\S/i.test(t) && !PURPOSE_FOR.test(t))
@@ -472,6 +478,17 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   for (const x of out.filter((r) => r.polarity === "EXCLUDED" && !r.capability && r.source === "REQUEST_TEXT")) {
     const i = out.findIndex((r) => r !== x && r.polarity === "REQUIRED" && r.source === "REQUEST_TEXT" && r.key === `unrecognized:${x.key.slice(4)}`);
     if (i >= 0) out.splice(i, 1);
+  }
+  // V2.19.2 (IW-20 d09/d28/q04/q11): a "for" phrase with a quantity ("for my 45 lb son", "for a family of 5", "for use at
+  // 3,800 m") states a limit the product must meet. It is kept whole as a must-have, whatever else read its number.
+  for (const m of text.matchAll(/\bfor\s+(?![$€£₩]|usd\b|eur\b|under\b|less\b|about\b|around\b|up to\b|no more\b)((?:[^,.;!?\d]{0,30}?)(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten)\b[^,.;!?]{0,24}?)(?=\s*(?:[,.;!?]|$|\s(?:and|but|with|under|please|that|which)\b))/giu)) {
+    const t = m[0].trim(); const a0 = m.index!;
+    if (inTarget(a0) || /^for\s+(?:the\s+)?(?:\$|usd|eur|£|€|₩)/i.test(t)) continue;
+    const key = `unrecognized:${slugOf(t)}`;
+    const nums = [...t.matchAll(/\d[\d,.]*/g)].map((n) => n[0].replace(/[,.]/g, ""));
+    // A requirement that already reads this number ("at least 800 m2 lawn") checks it; a unit alone ("lb") does not.
+    if (out.some((x) => x.key === key || (x.strength === "MUST" && nums.length > 0 && nums.every((n) => x.key.replace(/[,.]/g, "").includes(n))))) continue;
+    out.push({ key, text: t, span: [a0, a0 + m[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" });
   }
   // V2.2 WP-4: the generic proposition of each requirement.
   for (const r of out) {

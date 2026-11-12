@@ -136,7 +136,9 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
       if (!first) { byKey.set(key, p); out.push(p); continue; }
       // V2.16 (IW-16 failure 3): listings whose titles carry different number tokens ("Gale 6G" / "Gale 11G") are never
       // one product, whatever the parser made of their models. Merging needs one title's number tokens to contain the other's.
-      if (!numberTokensCompatible(first.title, p.title)) { byKey.set(`${key}|${p.productId}`, p); out.push(p); continue; }
+      // V2.19.2 (IW-20 i06): listings filed in different catalog categories ("Tote 2-Seat Bike Trailer" in bike-trailers,
+      // "Tote 2-Seat Stroller" in strollers) are different products, whatever their model parse.
+      if (!numberTokensCompatible(first.title, p.title) || (first.category !== "unknown" && p.category !== "unknown" && first.category !== p.category)) { byKey.set(`${key}|${p.productId}`, p); out.push(p); continue; }
       const a = this.products.get(first.productId)!; const b = this.products.get(p.productId)!;
       const urls = new Set(a.offers.map((o) => `${o.merchantDomain}|${o.listingUrl}`));
       for (const o of b.offers) if (!urls.has(`${o.merchantDomain}|${o.listingUrl}`)) a.offers.push({ ...o, productId: first.productId, offerId: `${first.productId}:${a.offers.length}` });

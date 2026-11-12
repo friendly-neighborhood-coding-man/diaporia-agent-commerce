@@ -258,7 +258,14 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
       : clause;
     // V2.19 (IW-19 d26): a name word of this model that is still on the clause after its own name was removed belongs to
     // a sibling ("Unlike the Vanta 1000W, the Vanta 2000W delivers 2,000 W"): the clause is about that sibling.
-    if (own !== clause && model && model.split(/\s+/).some((w) => /^[a-z]{3,}$/i.test(w) && new RegExp(`(?<![\\p{L}])${w}(?![\\p{L}])`, "iu").test(own))) continue;
+    // A leading contrast ("Unlike the Wicket 40in, the Wicket 40in Hardmount is ...") names the sibling on purpose: the
+    // rest of the clause is the statement, and it must name this product.
+    const lead = /^\s*(?:unlike|compared (?:to|with)|in contrast to|versus|vs\.?)\s[^,]*,\s*/i.exec(clause)?.[0] ?? "";
+    const restOwn = lead && capability.startsWith(PROPOSITION_PREFIX)
+      ? [product.identity.brand, product.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), clause.slice(lead.length))
+      : own;
+    if (lead && model && !namesThis(clause.slice(lead.length))) continue;
+    if (restOwn !== (lead ? clause.slice(lead.length) : clause) && model && model.split(/\s+/).some((w) => /^[a-z]{3,}$/i.test(w) && new RegExp(`(?<![\\p{L}])${w}(?![\\p{L}])`, "iu").test(restOwn))) continue;
     const v = clauseStatement(own, capability);
     if (v === false) return { value: v, quote: clause.trim().slice(0, 300) };
     if (v === true) firstTrue ??= { value: v, quote: clause.trim().slice(0, 300) };
