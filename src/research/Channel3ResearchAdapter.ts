@@ -236,7 +236,19 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
     // N-06: a model-less identity matches only the listing with the same provider product key, never the whole brand.
     if (!normalizeModel(identity.model)) return identity.sku ? [...this.products.values()].filter((p) => p.product.identity.sku === identity.sku).flatMap((p) => structuredClone(p.offers)) : [];
     const key = familyKey(identity.brand, identity.model);
-    return [...this.products.values()].filter((p) => familyKey(p.product.identity.brand, p.product.identity.model) === key).flatMap((p) => structuredClone(p.offers));
+    // V2.8: a lock through the full requested name ("BM-3 HD", "AF-55 Duo") matches the listing whose title names it,
+    // even when that listing's own parse stopped at the shorter model; the shorter sibling's listing never matches.
+    const code = identity.model.split(/[\s-]+/).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[-\\s]*");
+    const named = identity.brand ? new RegExp(`(?:^|[^A-Za-z0-9])${identity.brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+${code}(?![A-Za-z0-9])`, "i") : null;
+    const wantKey = normalizeModel(identity.model);
+    const out: MerchantOffer[] = [];
+    for (const p of this.products.values()) {
+      if (familyKey(p.product.identity.brand, p.product.identity.model) === key) { out.push(...structuredClone(p.offers)); continue; }
+      if (named && familyKey(p.product.identity.brand, p.product.identity.model) === familyKey(identity.brand, p.product.identity.model) && wantKey.startsWith(normalizeModel(p.product.identity.model)) && named.test(p.product.title.normalize("NFKC")))
+        // The listing's title states the full model, so its offers are listed as that model.
+        out.push(...structuredClone(p.offers).map((o) => ({ ...o, listedIdentity: { ...o.listedIdentity, model: identity.model } })));
+    }
+    return out;
   }
 
   /** Channel3 has no checkout quote: the truthful answer is null (offer stays NO_MERCHANT_QUOTE). */

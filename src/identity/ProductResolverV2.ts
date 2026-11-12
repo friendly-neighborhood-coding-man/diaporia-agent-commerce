@@ -1,6 +1,7 @@
 import type { CatalogProduct, Condition, MerchantOffer, ProductIdentity } from "../domain/types.js";
 import { AXES, VERSION_AXES, attributesFromVariant, extractIdentity, familyKey, normalizeKey, type AttributeAxis, type ProductKind, type VariantAttributes } from "./ProductIdentityExtractor.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
+import { productCategory, requestCategory } from "../research/capabilities.js";
 
 /**
  * Research V2 exact-identity resolution (variant-aware, multi-category).
@@ -50,7 +51,26 @@ export type ResolutionV2 =
       siblingToCheck: { productId: string; providerProductId: string; axis: string; label: string } | null; excluded: Exclusion[] };
 export interface Exclusion { productId: string; title: string; reason: string }
 
-export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attributes" | "condition" | "conditionStated">, products: CatalogProduct[],
+/** V2.8: everyday synonyms for a product noun (the title may use either). */
+const NOUN_SYNONYMS: string[][] = [["walkie talkie", "walkie-talkie", "two-way radio", "radio"], ["earbuds", "earphones"], ["headphones", "headset"],
+  ["laptop", "notebook"], ["tv", "television"], ["fridge", "refrigerator"], ["couch", "sofa"], ["vacuum", "vacuum cleaner"], ["cellphone", "smartphone", "phone"]];
+const nounRe = (n: string) => new RegExp(`(?<![a-z])${n.split(/[\s-]+/).map((w) => w.replace(/(?:es|s)$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s-]*")}e?s?(?![a-z])`, "i");
+/**
+ * V2.8: is a listing the product noun the request wrote after the model? YES when its title states the noun (or a
+ * synonym) or its category is the noun's category; NO when the noun has a known category and the listing is not in it
+ * ("MD-7 Headphones" vs a metal detector); otherwise UNKNOWN (kept, but never recommended without the noun).
+ */
+export function targetNounMatch(p: CatalogProduct, noun: string | null | undefined): "YES" | "NO" | "UNKNOWN" {
+  if (!noun) return "YES";
+  const title = p.title.normalize("NFKC");
+  const head = noun.split(/\s+/).at(-1)!;
+  const forms = [noun, head, ...NOUN_SYNONYMS.filter((g) => g.some((x) => nounRe(x).test(noun))).flat()];
+  if (forms.some((x) => nounRe(x).test(title))) return "YES";
+  const rc = requestCategory(noun); const pc = productCategory(p);
+  if (rc && pc && rc.id === pc) return "YES";
+  return rc ? "NO" : "UNKNOWN";
+}
+export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attributes" | "condition" | "conditionStated"> & { targetNoun?: string | null }, products: CatalogProduct[],
   offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {
   const t = intent.target;
   const excluded: Exclusion[] = [];
@@ -72,19 +92,32 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
     const lm = normalizeKey(f.product.identity.model ?? "");
     if (!t!.brand || !t!.model || !lm || !wantNoBrand.startsWith(lm) || wantNoBrand === lm || familyKey(f.product.identity.brand, f.product.identity.model) !== familyKey(t!.brand, f.product.identity.model)) return false;
     const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
-    return new RegExp(`(?:^|[^A-Za-z0-9])${esc(t!.brand)}\\s+${esc(t!.model)}(?![A-Za-z0-9])`, "i").test(f.product.title.normalize("NFKC"));
+    // V2.8: a space or hyphen inside the code is the same code ("BM 3 HD" is "BM-3 HD").
+    const code = t!.model.split(/[\s-]+/).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[-\\s]*");
+    return new RegExp(`(?:^|[^A-Za-z0-9])${esc(t!.brand)}\\s+${code}(?![A-Za-z0-9])`, "i").test(f.product.title.normalize("NFKC"));
   };
   const family = !t!.model ? all : all.filter((f) => f.family === want || suffixMatch(f) || (!t!.brand && !f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand));
   for (const f of all) if (!family.includes(f)) excluded.push({ productId: f.product.productId, title: f.product.title,
     reason: t!.brand && !f.product.identity.brand && normalizeKey(f.product.identity.model) === wantNoBrand ? `listing states no brand; requested ${t!.brand}` : `different model (${f.product.identity.brand} ${f.product.identity.model || "unknown"})` });
   if (!family.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing is the ${t!.brand ?? ""} ${t!.model ?? t!.sku} itself.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
 
-  const kindOk = family.filter((f) => {
-    const ok = f.kind === t.kind && (t.kind !== "ACCESSORY" || nounKey(f.accessoryNoun) === nounKey(t.accessoryNoun));
+  // V2.8: the product noun after the model ("MD-7 Headphones") must be what the listing is: a metal detector is never
+  // the "MD-7 Headphones". A listing that does not state the noun (and is not of its category) is excluded.
+  const tn = intent.targetNoun ?? null;
+  const typed = family.filter((f) => {
+    if (targetNounMatch(f.product, tn) !== "NO") return true;
+    excluded.push({ productId: f.product.productId, title: f.product.title, reason: `not a ${tn}: the listing is another kind of product` });
+    return false;
+  });
+  if (!typed.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing of the ${t!.brand ?? ""} ${t!.model ?? t!.sku} is a ${tn}.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
+  // The noun names an accessory of the model when only accessory listings state it ("Delvix MD-7 Headphones").
+  const nounIsAccessory = !!tn && t.kind === "STANDALONE" && typed.every((f) => f.kind === "ACCESSORY") && typed.some((f) => targetNounMatch(f.product, tn) === "YES");
+  const kindOk = typed.filter((f) => {
+    const ok = (f.kind === t.kind || (nounIsAccessory && f.kind === "ACCESSORY")) && (t.kind !== "ACCESSORY" || nounKey(f.accessoryNoun) === nounKey(t.accessoryNoun));
     if (!ok) excluded.push({ productId: f.product.productId, title: f.product.title, reason: f.kind === "STANDALONE" ? `standalone product, not the requested ${t.kind.toLowerCase()}` : `${f.kind.toLowerCase()}${f.accessoryNoun ? ` (${f.accessoryNoun})` : ""}, not the requested ${t.kind === "ACCESSORY" ? t.accessoryNoun ?? "accessory" : "standalone product"}` });
     return ok;
   });
-  if (!kindOk.length) return { status: "NOT_FOUND", code: "KIND_MISMATCH", reason: `Only ${[...new Set(family.map((f) => f.kind.toLowerCase()))].join("/")} listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse).`, siblingToCheck: null, excluded };
+  if (!kindOk.length) return { status: "NOT_FOUND", code: "KIND_MISMATCH", reason: `Only ${[...new Set(typed.map((f) => f.kind.toLowerCase()))].join("/")} listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse).`, siblingToCheck: null, excluded };
 
   const stated = AXES.filter((a) => intent.attributes[a] && !(a === "pack" && t.kind === "STANDALONE"));
   const attrOk = kindOk.filter((f) => {
@@ -157,6 +190,9 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
   const assumptions: string[] = [];
   if (!intent.conditionStated) assumptions.push("Condition not stated; locked to NEW. Refurbished or used offers will be rejected.");
   if (!pick.confirmed) assumptions.push("No offer states its condition; NEW is not confirmed and must be verified at the merchant.");
-  return { status: "LOCKED", productId: pick.f.product.productId, identity: { ...pick.f.product.identity, condition: intent.condition }, facts: pick.f, conditionConfirmed: pick.confirmed,
+  // V2.8: a listing locked through the full requested name ("BM-3 HD") carries that name, so offers and quotes are
+  // looked up for the requested model and never for the shorter sibling the listing's own parse produced.
+  const lockedModel = suffixMatch(pick.f) && t!.model ? t!.model : pick.f.product.identity.model;
+  return { status: "LOCKED", productId: pick.f.product.productId, identity: { ...pick.f.product.identity, model: lockedModel, condition: intent.condition }, facts: pick.f, conditionConfirmed: pick.confirmed,
     duplicates: g.slice(1).map((x) => x.f.product.productId), assumptions, excluded };
 }

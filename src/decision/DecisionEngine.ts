@@ -1,7 +1,7 @@
 import type { CatalogProduct, MerchantOffer } from "../domain/types.js";
 import type { Currency } from "../domain/money.js";
 import { AXES, mentionsExactModel, normalizeKey, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
-import { factsOf } from "../identity/ProductResolverV2.js";
+import { factsOf, targetNounMatch } from "../identity/ProductResolverV2.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import type { CapabilityVerdict } from "../evidence/EvidenceV2.js";
 import { evidenceCapabilityOf, productCategory, propositionWords, PROPOSITION_PREFIX } from "../research/capabilities.js";
@@ -178,6 +178,16 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   // V2.4: the product type the request names outside the category vocabulary ("power station", "ear tips") must be
   // in the listing's title; otherwise the candidate is a different kind of product as far as research can tell.
   // V2.5: the named contents of a requested bundle ("pet tool kit") are checked the same way, locked or not.
+  // V2.8: the product noun written after the model must be what this listing is ("MD-7 Headphones" is never a metal
+  // detector), locked or not.
+  const nounMatch = targetNounMatch(p, intent.targetNoun);
+  if (nounMatch === "NO") dq.push({ code: "NOT_REQUESTED_MODEL", detail: `not a ${intent.targetNoun}: the listing is another kind of product` });
+  else if (nounMatch === "UNKNOWN") bl.push({ code: "REQUEST_UNINTERPRETED", detail: `must-have "${uninterpretedKey(intent.targetNoun!)}" ("${intent.targetNoun}") is the product the request names, and the listing does not state it` });
+  for (const w of intent.nounModifiers ?? []) {
+    const stem = w.replace(/(?:es|s)$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!new RegExp(`(?<![a-z])${stem}e?s?(?![a-z])`, "i").test(p.title))
+      bl.push({ code: "REQUEST_UNINTERPRETED", detail: `must-have "${uninterpretedKey(w)}" ("${w}") is part of the product the request names, and the listing title does not state it` });
+  }
   if (!lock || intent.target?.kind === "BUNDLE") {
     for (const w of intent.productTypeWords ?? []) {
       const stem = w.toLowerCase().replace(/(?:es|s)$/, "");

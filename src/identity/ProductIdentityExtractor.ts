@@ -265,7 +265,10 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     if (words.length && np === "MODEL") { words.push(w); if (stop || words.length >= 4) break; continue; }
     // V2.3: in a request, an all-lowercase word after a capitalized name ends it ("Nordvik Summit tent" → Summit).
     if (words.length && /^[a-z][a-z-]*$/.test(w) && words.every((x) => /^[A-Z0-9]/.test(x))) break;
-    if (!w || GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
+    // V2.8: in a request, an upper-case code after the model number ("BM-3 HD", "TC-20 LED") is part of the name the
+    // user typed, even when the same word is a generic descriptor elsewhere. Identity then fails closed on it.
+    const codeInRequest = request && words.some((x) => /\d/.test(x)) && /^[A-Z][A-Z0-9+]{1,4}$/.test(w) && !UNIT_TOKEN.test(w);
+    if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);
     if (stop || words.length >= 4) break;

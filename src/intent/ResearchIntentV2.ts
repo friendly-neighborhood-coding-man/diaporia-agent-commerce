@@ -1,6 +1,6 @@
 import type { Condition, IntentMode } from "../domain/types.js";
 import { parseDecimalToMinor, type Currency } from "../domain/money.js";
-import { ACCESSORY_NOUN, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
+import { ACCESSORY_NOUN, COLOR_WORDS, GENERIC_WORDS, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { OBJECT_SIZE, extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
@@ -51,6 +51,11 @@ export interface ResearchIntentV2 {
   uninterpreted?: UninterpretedWord[];
   /** V2.4: product-type words not in the category vocabulary ("power station"); a candidate's title must contain them. */
   productTypeWords?: string[];
+  /** V2.8: the product noun written right after the named model ("MD-7 Headphones" → "headphones"). The locked product
+   * must be that kind of product: its title states the noun, or its category is the noun's category. */
+  targetNoun?: string | null;
+  /** V2.8: words of the product noun phrase before its noun ("video" in "video baby monitor"); each must be in the title. */
+  nounModifiers?: string[];
   /** V2.4: why the request is exact. NAMED (brand + model, no buy verb) falls back to discovery among the named model's
    * variants when the variant is not stated, instead of holding. */
   lockBasis?: "STRUCTURED" | "BUY" | "NAMED" | null;
@@ -87,9 +92,12 @@ const COMPARE_WORDS = /\b(?:like|similar|alternatives?|instead|vs\.?|versus|comp
 const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_NOUN.source}|${ACCESSORY_NOUN.source.replace(/^\\b|\\b$/g, "")}))s?\\s+(?:for|that fits?|compatible with|to fit)\\s+(?:(?:my|the|a|an|our|your)\\s+)?$`, "i");
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;
 /** Common words that are capitalized only because they start a sentence: never a brand. */
+/** V2.8: words that describe a product but never name its type ("wireless", "black", "refurbished"). */
+const GENERIC_DESCRIPTOR = /^(?:standalone|alone|unit|units|device|devices|item|items|product|products|thing|things|one|ones|wireless|wired|bluetooth|cordless|portable|smart|new|used|refurbished|renewed|original|premium|compact|waterproof|lightweight|edition|version|model|series|bundle|kit|combo|set|pack|ing|[a-z]+(?:ing|less|proof|able|ible|ful|ous|ive))$/i;
 const NOT_BRAND = new Set(`usd eur gbp jpy krw won dollars max min budget i buy purchase order get please need want looking find cheapest cheap best the a an my noise wireless laptop laptops headphones headphone
   over-ear over office waterproof water programmable cordless insulated money phone smartphone shoes boots hiking running coffee monitor 4k backpack daypack chair vacuum
-  bottle system note ignore new used refurbished renewed replacement standalone under budget with and for in on of`.split(/\s+/).filter(Boolean));
+  bottle system note ignore new used refurbished renewed replacement standalone under budget with and for in on of
+  hi hello hey dear thanks thank yes ok okay he she they we you it its it's he's she's his her our their this that these those can could would will should hope sorry`.split(/\s+/).filter(Boolean));
 
 function parseMoney(text: string, structured: string | undefined, structuredBudget = false): { currency: Currency; currencySource: ResearchIntentV2["currencySource"]; budget: number | null; conflict: string | null; unresolved: string | null;
   bareAmount: { amount: string; multiplier: number } | null; parse: MoneyParse } {
@@ -126,6 +134,12 @@ function findBrand(text: string): { brand: string; index: number } | null {
     if (/^(?:SYSTEM|NOTE|IGNORE)\b/.test(next)) continue;
     return { brand: word, index: m.index! };
   }
+  // V2.8: a request typed in lowercase ("delvix md-7 pro", "tidemark ff4 fish finder"): a word right before a model code
+  // (letters then a digit) is the brand when it is not an ordinary or product word. Identity still fails closed: the
+  // brand must match the listing's brand.
+  const lc = /(?<![A-Za-z0-9])([a-z][a-z&'’]{2,})\s+([a-z]{1,4}-?\d[a-z0-9-]*)(?![A-Za-z0-9])/.exec(text);
+  if (lc && !NOT_BRAND.has(lc[1]!) && !GENERIC_WORDS.has(lc[1]!) && !PRODUCT_NOUN_PHRASES.test(lc[1]!) && !requestCategory(lc[1]!) && !requestCapabilities(lc[1]!).length && !/^[a-z]+(?:ing|ed|er|ly)$/.test(lc[1]!))
+    return { brand: lc[1]!, index: lc.index };
   return null;
 }
 
@@ -310,6 +324,23 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     ...[...money.parse.constraints.map((c) => c.span), ...money.parse.ambiguities.map((c) => c.span), ...money.parse.notes.map((c) => c.span)].filter((x): x is [number, number] => !!x), ...(targetSpan ? [targetSpan] : []), ...(wordAmountSpan ? [wordAmountSpan] : [])];
   const leftover = uninterpretedWords(text, covered, [target?.brand ?? "", target?.model ?? "", target?.accessoryNoun ?? "", input.exactProduct?.brand ?? "", input.exactProduct?.model ?? "", input.exactProduct?.variant ?? ""]);
   const productTypeWords = target ? bundleWords : [...productType];
+  // V2.8: the product noun right after the model: the words up to punctuation or a connector, colours and articles
+  // dropped; the last word is the noun ("BM-3 HD baby monitor" → "monitor", "MD-7 Headphones" → "headphones").
+  let targetNoun: string | null = null;
+  const squashK = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (target?.model && targetSpan && target.kind !== "BUNDLE" && squashK(text.slice(targetSpan[0], targetSpan[1])).includes(squashK(target.model)) && /^(?:\s|$)/.test(text.slice(targetSpan[1]))) {
+    const after = text.slice(targetSpan[1]).normalize("NFKC");
+    const stop = /^(?:with|without|for|under|below|over|that|which|and|or|in|from|but|not|please|budget|max|to|at|on|by|less|no|thanks|thank|if|is|are|i|it|so|as|than|only|today|now|asap)$/i;
+    const ws: string[] = [];
+    for (const raw of after.split(/\s+/).filter(Boolean)) {
+      const w = raw.replace(/[,;:.!?()]+$/, "");
+      if (!/^[A-Za-z][A-Za-z-]*$/.test(w) || stop.test(w)) break;
+      if (!/^(?:a|an|the|new)$/i.test(w) && !COLOR_WORDS[w.toLowerCase()]) ws.push(w.toLowerCase());
+      if (w !== raw || ws.length >= 3) break;
+    }
+    const head = ws.at(-1);
+    if (head && head.length >= 3 && !GENERIC_DESCRIPTOR.test(head)) targetNoun = ws.join(" ");
+  }
   // V2.6: a leftover word that no requirement pattern, product noun, money or identity parse claimed is context by
   // default ("thanks", "birthday", "garage"): every way of stating a requirement ("with X", "that has X", "must X", a
   // modifier of the product noun, "no X") is extracted above and stays blocking until verified. A leftover word that
@@ -329,8 +360,24 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     const prev = /([A-Za-z][A-Za-z'’-]*)\s+$/.exec(text.slice(Math.max(0, u.span[0] - 30), u.span[0]));
     return !!prev && !/^(?:a|an|the|my|our|your|his|her|their|its|for|to|of|in|on|at|by|from|and|or|but|so|please|i|i'?d|i'?m|we|we'?re|just|also|really|very|some|any|this|that|these|those|it|is|are|was|be|me|us|thanks|thank|you|who|which|when|while|as|like|would|could|will|can|get|buy|need|want|looking|find|recommend|order|[a-z]+['’]s)$/i.test(prev[1]!);
   };
-  const uninterpreted = leftover.filter((u) => language !== "en" || /\d/.test(u.text) || featureVerb(u) || ownItem(u) || afterContent(u) || /\b(?:no|not|non|never|without|[a-z]+n['’]t)\s+(?:\S+\s+){0,1}$/i.test(text.slice(Math.max(0, u.span[0] - 24), u.span[0])) || /^-?(?:free|less)$/i.test(text.slice(u.span[1], u.span[1] + 5).trim().split(/\s/)[0] ?? ""));
-  const contextWords = leftover.filter((u) => !uninterpreted.includes(u));
+  const uninterpreted0 = leftover.filter((u) => language !== "en" || /\d/.test(u.text) || featureVerb(u) || ownItem(u) || afterContent(u) || /\b(?:no|not|non|never|without|[a-z]+n['’]t)\s+(?:\S+\s+){0,1}$/i.test(text.slice(Math.max(0, u.span[0] - 24), u.span[0])) || /^-?(?:free|less)$/i.test(text.slice(u.span[1], u.span[1] + 5).trim().split(/\s/)[0] ?? ""));
+  // V2.8: a word of the product noun phrase ("metal detector", "video baby monitor", "soldering station") is not an
+  // unknown requirement: it names the product, so the listing title must state it (checked per candidate). Negated
+  // words ("not the nugget kind") stay blocking.
+  const negatedU = (u: UninterpretedWord) => /\b(?:no|not|non|never|without|[a-z]+n['’]t)\s+(?:\S+\s+){0,2}$/i.test(text.slice(Math.max(0, u.span[0] - 30), u.span[0]));
+  const nounModifiers: string[] = [];
+  const ptLower = productTypeWords.map((w) => w.toLowerCase());
+  const uninterpreted = uninterpreted0.filter((u) => {
+    if (language !== "en" || negatedU(u) || /\d/.test(u.text) || !/^[A-Za-z][A-Za-z-]+$/.test(u.text)) return true;
+    const lw = u.text.toLowerCase();
+    const inNoun = !!targetNoun && !!targetSpan && u.span[0] >= targetSpan[1] && u.span[0] < targetSpan[1] + 60 && targetNoun.split(/\s+/).includes(lw);
+    const next = /^\s+([A-Za-z-]+)/.exec(text.slice(u.span[1]))?.[1]?.toLowerCase();
+    const beforeType = !target && !!next && ptLower.includes(next);
+    if (!inNoun && !beforeType) return true;
+    if (beforeType) productTypeWords.push(lw); else nounModifiers.push(lw);
+    return false;
+  });
+  const contextWords = leftover.filter((u) => !uninterpreted0.includes(u));
   for (const u of contextWords) requirements.push({ key: `context:${slugOf(u.text)}`, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT", evidenceCapability: null });
   if (contextWords.length) assumptions.push(`Read as context, not as requirements: ${contextWords.map((u) => `"${u.text}"`).join(", ")}. State a requirement explicitly ("with ...", "must ...") to have it checked.`);
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
@@ -338,7 +385,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
   return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
-    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted, productTypeWords, lockBasis,
+    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted, productTypeWords, targetNoun, nounModifiers, lockBasis,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }
