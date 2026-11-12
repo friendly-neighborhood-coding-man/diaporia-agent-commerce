@@ -214,6 +214,9 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   const hitNamesOther = titleAboutOther || namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit || (!!vc && mentionsOtherVariant(text, product.title, vc));
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
   const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b)|,\s+(?:and|but|while|whereas)\s+(?=(?:the|a|an|its|this|that)\s+[A-Z])/i));
+  // V2.19 (IW-19 failure 1): a page that both states and denies a requirement denies it. Every clause is read, and a
+  // denial wins over an earlier match ("Above Ground Pool Pump ... it is not for in-ground pools").
+  let firstTrue: { value: boolean; quote: string } | null = null;
   for (const clause of clauses) {
     if (/\|/.test(clause) || /\?\s*$/.test(clause)) continue; // table rows and questions are not statements
     if (OTHER_GENERATION.test(clause)) continue;
@@ -225,7 +228,8 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     if (fit) {
       if (comparisonPage) continue;
       const v = clauseStatement(clause, capability);
-      if (v !== null) return { value: v, quote: clause.trim().slice(0, 300) };
+      if (v === false) return { value: v, quote: clause.trim().slice(0, 300) };
+      if (v === true) firstTrue ??= { value: v, quote: clause.trim().slice(0, 300) };
       continue;
     }
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product, asked)) continue;
@@ -253,9 +257,10 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
       ? [product.identity.brand, product.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), clause)
       : clause;
     const v = clauseStatement(own, capability);
-    if (v !== null) return { value: v, quote: clause.trim().slice(0, 300) };
+    if (v === false) return { value: v, quote: clause.trim().slice(0, 300) };
+    if (v === true) firstTrue ??= { value: v, quote: clause.trim().slice(0, 300) };
   }
-  return null;
+  return firstTrue;
 }
 
 /**

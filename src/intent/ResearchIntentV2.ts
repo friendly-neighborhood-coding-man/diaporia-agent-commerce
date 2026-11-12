@@ -5,6 +5,7 @@ import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCatego
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { capitalizedProductWord, modelCode, requestNameWord, tailAfter } from "../identity/VariantTail.js";
 import { OBJECT_SIZE, extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
+import { PURPOSE_FOR } from "./Requirements.js";
 import { productType, uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
 import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
 
@@ -119,7 +120,7 @@ function anyAccessoryLead(before: string): string | null {
   // V2.16 (IW-16 a25, fail-closed): any other noun phrase before "for the <model>" is something for that model
   // ("isolation valve set"); only a verb form at the head, or a word that names a person, a purpose, a search or an
   // amount, keeps it from being a part request.
-  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || PURPOSE_LEAD.test(w) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)))) return null;
+  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || (i === ws.length - 1 && PURPOSE_LEAD.test(w)) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)))) return null;
   void GENERIC_WORDS;
   return ws.join(" ").replace(/s$/, "");
 }
@@ -509,7 +510,9 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // be checked, never dropped as context.
   // V2.18 (IW-18 d06/q07): "for a/an/the <thing>" states what it must fit or suit, so it is never a purpose phrase.
   const purpose = (u: UninterpretedWord) => { const pre = text.slice(Math.max(0, u.span[0] - 48), u.span[0]);
-    return /\b(?:because|since|so|when|while|as|my|our|his|her|their)\b[^,.;!?]{0,40}$/i.test(pre) || /\bfor\s+(?!(?:a|an|the)\s)[^,.;!?]{0,40}$/i.test(pre); };
+    if (/\b(?:because|since|so|when|while|as|my|our|his|her|their)\b[^,.;!?]{0,40}$/i.test(pre)) return true;
+    // V2.19: after "for", only a person's own use or a listed occasion is background (PURPOSE_FOR).
+    const f = /\bfor\s+[^,.;!?]{0,40}$/i.exec(pre); return !!f && PURPOSE_FOR.test(text.slice(Math.max(0, u.span[0] - 48) + f.index, u.span[1])); };
   const contextWords = contextAll.filter(purpose);
   const tailWords = new Set(requestTail.map((w) => w.toLowerCase()));
   for (const u of contextAll.filter((x) => !purpose(x) && !tailWords.has(x.text.toLowerCase()) && !(target && /^[A-Z]/.test(x.text)))) {

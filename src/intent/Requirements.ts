@@ -123,6 +123,7 @@ const THRESHOLD_VERB = /^(?:supports?|holds?|carr(?:y|ies)|covers?|handles?|take
 /** V2.10: words after which "up to N" is a maximum ("weighs up to 2 kg", "noise up to 40 dB"). */
 const MAX_CONTEXT = /\b(?:weighs?|weighing|weight|measures?|noise|loud|loudness|costs?|thick|thickness|tall|height|wide|width|deep|depth|long|length|sized?|draws?|uses?|consumes?)\s+(?:\w+\s+){0,2}$/i;
 
+export const PURPOSE_FOR = /^for\s+(?:(?:the\s+|a\s+)?(?:lowest|cheapest|best|least|lower|cheaper|lowest-priced|good|great|fair|reasonable|decent|total)\b|(?:\$|usd|eur|£|€|₩)|\d|(?:my|our|your|his|her|their|me|us|him|them|myself|ourselves|yourself|someone|somebody|everyone)\b|(?:a|an|the|this|that|next|our|my)?\s*(?:(?:ski|beach|camping|road|business|family|weekend|holiday|summer|winter|spring|fall|autumn|christmas|birthday|wedding|anniversary|graduation|house|school|work)\s+)?(?:gift|gifts|present|presents|friend|change|while|bit|start|treat|living|price|reason|day|days|week|weeks|month|months|year|years|trip|trips|vacation|vacations|holiday|holidays|travel|traveling|travelling|commute|commuting|work|working|home|office|school|college|university|dorm|study|studying|fun|hobby|hobbies|everyday|daily|personal|occasional|regular|general|casual|light|heavy|long|short|now|later|today|tonight|tomorrow|christmas|birthday|birthdays|wedding|anniversary|graduation|party|parties|season|winter|summer|spring|fall|autumn|weekend|weekends|weekdays|mornings|evenings|nights|backup|emergencies|emergency|beginners?|learning|practice|training|exercise|fitness|gaming|streaming|reading|cooking|baking|camping|hiking|fishing|hunting|cycling|running|walking|picnics?|tailgating|events?|guests?|visitors?|me|use|using|sale|less|under|about|around)\b)/i;
 const CHAT_FILLER = /^(?:honestly|ugh+|lol|lmao|mostly|mainly|asap|pls|plz|kinda|sorta|probably|maybe|finally|literally|basically|actually|tbh|ngl|btw|anyway|anyways|whatever|fine|quit|died|broke|broken)$/i;
 export function contextSpans(text: string, targetSpan: [number, number] | null): Array<[number, number]> {
   const out: Array<[number, number]> = [];
@@ -201,7 +202,11 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // from home", "for travel") and a relative clause about a person ("who commutes by bike"). It is kept as an optional
   // CONTEXT row (shown, never verified, never blocking). A "for" phrase with a number or a capitalized name ("for 2
   // people", "for a 15-inch laptop", "for my Wynd Beacon") is a requirement or an accessory target, not context.
-  const ctx = contextSpans(text, targetSpan);
+  // V2.19: a "for" phrase that is not a person's own use or a listed occasion is a requirement, not context: its words
+  // are never hidden as context (they are checked below and by the word accounting).
+  const allCtx = contextSpans(text, targetSpan);
+  const ctx = allCtx.filter(([a, b]) => !(/^for\s+\S/i.test(text.slice(a, b)) && !PURPOSE_FOR.test(text.slice(a, b))));
+  const fitFor = allCtx.filter((x) => !ctx.includes(x));
   const inCtx = (s: [number, number]) => ctx.some(([a, b]) => s[0] >= a && s[1] <= b);
   const add = (r: StatedRequirement) => {
     if (r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && inCtx(r.span)) return;
@@ -212,9 +217,12 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // V2.18 (IW-18 d06/q07/d30): "for a/an/the <thing>" names what the product must fit or suit ("for an in-ground
   // pool", "for a 7 year old"): a must-have research has to confirm, never background. Only a person's own
   // ("for my dad", "for our studio") or an article-less use ("for travel", "for video calls") stays context.
+  for (const [a, b] of fitFor) { const t = text.slice(a, b); out.push({ key: `unrecognized:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" }); }
   for (const [a, b] of ctx) {
     const t = text.slice(a, b);
-    if (/^for\s+(?:a|an|the)\s+\S/i.test(t) && !/^for\s+(?:a|an|the)\s+(?:gift|present|friend|change|while|bit|start|treat|living|price|reason|day|week|month|year|trip|vacation|holiday)\b/i.test(t))
+    // V2.19 (IW-19 d06/q02/d08): with or without an article, "for <thing>" is a fitment or audience requirement
+    // ("for bare roof rails", "for e-bikes"); only a person's own use and a closed list of occasions and uses stay context.
+    if (/^for\s+\S/i.test(t) && !PURPOSE_FOR.test(t))
       add({ key: `unrecognized:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" });
     else add({ key: `context:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT" });
   }
