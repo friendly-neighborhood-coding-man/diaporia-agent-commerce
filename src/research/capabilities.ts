@@ -306,7 +306,7 @@ export function clauseStatement(clause: string, id: string): boolean | null {
   // "Above Ground Pool" never states "in-ground pool".
   const all = id.slice(id.indexOf(":") + 1).split("-");
   for (let i = 0; i + 1 < all.length; i++)
-    if (/^(?:in|on|off|non|un|over|under|out|self|all|no|top|side|rear|front)$/.test(all[i]) && !new RegExp(`(?<![\\p{L}])${all[i]}[\\s-]?${all[i + 1]}`, "iu").test(clause)) return null;
+    if (/^(?:in|on|off|non|un|over|under|out|self|all|no|top|side|rear|front)$/.test(all[i]!) && !new RegExp(`(?<![\\p{L}])${all[i]}[\\s-]?${all[i + 1]}`, "iu").test(clause)) return null;
   const parts = clause.split(/\s+(?:and|but|while|whereas)\s+|[,;]\s*/i);
   const own = parts.filter((p) => words.some((w) => new RegExp(`(?<![\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "iu").test(p)));
   const negated = (own.length ? own : [clause]).filter((p) => ANY_NEGATION.test(p));
