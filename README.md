@@ -6,6 +6,28 @@ A cross-platform AI purchasing engine with evidence-based product research, boun
 
 > **MVP integration status (2026-11-10):** see [docs/MVP_IMPLEMENTATION_STATUS.md](docs/MVP_IMPLEMENTATION_STATUS.md) for what is implemented, MOCK-verified, live-verified and blocked, and run `npm run dogfood` for the end-to-end scenarios. Mission and invariants: [docs/MISSION.md](docs/MISSION.md).
 
+## Free judge evaluation (no paid API keys)
+
+**Judges can run DIAPORIA Buy's core purchasing demonstration for free.** No personal API keys, paid subscriptions, PayPal account, or external service credentials are required for this offline MOCK evaluation.
+
+Requirements: **Node.js 22.13+** and npm. The initial `npm ci` installs dependencies and may require internet access; the demo itself makes no live provider calls.
+
+```bash
+git clone https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce.git
+cd diaporia-agent-commerce
+npm ci
+npm run demo:full
+```
+
+The demo exercises the actual MCP purchasing workflow against fictional product catalogs, merchant quotes and registries, scripted DEMO-ONLY owner/buyer steps, and **MOCK payments (no PayPal API calls or real money)**. It writes auditable traces under `demo-output/` and fails if its checks do not pass. The demo does **not** establish a real merchant order or fulfillment.
+
+**Optional integrations, not required for judging:**
+- **PayPal Sandbox:** The separate Orders v2 adapter and recorded Sandbox test evidence are documented in [TEST_REPORT.md](docs/TEST_REPORT.md). Reproducing live Sandbox calls requires the tester's own free PayPal developer Sandbox credentials; the offline demo does not.
+- **Channel3 and Tavily:** Optional BYOK search/evidence adapters, disabled by default. No paid provider account is necessary for the offline demo.
+- **Browser panel:** See [BUY_PANEL.md](docs/BUY_PANEL.md) for local browser UI setup and its separate MOCK session.
+
+For the scope of proven capabilities and limitations, see [Submission Notes](docs/SUBMISSION.md) and [Hackathon Demo Guide](docs/HACKATHON_DEMO.md). **MOCK success is not claimed as a completed PayPal Sandbox transaction or merchant purchase.**
+
 ## In 30 seconds
 
 Any MCP client (Claude, ChatGPT, Grok, others) calls five tools on this server:
