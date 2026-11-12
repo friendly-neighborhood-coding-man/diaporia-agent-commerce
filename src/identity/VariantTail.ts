@@ -111,9 +111,11 @@ export function variantRuns(titles: string[], brand: string | null, code: string
     const run = leadingRun(ws);
     const w0 = ws[0];
     const noun = (w: string) => new RegExp(`^(?:${PRODUCT_NOUN_PHRASES.source})$`, "i").test(w.toLowerCase()) || !!requestCategory(w.toLowerCase());
-    if (w0 && ws.length > 1 && run[0] !== w0 && /^[A-Z]/.test(w0) && !NOT_NAME.test(w0) && !PAGE_WORDS.test(w0) && !noun(w0) && !attributeWord(w0) && key(ws.slice(1)).split(" ").length >= 2 && keys.has(key(ws.slice(1)))) return [w0, ...run];
+    if (w0 && ws.length > 1 && run[0] !== w0 && /^[A-Z]/.test(w0) && !NOT_NAME.test(w0) && !PAGE_WORDS.test(w0) && (!noun(w0) || capitalizedProductWord(w0)) && !attributeWord(w0) && key(ws.slice(1)).split(" ").length >= 2 && keys.has(key(ws.slice(1)))) return [w0, ...run];
     return run;
   });
+  // V2.13 (IW-13 i24): a product noun inserted before a sibling's whole product phrase ("Mikra 30L Grill Microwave Oven"
+  // vs "Mikra 30L Microwave Oven") tells the two apart too; it is never merged away as a descriptor.
   // Words every sibling has ("Action" in "A5 Action Camera" and "A5 4K Action Camera") name none of them apart.
   if (runs.length < 2) return runs;
   const common = runs.slice(1).reduce((acc, r) => new Set([...acc].filter((w) => r.map(canon).includes(w))), new Set(runs[0]!.map(canon)));
@@ -186,4 +188,9 @@ export function namesOtherVariant(text: string, title: string, code: string): bo
     if (variantWord(next)) other++;
   }
   return mentions > 0 && other === mentions;
+}
+
+/** V2.13: a capitalized word that is a product noun or category ("Grill", "Oven"): written after a model code it is part of the name. */
+export function capitalizedProductWord(w: string): boolean {
+  return /^[A-Z][a-z]{2,}$/.test(w) && (new RegExp(`^(?:${PRODUCT_NOUN_PHRASES.source})$`, "i").test(w) || !!requestCategory(w.toLowerCase()));
 }

@@ -1,8 +1,8 @@
 import type { CatalogProduct, Condition, MerchantOffer, ProductIdentity } from "../domain/types.js";
-import { AXES, VERSION_AXES, attributesFromVariant, extractIdentity, familyKey, normalizeKey, type AttributeAxis, type ProductKind, type VariantAttributes } from "./ProductIdentityExtractor.js";
+import { AXES, VERSION_AXES, PRODUCT_NOUN_PHRASES, attributesFromVariant, extractIdentity, familyKey, normalizeKey, type AttributeAxis, type ProductKind, type VariantAttributes } from "./ProductIdentityExtractor.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import { productCategory, requestCategory } from "../research/capabilities.js";
-import { missingNameWords, modelCode, pickVariant, requestNameWord } from "./VariantTail.js";
+import { canon, missingNameWords, modelCode, pickVariant, requestNameWord } from "./VariantTail.js";
 
 /**
  * Research V2 exact-identity resolution (variant-aware, multi-category).
@@ -180,6 +180,13 @@ function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf
     return false;
   });
   if (!typed.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing of the ${t!.brand ?? ""} ${t!.model ?? t!.sku} is a ${tn}.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
+  // V2.13 (IW-13 token invariant): every product noun the request wrote after the model of a standalone product is
+  // accounted for by the listing ("Mikra 25L Grill microwave" is never the Mikra 25L without a grill).
+  if (t.kind === "STANDALONE" && t.model) for (let i = typed.length - 1; i >= 0; i--) {
+    const lost = productWordsLost(typed[i]!.product, intent.requestTail ?? []);
+    if (lost.length) { excluded.push({ productId: typed[i]!.product.productId, title: typed[i]!.product.title, reason: `the listing does not account for "${lost.join(" ")}" from the requested product` }); typed.splice(i, 1); }
+  }
+  if (!typed.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing accounts for every product word of the ${t!.brand ?? ""} ${t!.model} request.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
   // V2.9: compare the whole name after the model code (VariantTail.ts): every name word the request wrote must be in the
   // title, and among listings that parse to the same model, the one whose extra words the request named is the product.
   const code = modelCode(t!.model);
@@ -295,4 +302,22 @@ function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf
   }
   return { status: "LOCKED", productId: pick.f.product.productId, identity: { ...pick.f.product.identity, model: lockedModel, condition: intent.condition }, facts: pick.f, conditionConfirmed: pick.confirmed,
     duplicates: g.slice(1).map((x) => x.f.product.productId), assumptions, excluded };
+}
+
+const PRODUCT_NOUN_WORD = new RegExp(`^(?:${PRODUCT_NOUN_PHRASES.source})$`, "i");
+/** V2.13: a single word that is a product noun or names a category ("grill", "microwave", "kettle"). */
+function productNoun(w: string): boolean {
+  const lw = w.toLowerCase().replace(/[^a-z-]/g, "");
+  return lw.length >= 3 && (PRODUCT_NOUN_WORD.test(lw) || !!requestCategory(lw));
+}
+/** V2.13: the word is in the title (case, plural and joined forms tolerated: "grills", "Smartwatch" for "watch"). */
+function inTitle(title: string, w: string): boolean {
+  const c = canon(w); if (!c) return true;
+  const stems = [c, c.replace(/(?:es|s)$/, "")];
+  const have = title.normalize("NFKC").split(/[\s,;:()|/–—-]+/).map(canon).filter(Boolean);
+  return have.some((h) => stems.includes(h) || stems.includes(h.replace(/(?:es|s)$/, ""))) || (c.length >= 4 && canon(title).includes(stems[1]!));
+}
+/** V2.13 (IW-13 token invariant): the product nouns the request wrote after the model that this listing does not account for. */
+export function productWordsLost(p: CatalogProduct, tail: string[]): string[] {
+  return tail.filter((w) => productNoun(w) && !inTitle(p.title, w) && targetNounMatch(p, w.toLowerCase()) !== "YES");
 }

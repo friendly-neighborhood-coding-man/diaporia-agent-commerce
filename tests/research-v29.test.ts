@@ -224,3 +224,49 @@ describe("V2.12 (IW-12 is seen; fictional products only)", () => {
     expect(decide(i, [{ ...base, knownCostMinor: { "o-arc2": 71000 } }] as any, lock).ranking[0]!.disqualifiers.map((d: any) => d.code)).toContain("OVER_BUDGET");
   });
 });
+
+describe("V2.13 every request token is accounted for (IW-13 is seen; fictional products only)", () => {
+  it("a number with a unit right after a word-only name is the model number", () => {
+    expect(intent("Pellan Brio 30L Grill").target.model).toBe("Brio 30L");
+    expect(intent("Pellan Brio 30L Grill").requestTail).toContain("Grill");
+    expect(extractIdentity("Pellan Brio 30L Microwave Oven", "Pellan").model).toBe("Brio 30L");
+    expect(extractIdentity("Abrin Reach 40V Pro Cordless Trimmer", "Abrin").model).toBe("Reach 40V Pro");
+    expect(extractIdentity("Abrin Reach 20V Cordless Trimmer", "Abrin").model).not.toBe("Reach 40V");
+  });
+  it("a minus sign before the model number is identity, never a separator", () => {
+    expect(extractIdentity("Quillon Ember -10 Sleeping Bag", "Quillon").model).toBe("Ember -10");
+    const listings = [product("e0", "Quillon Ember 0 Sleeping Bag", "Quillon"), product("em10", "Quillon Ember -10 Sleeping Bag", "Quillon")];
+    expect(resolveExactV2(intent("Quillon Ember 10 sleeping bag"), listings, offers).status).not.toBe("LOCKED");
+    const r: any = resolveExactV2(intent("Quillon Ember -10 sleeping bag"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("em10");
+  });
+  it("a product noun that only ends in a part word names the product, not a part", () => {
+    expect(intent("Quillon Ember 0 sleeping bag").target.kind).toBe("STANDALONE");
+    expect(intent("Corvan X5 carrying case").target.kind).toBe("ACCESSORY");
+  });
+  it("a product noun after the model the listing does not account for excludes it", async () => {
+    const listings = [product("b25", "Pellan Brio 25L Microwave Oven", "Pellan", "microwave-ovens"), product("b30", "Pellan Brio 30L Microwave Oven", "Pellan", "microwave-ovens"),
+      product("b30g", "Pellan Brio 30L Grill Microwave Oven", "Pellan", "microwave-ovens")];
+    expect(resolveExactV2(intent("Pellan Brio 25L Grill microwave"), listings, offers).status).not.toBe("LOCKED");
+    const r: any = resolveExactV2(intent("Pellan Brio 30L Grill"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("b30g");
+    const { decide } = await import("../src/decision/DecisionEngine.js");
+    const d = decide(intent("Pellan Brio 25L Grill microwave"), [{ product: listings[0], offers: offers("b25"), must: {}, nice: {}, notChecked: [], limitReached: false }] as any, { exactLock: { productId: "b25" }, exactFailure: null, weights: null, now: Date.now() } as any);
+    expect(d.state).toBe("HOLD");
+  });
+  it("the adapter never merges a sibling that inserts a product noun before the shared product phrase", () => {
+    const runs = variantRuns(["Pellan Brio 30L Microwave Oven", "Pellan Brio 30L Grill Microwave Oven"], "Pellan", "Brio 30L");
+    expect(runs[0]).not.toEqual(runs[1]);
+  });
+  it("'not the one with X' excludes X and never also requires it", () => {
+    const keys = (intent("Pellan microwave with a 30 L cavity, not the one with a grill").requirements as any[]).map((r) => `${r.polarity}:${r.key}`);
+    expect(keys).toContain("EXCLUDED:not:grill");
+    expect(keys).not.toContain("REQUIRED:unrecognized:grill");
+  });
+  it("a signed number or a temperature nothing interpreted blocks instead of being dropped", () => {
+    expect(intent("sleeping bag rated to -10 °C").uninterpreted.map((u: any) => u.text)).toContain("-10 °C");
+    expect(intent("Quillon Ember -10 sleeping bag").uninterpreted).toEqual([]);
+  });
+});

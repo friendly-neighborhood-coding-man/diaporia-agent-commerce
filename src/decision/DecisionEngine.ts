@@ -1,7 +1,7 @@
 import type { CatalogProduct, MerchantOffer } from "../domain/types.js";
 import type { Currency } from "../domain/money.js";
 import { AXES, mentionsExactModel, normalizeKey, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
-import { factsOf, targetNounMatch } from "../identity/ProductResolverV2.js";
+import { factsOf, productWordsLost, targetNounMatch } from "../identity/ProductResolverV2.js";
 import { missingNameWords, modelCode } from "../identity/VariantTail.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import type { CapabilityVerdict } from "../evidence/EvidenceV2.js";
@@ -192,6 +192,14 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
     const miss = missingNameWords(p.title, [...intent.target.model.split(/\s+/).slice(code.split(/\s+/).length), ...(intent.requestTail ?? [])]);
     if (miss.length) dq.push({ code: "NOT_REQUESTED_MODEL", detail: `the title does not name "${miss.join(" ")}" from the requested model` });
   }
+  // V2.13 (IW-13 token invariant): every product word the request wrote after the model of a standalone product is
+  // accounted for on THIS listing: a name word is in the title (above), and a product noun ("Grill" in "Mikra 25L Grill
+  // microwave") is in the title or is what the listing is (same noun, synonym or category). A product word the listing
+  // does not account for is never dropped: the listing is another product.
+  if (code && intent.target?.model && intent.target.kind === "STANDALONE") {
+    const lost = productWordsLost(p, intent.requestTail ?? []);
+    if (lost.length) dq.push({ code: "NOT_REQUESTED_MODEL", detail: `the listing does not account for "${lost.join(" ")}" from the requested product` });
+  }
   const nounMatch = targetNounMatch(p, intent.targetNoun);
   if (nounMatch === "NO") dq.push({ code: "NOT_REQUESTED_MODEL", detail: `not a ${intent.targetNoun}: the listing is another kind of product` });
   else if (nounMatch === "UNKNOWN") bl.push({ code: "REQUEST_UNINTERPRETED", detail: `must-have "${uninterpretedKey(intent.targetNoun!)}" ("${intent.targetNoun}") is the product the request names, and the listing does not state it` });
@@ -310,3 +318,4 @@ function fmt(minor: number, cur: Currency): string {
   const exp = cur === "KRW" || cur === "JPY" ? 0 : 2;
   return `${(minor / 10 ** exp).toFixed(exp)} ${cur}`;
 }
+

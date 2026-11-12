@@ -65,6 +65,12 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
   productType.length = 0;
   for (const [a, b] of nounSpans.slice(known.length)) if (!known.some(([s, e]) => a >= s && a < e) && !covered.some(([s, e]) => a >= s && a < e)) productType.push(text.slice(a, b));
   const out: UninterpretedWord[] = [];
+  // V2.13 (IW-13 d01): a signed number ("-10") or a temperature ("-10 °C", "20 degrees") that nothing interpreted is a
+  // stated requirement research cannot check: it is reported (and blocks) instead of being dropped with its sign.
+  for (const m of text.normalize("NFKC").matchAll(/(?<![\p{L}\p{N}.])(?:[-\u2212]\d+(?:\.\d+)?(?:\s*(?:°\s*[CF]?|℃|℉|degrees?(?:\s+(?:celsius|fahrenheit|[CF]))?)(?![\p{L}]))?|\d+(?:\.\d+)?\s*(?:°\s*[CF]?|℃|℉|degrees?(?:\s+(?:celsius|fahrenheit|[CF]))?)(?![\p{L}]))/gu)) {
+    const a = m.index!, b = a + m[0].length;
+    if (!covered.some(([s, e]) => a >= s && a < e) && !(/^[-\u2212]\d+$/.test(m[0]) && ident.has(m[0].replace("\u2212", "-").toLowerCase()))) out.push({ text: m[0].trim(), span: [a, b] });
+  }
   const tokens = [...text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’+.-]*/gu)];
   for (const [ti, m] of tokens.entries()) {
     // "sleek design", "modern look": the noun of a decorative phrase is decorative too.

@@ -95,7 +95,9 @@ export const ACCESSORY_NOUN = /\b(footprint|ground ?sheet|rain ?fly|brush ?kit|c
 export const BUNDLE_RE = /\bw\/|\bbundle\b|\bkit\b|\bcombo\b|\b\d+[- ]?(?:pack|pk|count|ct)\b|\bpack of \d+\b|\bset of \d+\b|\btwin[- ]pack\b|\s\+\s|\bwith (?:travel |carrying |charging |protective )?(?:case|charger|stand|dock|bag)\b/i;
 
 export function normalizeKey(s: string): string {
-  return s.normalize("NFKC").toUpperCase().replace(/[^A-Z0-9가-힣]/g, "");
+  // V2.13 (IW-13 i04): a minus sign written before a number ("Cinder -10") is part of the identity, never a separator:
+  // "Cinder 10" and "Cinder -10" are different keys. A hyphen between letters and digits ("HF-30") stays a separator.
+  return s.normalize("NFKC").replace(/(^|[\s(])[-\u2212\u2013](?=\d)/g, "$1\u2212").toUpperCase().replace(/[^A-Z0-9가-힣\u2212]/g, "");
 }
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -247,7 +249,10 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
   }
   const words: string[] = [];
   const parts = rest.split(/\s+/).filter(Boolean);
-  for (const [i, raw] of parts.entries()) {
+  for (const [i, raw0] of parts.entries()) {
+    const raw = raw0.replace(/^[\u2212\u2013](?=\d)/, "-");
+    // V2.13 (IW-13 i04): a signed number right after the name ("Cinder -10") is the model number, sign included.
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^-\d+(?:\.\d+)?[,;:()|]*$/.test(raw)) { words.push(raw.replace(/[,;:()|]+$/, "")); if (/[,;:()|]$/.test(raw) || words.length >= 4) break; continue; }
     if (/^[,;:()|/–—+&-]/.test(raw)) break;
     // V2.2 WP-3: a product noun phrase starting here ends the model ("AP-400 air purifier", "T18 drill").
     const np = nounPhraseAt(parts.slice(i));
@@ -273,6 +278,10 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // V2.12 (IW-12): a thousands code right after a name word ("Polar 14K", "Polar 10K") is the model number, never a
     // unit; it is what tells the siblings apart. Resolutions (4K, 8K) are single-digit and stay attributes.
     if (words.length && !words.some((x) => /\d/.test(x)) && /^\d{2,3}[kK]$/.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
+    // V2.13 (IW-13 i24/i27, Swath 40V): a number with a unit right after a name that has no number yet ("Mikra 30L",
+    // "Swath 40V") is the model number that tells the siblings apart, never only a spec. Storage, pack and size units
+    // stay attributes.
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?(?:l|ml|v|w|kw|wh|mah|qt)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);

@@ -3,7 +3,7 @@ import { parseDecimalToMinor, type Currency } from "../domain/money.js";
 import { ACCESSORY_NOUN, COLOR_WORDS, GENERIC_WORDS, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
-import { modelCode, requestNameWord, tailAfter } from "../identity/VariantTail.js";
+import { capitalizedProductWord, modelCode, requestNameWord, tailAfter } from "../identity/VariantTail.js";
 import { OBJECT_SIZE, extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
 import { productType, uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
 import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
@@ -236,7 +236,10 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
         const at = clause.toLowerCase().indexOf(model.toLowerCase());
         const tail = at >= 0 ? clause.slice(at + model.length).split(/[,;]|\s+(?:with|for|that|which|it|must|should|needs?|has|have)\b/i)[0]!.trim() : "";
         const end = new RegExp(`(?:^|\\s)(${ACCESSORY_NOUN.source.replace(/^\\b\(|\)\\b$/g, "")}|${REQUEST_PART_NOUN.source.replace(/^\^\(\?:|\)\$$/g, "")})e?s?\\s*$`, "i").exec(tail);
-        if (tail && (end || /^(?:replacement|spare)\b/i.test(tail))) { kind = "ACCESSORY"; accessoryNoun = (end?.[1] ?? ACCESSORY_NOUN.exec(tail)?.[1] ?? "part").toLowerCase().replace(/\s+/g, " "); }
+        // V2.13 (IW-13 i04): a product noun that only ends in a part word ("sleeping bag", "duffel bag") names the
+        // product itself, not a part of it: a part request names a noun distinct from the host's own kind.
+        const whole = end ? new RegExp(`(?:^|\\s)(${PRODUCT_NOUN_PHRASES.source.replace(/^\\b\(\?:|\)\\b$/g, "")})\\s*$`, "i").exec(tail) : null;
+        if (tail && ((end && !(whole && whole[1]!.length > end[1]!.length)) || /^(?:replacement|spare)\b/i.test(tail))) { kind = "ACCESSORY"; accessoryNoun = (end?.[1] ?? ACCESSORY_NOUN.exec(tail)?.[1] ?? "part").toLowerCase().replace(/\s+/g, " "); }
       }
       // V2.4: "replacement ear tips for my Sonara Hush 2" asks for the part, named before the product it fits.
       const lead = ACC_LEAD.exec(text.slice(0, brandHit.index));
@@ -350,7 +353,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // V2.2 WP-3: the requested model number (see the field). A model token right before a product noun counts too.
   let requestedModel: string | null = target?.modelBasis === "MODEL_NUMBER" && target.model && modelNumberToken(target.model) ? target.model : null;
   // V2.3 (V22-03): a named model-less product ("Nordvik Summit backpack") binds the identity like a model number does.
-  if (!requestedModel && target?.modelBasis === "NAMED_MODEL" && target.model && target.model.split(/\s+/).every((x) => /^[A-Z0-9]/.test(x))) {
+  if (!requestedModel && target?.modelBasis === "NAMED_MODEL" && target.model && target.model.split(/\s+/).every((x) => /^(?:[A-Z0-9]|-\d)/.test(x))) {
     requestedModel = target.model; assumptions.push(`"${target.brand} ${target.model}" is named in the request: only listings of that product are eligible.`);
   }
   if (!requestedModel && !input.exactProduct?.sku) {
@@ -374,7 +377,8 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (target && exact && target.kind !== "BUNDLE") {
     const inModel = new Set((target.model ?? "").split(/\s+/).map((w) => w.toLowerCase()));
     const extra: string[] = [];
-    for (const w of requestTail) { if (!requestNameWord(w)) break; if (!inModel.has(w.toLowerCase())) extra.push(w); }
+    // V2.13 (IW-13 i24): a capitalized product word written as part of the name ("Mikra 30L Grill") is searched too.
+    for (const w of requestTail) { if (!requestNameWord(w) && !capitalizedProductWord(w)) break; if (!inModel.has(w.toLowerCase())) extra.push(w); }
     if (extra.length) primary = [target.brand, target.model, ...extra, target.kind === "ACCESSORY" ? target.accessoryNoun : null].filter(Boolean).join(" ");
   }
   const squashK = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -439,3 +443,4 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }
+

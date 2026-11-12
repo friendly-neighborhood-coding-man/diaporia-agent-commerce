@@ -72,6 +72,8 @@ const EN_NOT = [
   // V2.10 (IW-11): "doesn't need an app subscription", "won't require a boundary wire" exclude the thing named.
   /\b(?:does(?:n't| not)|do(?:n't| not)|won't|will not|should(?:n't| not)|never)\s+(?:need|require|use|rely on)s?\s+(?:an?\s+|any\s+|the\s+)?(.+)/i,
   /\b([a-z][a-z0-9 -]{1,30})-free\b/i,
+  // V2.13 (IW-13 q07): "not the one with a grill", "not a model that has a timer" exclude the feature named.
+  /\bnot\s+(?:(?:the|a|an|any)\s+)?(?:one|ones|kind|model|models|version|type|variant)\s+(?:with|that\s+(?:has|have|comes\s+with|includes?))\s+(?:an?\s+|the\s+|any\s+)?(.+)/i,
 ];
 /** Korean: "<X> 있어야/돼야/필수/꼭", adjectival "<X> 되는/지원되는/가능한/있는/달린/탑재된", negative "<X> 없는/없어야/제외". */
 const KO_MUST = [/([가-힣A-Za-z0-9.+\- ]{1,24}?)\s*(?:이|가)?\s*있으면\s*좋/, /([가-힣A-Za-z0-9.+\- ]{1,24}?)\s*(?:이|가|은|는)?\s*(?:꼭\s*)?(?:있어야|되어야|돼야|지원해야|필수|반드시)/, /([가-힣A-Za-z0-9.+\-]{1,16}(?:\s[가-힣A-Za-z0-9.+\-]{1,16})?)\s*(?:기능\s*)?(?:이|가)?\s*(?:되는|지원되는|지원하는|가능한|있는|달린|탑재된|탑재)\s/];
@@ -442,6 +444,12 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // An excluded item supersedes the same capability as required ("no ANC" never asks for ANC).
   for (const x of out.filter((r) => r.polarity === "EXCLUDED" && r.capability)) {
     const i = out.findIndex((r) => r.key === x.capability && r.source === "REQUEST_TEXT");
+    if (i >= 0) out.splice(i, 1);
+  }
+  // V2.13 (IW-13 q07): an excluded phrase supersedes the same words read as required ("not the one with a grill" never
+  // asks for a grill): a stated requirement and its negation never both stand.
+  for (const x of out.filter((r) => r.polarity === "EXCLUDED" && !r.capability && r.source === "REQUEST_TEXT")) {
+    const i = out.findIndex((r) => r !== x && r.polarity === "REQUIRED" && r.source === "REQUEST_TEXT" && r.key === `unrecognized:${x.key.slice(4)}`);
     if (i >= 0) out.splice(i, 1);
   }
   // V2.2 WP-4: the generic proposition of each requirement.
