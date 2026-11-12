@@ -224,7 +224,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
       const fams = new Set(pre.filter((x) => x.p.identity.brand === brand).map((x) => `${x.p.identity.model}`.toLowerCase()));
       const left = Math.min(d.router.remainingSearches?.(d.ctx) ?? Infinity, L.maxEvidenceSearches);
       if (brand && fams.size >= 2 && fams.size > left) {
-        const r = await d.router.verifyMany(pre[0]!.p, caps, d.ctx, { sellers, maxSearches: 1, broad: true });
+        const r = await d.router.verifyMany(pre[0]!.p, caps, d.ctx, { sellers, maxSearches: 1, broad: true, listed: [...products.values()] });
         trace.evidenceSearches += r.searchesSent; trace.evidenceSteps.push(...r.steps);
       }
     }
@@ -241,7 +241,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
       if (trace.evidenceSearches >= L.maxEvidenceSearches) { notChecked.set(p.productId, caps); limitReached = true; trace.stops.push("evidence search limit reached"); continue; }
       if (!free) checked++;
       verifiedFamilies.add(fam);
-      const v = await verifyFor(d, p, caps, sellers, Math.min(L.maxEvidenceSearchesPerCandidate, L.maxEvidenceSearches - trace.evidenceSearches), trace);
+      const v = await verifyFor(d, p, caps, sellers, Math.min(L.maxEvidenceSearchesPerCandidate, L.maxEvidenceSearches - trace.evidenceSearches), trace, [...products.values()]);
       verdicts.set(p.productId, v.verdicts);
       if (v.blocked.length) { limitReached = true; notChecked.set(p.productId, v.blocked); trace.stops.push("usage limit reached during evidence; remaining requirements stay unverified"); }
       const allMust = intent.mustHave.every((m) => v.verdicts[m]?.status === "VERIFIED_TRUE") && propsHold(v.verdicts);
@@ -256,7 +256,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
     // retrieved (no new search). A sibling's search often returns this candidate's manufacturer page too.
     if (d.router?.policy === "v2") for (const { p } of pre) {
       if (verdicts.has(p.productId)) continue;
-      const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches: 0 });
+      const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches: 0, listed: [...products.values()] });
       trace.evidenceSteps.push(...r.steps);
       // Only a settled outcome is kept: every requirement decided, or one known false. A partial read changes nothing.
       const vs = Object.values(r.verdicts);
@@ -320,10 +320,10 @@ function fixtureVerdicts(p: CatalogProduct, caps: string[]): Record<string, Capa
   }));
 }
 
-async function verifyFor(d: PlannerDeps, p: CatalogProduct, caps: string[], sellers: string[], maxSearches: number, trace: PlannerTrace) {
+async function verifyFor(d: PlannerDeps, p: CatalogProduct, caps: string[], sellers: string[], maxSearches: number, trace: PlannerTrace, listed: CatalogProduct[] = []) {
   if (!d.router) return { verdicts: fixtureVerdicts(p, caps), blocked: [] as string[] };
   if (d.router.policy === "v2") {
-    const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches });
+    const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches, listed });
     trace.evidenceSearches += r.searchesSent; trace.evidenceSteps.push(...r.steps);
     return { verdicts: r.verdicts, blocked: r.blockedByLimit };
   }

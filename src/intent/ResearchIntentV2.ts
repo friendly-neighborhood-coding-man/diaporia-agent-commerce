@@ -112,6 +112,7 @@ const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_N
  */
 const ANY_ACC_LEAD = /(?:^|[\s,:;!?.])((?:[a-z][a-z-]*\s+){0,2}[a-z][a-z-]*)\s+(?:for|that fits?|compatible with|to fit)\s+(?:(?:my|the|a|an|our|your|his|her|their)\s+)?$/;
 const NOT_PART_LEAD = /^(?:a|an|the|one|some|any|something|anything|stuff|gift|gifts|present|presents|deal|deals|price|prices|budget|money|cash|time|room|space|upgrade|alternative|substitute|successor|replacement|sibling|version|model|option|options|help|advice|ideas?|quote|quotes|shipping|delivery|ready|good|best|great|perfect|ideal|suitable|enough|cheap|cheaper|me|us|it|this|that|these|those|just|only|also|please|thanks|buy|get|order|need|want|find|search|shop|look|pay|paid|spend|spent|went|go|going|similar|same|like|else|is|are|was|be|has|have|had)$/i;
+const STOP_LEAD = /^(?:i|we|i'?d|i'?m|need|needs|want|wants|looking|buy|get|order|find|please|can|could|you|hi|hey|hello|just|really|like|would|love|something|anything|one|plus|and|or|also|with)$/i;
 const PURPOSE_LEAD = /^(?:check|checks|info|information|review|reviews|specs?|details?|comparison|compare|question|questions|support|warranty|manual|price|cost|offer|offers|discount|coupon|sale|order|purchase|checkout|payment|recommendation|recommendations|suggestion|suggestions|research|search|me|myself|him|her|them|kid|kids|son|daughter|wife|husband|mom|dad|friend|work|home|travel|camping)$/i;
 function anyAccessoryLead(before: string): string | null {
   const m = ANY_ACC_LEAD.exec(before);
@@ -126,7 +127,10 @@ function anyAccessoryLead(before: string): string | null {
   // V2.16 (IW-16 a25, fail-closed): any other noun phrase before "for the <model>" is something for that model
   // ("isolation valve set"); only a verb form at the head, or a word that names a person, a purpose, a search or an
   // amount, keeps it from being a part request.
-  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || (i === ws.length - 1 && PURPOSE_LEAD.test(w)) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)))) return null;
+  // Post-submission cycle 5, invariant I4 (IW-22 a01): an amount word ("room", "space", "time") rules a part out only on
+  // its own ("room for 6 people"); after a noun it is the part's own name ("annex room for the Skyloft 3P").
+  const amountOnly = (w: string, i: number) => /^(?:room|space|time)$/i.test(w) && ws.length > 1 && i > 0;
+  if (!ws.length || ws.some((w, i) => (NOT_PART_LEAD.test(w) && !amountOnly(w, i)) || (i === ws.length - 1 && PURPOSE_LEAD.test(w)) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)))) return null;
   void GENERIC_WORDS;
   return ws.join(" ").replace(/s$/, "");
 }
@@ -552,6 +556,18 @@ export function parseResearchIntent(input: PurchaseRequestInput, opts: { noBrand
     const accounted = requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] >= a);
     if (!accounted && !leftover.some((u) => u.span[0] >= a && u.span[1] <= b)) continue;
     if (!uninterpreted.some((u) => u.span[0] <= a && u.span[1] >= b)) uninterpreted.push({ text: m[0], span: [a, b] });
+  }
+  // Post-submission cycle 5, invariant I4: every product noun the request states must be the candidate's. A noun phrase
+  // written before "for (the) <named product>" that did not become the requested part is never dropped: the named product
+  // is the host it is for, so locking the host would buy the wrong thing. It blocks until settled.
+  if (target?.kind === "STANDALONE" && targetSpan && language === "en") {
+    const lead = /(?:^|[\s,:;])((?:[A-Za-z][A-Za-z-]*\s+){0,2}[A-Za-z][A-Za-z-]*)\s+(?:for|to fit|that fits?|compatible with)\s+(?:(?:my|the|a|an|our|your)\s+)?$/i.exec(text.slice(0, targetSpan[0]));
+    if (lead) {
+      const a = lead.index + lead[0].indexOf(lead[1]!);
+      const content = lead[1]!.split(/\s+/).filter((w) => !NOT_PART_LEAD.test(w) && !PURPOSE_LEAD.test(w) && !STOP_LEAD.test(w));
+      if (content.length && !uninterpreted.some((u) => u.span[0] <= a && u.span[1] >= a) && !requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] > a))
+        uninterpreted.push({ text: lead[1]!, span: [a, a + lead[1]!.length] });
+    }
   }
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
