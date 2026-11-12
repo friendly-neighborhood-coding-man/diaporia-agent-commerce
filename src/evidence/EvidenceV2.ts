@@ -93,6 +93,8 @@ export function namesUnknownEntity(text: string, product: CatalogProduct, asked:
       // V2.4: a unit right after a number ("4,000 Pa", "2,000 ANSI lumens") and a component named by its type
       // ("a LiFePO4 battery", "Cherry switches") describe this product; they are not another product.
       if (i > 0 && /^\d[\d,.]*$/.test(toks[i - 1]!)) continue;
+      // V2.7: a paper or media size before the thing it sizes ("A3 posters", "A4 pouches", "B5 notebooks") is a size.
+      if (/^[AB][0-6]$/.test(toks[i]!) && /^[a-z]/.test(toks[i + 1] ?? "")) continue;
       if (COMPONENT_NOUN.test(toks[i + 1] ?? "") || (/^[A-Z]{2,6}$/.test(toks[i]!) && COMPONENT_NOUN.test(toks[i + 2] ?? "") && /^[a-z]/.test(toks[i + 1] ?? ""))) continue;
       if (i > 0) return true;
       const next = toks[1];
@@ -188,6 +190,12 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     const clauseNamesThis = namesThis(clause) && (!otherYearInHit || (!!year && clauseYears.has(year)) || (!!generation && clauseGens.has(generation)));
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product, asked)) continue;
     if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
+    // V2.7: "Like the TI-5, it is cordless" on another product's page: this model is only the comparison, the subject is
+    // the other product. Attribution fails closed: the clause is not a statement about this model.
+    if (model && hitNamesOther && /^\s*(?:like|unlike|as with|similar to|compared (?:to|with)|just like)\s/i.test(clause)) {
+      const lead = /^[^,]*,/.exec(clause)?.[0] ?? "";
+      if (lead && namesThis(lead) && !namesThis(clause.slice(lead.length))) continue;
+    }
     // V2.2 WP-4: a clause about a kit, bundle or combo describes another configuration than a standalone product
     // ("the kit includes two batteries" says nothing about the tool-only listing).
     if (facts.kind === "STANDALONE" && /\b(?:kits?|bundles?|combos?|combo pack|set includes|package includes|bundled with)\b|세트|번들|패키지/i.test(clause)) continue;

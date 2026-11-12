@@ -3,7 +3,7 @@ import { parseDecimalToMinor, type Currency } from "../domain/money.js";
 import { ACCESSORY_NOUN, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
-import { extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
+import { OBJECT_SIZE, extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
 import { productType, uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
 import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
 
@@ -175,7 +175,11 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   let targetSpan: [number, number] | null = null;
   if (brandHit) {
     // The product phrase: from the buy verb (or brand) to the end of the clause.
-    const from = buy && buy.index < brandHit.index && language === "en" ? buy.index + buy[0].length : 0;
+    const from0 = buy && buy.index < brandHit.index && language === "en" ? buy.index + buy[0].length : 0;
+    // V2.7: the product phrase starts in the sentence or colon segment that holds the brand: a greeting or lead-in
+    // before it ("Hi! …:", "I'm getting into astronomy …:") is never the product.
+    const segStart = Math.max(...[". ", "! ", "? ", ": ", "; ", "!", "?"].map((m) => { const k = text.lastIndexOf(m, brandHit.index); return k >= 0 ? k + m.length : 0; }));
+    const from = Math.max(from0, segStart <= brandHit.index ? segStart : 0);
     const clause = text.slice(from).split(/,\s*(?:but|and|only|if|under|budget|ideally|must|with)\b|[.!?](?:\s|$)|\s+(?:but|only if|under|below|less than|budget|with(?:out)?|money)\b|\s+\d[\d,]*\s*(?:달러|만\s*원|원)/i)[0]!;
     const ex = extractIdentity(clause.replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand, { request: true });
     const model = input.exactProduct?.model ?? ex.model;
@@ -221,7 +225,9 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (!exact && buy) assumptions.push("Purchase verb found but no exact model; running discovery first.");
 
   // Attributes: the user's own words; Korean colour words included. Pack sizes mark a bundle request.
-  const attrText = target && targetSpan ? text.slice(targetSpan[0]) : text;
+  const objectSizes = !!target?.model && target.kind === "STANDALONE";
+  const attrText0 = target && targetSpan ? text.slice(targetSpan[0]) : text;
+  const attrText = objectSizes ? attrText0.replace(OBJECT_SIZE, " ") : attrText0;
   const attributes: VariantAttributes = { ...parseAttributes(attrText.split(/\s+(?:under|below|budget|less than)\b/i)[0]!) };
   if (input.exactProduct?.variant) attributes.color = input.exactProduct.variant;
   // N-04: a model year or generation written right before the brand ("a 2023 Pagewell Lumen 7", "2nd gen Arden Buds").
@@ -246,7 +252,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // Requirements (N-01): lossless, per clause, with spans. "ideally X" is a nice-to-have; words inside the model name
   // are not requirements ("Tailspin Studio ANC Pro" does not ask for ANC). Structured input can only ADD requirements:
   // a structured niceToHave never softens a must-have stated in the text.
-  const requirements = extractRequirements(money.parse.masked, targetSpan, [target?.brand ?? "", target?.model ?? ""].filter(Boolean), { mustHave: input.mustHave ?? [], niceToHave: input.niceToHave ?? [] });
+  const requirements = extractRequirements(money.parse.masked, targetSpan, [target?.brand ?? "", target?.model ?? ""].filter(Boolean), { mustHave: input.mustHave ?? [], niceToHave: input.niceToHave ?? [] }, { objectSizes });
   const must = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "MUST").map((r) => r.capability!));
   const nice = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "NICE").map((r) => r.capability!).filter((c) => !must.has(c)));
   const unresolvedMust = requirements.filter((r) => r.strength === "MUST" && (!r.recognized || r.polarity === "EXCLUDED")).map((r) => r.key);

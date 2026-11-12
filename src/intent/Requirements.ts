@@ -176,7 +176,9 @@ function productModifiers(clause: string): Array<{ word: string; index: number }
  * All requirements stated in `text`. `targetSpan` is the exact product phrase (its words are the product, not a
  * requirement). Structured must-haves from the caller are added as recognized MUST items (they can only add).
  */
-export function extractRequirements(text: string, targetSpan: [number, number] | null, targetWords: string[] = [], structured: { mustHave?: string[]; niceToHave?: string[] } = {}): StatedRequirement[] {
+/** V2.7: "for 13-inch posters" after a named standalone product sizes the object it is for, not the product itself. */
+export const OBJECT_SIZE = /\bfor\s+(?:(?:my|our|the|a|an|some)\s+)?(\d+(?:\.\d+)?)\s?-?\s?(inch(?:es)?|in\b|"|cm|mm)\s*([a-z]{3,}(?:\s+[a-z]{3,})?)/gi;
+export function extractRequirements(text: string, targetSpan: [number, number] | null, targetWords: string[] = [], structured: { mustHave?: string[]; niceToHave?: string[] } = {}, opts: { objectSizes?: boolean } = {}): StatedRequirement[] {
   const out: StatedRequirement[] = [];
   const tw = new Set(targetWords.flatMap((w) => w.toLowerCase().split(/\s+/)).filter(Boolean));
   const inTarget = (abs: number) => !!targetSpan && abs >= targetSpan[0] && abs < targetSpan[1];
@@ -319,6 +321,17 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       if (inTarget(abs)) continue;
       const n = digitsForCounts(`${t[1]} person`).split(" ")[0];
       add({ key: `unrecognized:${n}-person`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+    }
+    // V2.7: a size of the object a named product is for ("LM-13 laminator for 13-inch posters") is a verifiable
+    // proposition about the product ("13-inch posters"), never a size attribute the listing must carry.
+    if (opts.objectSizes) for (const t of clause.matchAll(OBJECT_SIZE)) {
+      const abs = at + t.index!;
+      if (inTarget(abs) || !targetSpan || abs < targetSpan[1]) continue;
+      const unit = /^in/i.test(t[2]!) || t[2] === '"' ? "inch" : t[2]!.toLowerCase();
+      const noun = t[3]!.split(/\s+/).filter((w) => !/^(?:and|with|under|below|that|which|but|for)$/i.test(w))[0] ?? "";
+      if (!noun) continue;
+      const len = t[0].indexOf(noun) + noun.length;
+      add({ key: `unrecognized:${slugOf(`at-least-${t[1]}-${unit}-${noun}`)}`, text: t[0].slice(0, len), span: [abs, abs + len], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
     }
     for (const re of EN_NOT) tryPhrase(re.exec(clause), "EXCLUDED");
     for (const re of EN_MUST) tryPhrase(re.exec(clause), "REQUIRED");

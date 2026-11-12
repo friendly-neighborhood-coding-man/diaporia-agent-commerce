@@ -201,8 +201,25 @@ const nounPhraseAt = (rest: string[]): "STOP" | "MODEL" | null => {
   return MODELISH_NEXT.test(after) && !UNIT_TOKEN.test(after) && !/^\d+[- ]?(?:pack|pk|count|ct)$/i.test(after) && m[0].split(/\s+/).length === 1 ? "MODEL" : "STOP";
 };
 
+/**
+ * V2.7 (identity fails closed): in a REQUEST, every capitalized or upper-case token right after the model number is
+ * part of the name the user gave ("Orbit 90 EQ", "TC-20 LTE", "AF-55 Duo", "P20 GaN"), unless it is provably not a
+ * name token: a generic product/feature word written as such, a colour, a unit, an accessory or part noun, or a
+ * descriptive adjective ("Mechanical", "Backpacking"). A candidate must then show the whole name; when unsure the
+ * candidate is a mismatch, never the base model.
+ */
+function requestNameToken(w: string): boolean {
+  if (!/^[A-Z][A-Za-z0-9+]{0,11}$/.test(w)) return false;
+  const lw = w.toLowerCase();
+  if (COLOR_WORDS[lw] || UNIT_TOKEN.test(w) || ACCESSORY_NOUN.test(w) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(w)) return false;
+  if (/^[A-Z][a-z]+$/.test(w) && (GENERIC.has(lw) || /(?:ing|ed|al|ic|ive|ous|less|proof|able|ible|ful|er|est|ly)$/.test(lw))) return false;
+  return true;
+}
 /** V2.5: "Duo" in "AF-55 Duo" / "AF-55 Duo, 5.5 L"; not "Backpacking", "Mechanical", "Footprint", "Black", "Wireless". */
 function siblingSuffix(w: string, raw: string, next: string[], request: boolean): boolean {
+  // V2.7: an upper-case code after the model number ("Orbit 90 EQ", "TC-20 LTE") is a name token in a listing too:
+  // product nouns in titles are capitalized words, never codes. Descriptive codes (IH, GaN, ANC, ...) are trimmed later.
+  if (/^[A-Z][A-Z0-9+]{1,4}$/.test(w) && !UNIT_TOKEN.test(w) && !DESCRIPTIVE_CODE.test(w)) return true;
   if (!/^[A-Z][a-z]{1,9}$/.test(w)) return false;
   const lw = w.toLowerCase();
   if (GENERIC.has(lw) || COLOR_WORDS[lw] || UNIT_TOKEN.test(w) || ACCESSORY_NOUN.test(w) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(w)
@@ -244,7 +261,7 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // Mechanical Keyboard", "Ridge 2 Footprint") is not part of the model.
     // V2.5: a sibling suffix ("AF-55 Duo", "Hush 2 Trio") is part of the model: one capitalized, non-descriptive word
     // that ends the name (end of text, punctuation or a lowercase word after it).
-    if (words.some((x) => /\d/.test(x)) && !/\d/.test(w) && !isModelExtension(lw) && !siblingSuffix(w, raw, parts.slice(i + 1), request)) break;
+    if (words.some((x) => /\d/.test(x)) && !/\d/.test(w) && !isModelExtension(lw) && !(request ? requestNameToken(w) : siblingSuffix(w, raw, parts.slice(i + 1), request))) break;
     if (words.length && np === "MODEL") { words.push(w); if (stop || words.length >= 4) break; continue; }
     // V2.3: in a request, an all-lowercase word after a capitalized name ends it ("Nordvik Summit tent" → Summit).
     if (words.length && /^[a-z][a-z-]*$/.test(w) && words.every((x) => /^[A-Z0-9]/.test(x))) break;
@@ -253,9 +270,13 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     words.push(w);
     if (stop || words.length >= 4) break;
   }
+  // V2.7: a greeting, pronoun or request word is never a model name ("Hi", "I'm", "Please", "Could").
+  if (words.length && NOT_A_NAME.test(words[0]!)) return null;
   return words.length ? words.join(" ") : null;
 }
+const NOT_A_NAME = /^(?:hi|hello|hey|thanks|thank|please|i|i'?m|i’m|i'?d|i’d|i'?ve|we|we'?re|you|my|our|me|us|it|this|that|could|would|can|will|should|looking|get|buy|order|find|need|want|yes|no|ok|okay)$/i;
 
+const DESCRIPTIVE_CODE = /^(?:HD|FHD|UHD|QHD|RGB|TWS|USB|LED|LCD|OLED|ANC|ENC|NFC|BT|DC|AC|UV|HEPA|IPS|HDR|PD)$/;
 const TECH_SUFFIX = /^(?:IH|GaN|PD|ANC|ENC|OLED|QLED|IPS|HDR|HDR10|Wi-?Fi|BT|NFC|USB-?C|LED|LCD|DC|AC|UV|HEPA|IPX?\d|IP\d\d)$/;
 export function extractIdentity(title: string, brand: string | null, opts: { request?: boolean } = {}): ExtractedIdentity {
   const t = title.normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -291,7 +312,8 @@ export function extractIdentity(title: string, brand: string | null, opts: { req
   let named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null, !!opts.request);
   // V2.3 (V22-07): a technology acronym written after a model number describes it, it is not part of the model
   // ("HR-6 IH rice cooker" is the HR-6; "P20 GaN charger" is the P20). Family extensions (Pro, Max, Gen 2) still are.
-  if (named && num) {
+  // V2.7: in a request the user's own name tokens are never trimmed ("P20 GaN" stays; the title check decides).
+  if (named && num && !opts.request) {
     const ws = named.split(" ");
     if (normalizeKey(ws[0]!) === normalizeKey(num)) { const k = ws.findIndex((w, i) => i > 0 && TECH_SUFFIX.test(w)); if (k > 0) named = ws.slice(0, k).join(" "); }
   }
@@ -347,6 +369,9 @@ export function mentionsExactModel(text: string, model: string, own: { generatio
     if (next && own.generation && modelGeneration(after.slice(0, 24).replace(/^[-\s(]*/, "")) === own.generation && /^[-\s(]*(?:\d{1,2}(?:st|nd|rd|th)|gen|generation|first|second|third|fourth|fifth|sixth|\d{1,2}\s*세대)/i.test(after)) return true;
     // V2.5: "Air" in "AF-55 Duo Air Fryer" starts the product noun, it is not the "Air" model extension.
     if (next && isModelExtension(next) && !ownWords.has(next) && nounPhraseAt(after.split(/\s+/).filter(Boolean)) !== "STOP") continue;
+    // V2.7: an upper-case name code right after the model ("Glide 5 GTX", "Orbit 90 EQ") names a sibling model.
+    const rawNext = /^[\s(]*([A-Za-z0-9+]+)/.exec(after)?.[1] ?? "";
+    if (rawNext && !ownWords.has(rawNext.toLowerCase()) && /^[A-Z][A-Z0-9+]{1,4}$/.test(rawNext) && !UNIT_TOKEN.test(rawNext) && !DESCRIPTIVE_CODE.test(rawNext) && !TECH_SUFFIX.test(rawNext)) continue;
     return true;
   }
   return false;
