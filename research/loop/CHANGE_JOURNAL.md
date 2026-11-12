@@ -8,7 +8,8 @@
 | Cycle 1 F5/F3 (units in model names, lowercase brand guess, part = head noun) | predictions `0910c71`, code `ab42ef0` | Seen all-sets 1264→1296/1828, legit prepared 596→627, 0 unsafe; 1 newly failed (IW-20 a17 INVESTIGATE→HOLD, fixed in cycle 3) | Cycle 2 |
 | Cycle 2 F4/F2 (unit dimensions, spelled counts, "for <quantity>" = WITHIN) | predictions `50fad78`, code `72e9274` | IW-19+20 seen 224→257/349, legit 100→132/240, 0 unsafe | Cycle 3 |
 | Cycle 3 F3 (family-titled part locked through manufacturer fit) | predictions `efe8d3c`, code `2ed82f9` | Seen all-sets 1264→1339/1828, legit 596→664/1204, 0 unsafe, 0/2145 bypass, 0 newly failed | IW-21 handoff |
-| Independent IW-21 scoring | NOT RUN (handoff requested; candidate frozen at the cycle-3 head) | No result, no case hash | Independent evaluator seals first |
+| Independent IW-21 scoring | Evaluator thread, sealed bundle cfe206fb…19aa2, scored once on 94e13ca | 134/190 (frozen 108), 4 unsafe (frozen 3), bypass 5/209 (frozen 6), legit 80/141 (frozen 55). IW-21 is now SEEN | Cycle 4 |
+| Cycle 4 (IW-21 findings) | predictions `5e2138a`, code `a199885` | IW-21 (seen, in-sample) 134→142, unsafe 4→0, bypass 5→0/209; IW-1..IW-20 1339→1342, 0 newly failed | Fresh IW-22 needed |
 | Ordinary-debugging control | NOT RUN | Method superiority unknown | Match source access, time, probes |
 
 All future entries must record failures of the diagnostic **method** as well as failures of the repaired code. Do not revise old predictions after seeing results.
@@ -58,3 +59,45 @@ IW-20: d02/q03 "included" vs "ships with"; d08 "up to 90 lb total" (EXACT, fail-
 ### Limits on the claims
 
 All numbers are on seen sets. They show the repairs do what the tests say and break nothing measured; they are not evidence of generalization. No fresh IW-21 has been run. No ordinary-debugging control was run, so nothing here says the loop beats ordinary debugging. No model weights were trained or changed.
+
+## Independent IW-21 and cycle 4 (2026-11-12)
+
+**IW-21 (independent, fresh, scored once on 94e13ca).** 134/190 vs 108/190 for the frozen engine. Unsafe 4 vs 3, must-refuse bypass 5/209 vs 6/209, legit prepared 80/141 vs 55/141, false INVESTIGATE 40 vs 57, false HOLD 14 vs 23, wrong product prepared 0 vs 2. The evaluator reported **net safety about flat, not better**. The candidate removed the frozen engine's wrong-product compare (d07) but added a new unsafe mechanism (d15, sibling-page evidence). This is the only fresh evidence in this loop: completion improved out of sample, and safety did not improve. Report: `/mnt/project-files/agent-commerce-research-v2/iw21-independent-eval/IW21-REPORT.md`.
+
+**Cycle 4 root causes (established by probe or code reading, both builds unless noted).**
+- d15: `stripYear` dropped "2000" from "Tessel 2000". In addition, `mentionsExactModel` let "Tessel 4000" name a digit-less "Tessel". Cycle 2's threshold reading made this reachable.
+- d22/q25: PURPOSE_FOR read the intensity word "heavy" in "for heavy snow" as a use.
+- q46: a capitalized leftover with a named target was silently dropped by the word accounting.
+- d33: threshold words were also parsed as an exact capacity.
+- a04/a07: an unknown part noun after the model left the request STANDALONE.
+- w01: an occasion with one modifier was not recognized.
+
+**Prediction outcomes.**
+- P4.1 HIT (IW-21 unsafe 4→0; d15 now recommends the Tessel 4000, d22 the snow-rated glasshouse, q25 HOLD, q46 INVESTIGATE).
+- P4.2 HIT (0/209).
+- P4.3 HIT, and stronger than predicted: i11 and i13 both became correct.
+- P4.4 HIT for a07; a04 only after an in-cycle fix, because the first part-title check rejected "Pre-Filter" on its inner word "Filter". a11/a18 also lock the part, via the existing base-model fit path, which was not predicted.
+- P4.5 HIT (w01 correct, w04 still INVESTIGATE).
+- P4.6 HIT: IW-1..IW-20 0 unsafe, 0 bypass, legit 664→670, 0 newly failed. The predicted "Aero 2 pack" regression does not exist; the frozen engine already rejected it.
+- Negative-control error: the prediction said "pickup only" is not a requirement; in fact it already was one on 4bc7dcc. Unchanged.
+
+**After cycle 4 (all 21 sets SEEN, frozen → a199885).**
+- Correct 1372→1484/2018, unsafe 3→0, bypass 6/2354→0/2354.
+- Legit prepared 651→757/1345.
+- False INVESTIGATE 402→350, false HOLD 242→184.
+- Wrong lock 43→32; wrong product prepared 2→0.
+- See `SEEN_RESULTS_C4.md`.
+- The IW-21 gains after cycle 4 are in-sample. Only a new sealed IW-22 can say whether cycle 4 generalizes.
+
+**Still failing on IW-21 (seen).**
+- Thresholds on temperature, area, weight, length, blade size, snow load and egg count (d01, d04, d08, d10, d19, d23, d28, q08, q38).
+- "really quiet" (d05, d30).
+- "for painting the house" (d11, q14; kept a must-have since IW-20's "for cycling" unsafe).
+- Fitment with numbers (d17, d32, d36, q16, q24).
+- Identity spellings: "4000uv", "10 inch", "8 x 10", "48 Egg", "forty-eight egg", "60-liter Fireproof", "60l fireproof".
+- Lowercase brand i22.
+- Korean (d37, d38, i32, i33, q42, w08).
+- Budget-with-named-product INVESTIGATEs (b03, b11, b16, b19).
+- "comes complete with" and "turns eggs automatically" (q05, q30).
+- Kit-word parts (a17, a28).
+- Lead-ins w04, w09, w17, w18; w06, w07.
