@@ -1,12 +1,67 @@
 # Haiku 5.5 hybrid parser experiment: seen-set report
 
-Status: **arms frozen; seen-set results only. The verdict waits on the fresh holdout (IW-23), scored by an independent evaluator.**
+Status: **concluded. Verdict on the fresh holdout IW-23 (independent evaluator, arms at b917bff): REJECT for B and C.** See the final conclusion below. The seen-set sections follow it.
 
 All runs here are **offline precomputed-parser experiments**:
 
 - A Claude Code subagent on model `claude-haiku-5-5` produced the JSON interpretation of each request once.
 - The engine reads that JSON from a fixture through `GatewayConfig.interpreter`.
 - No live Anthropic API call is made, and this branch contains no production Haiku integration.
+
+## Final conclusion: fresh holdout IW-23 (independent evaluator)
+
+IW-23 was sealed before the Haiku fixture existed and before any arm ran:
+
+- 181 cases in a new fictional world, 21 of them Korean.
+- The fixture was made by four `claude-haiku-5-5` subagents. Every one of their transcripts was verified.
+- All 181 objects passed the schema, and all 463 spans were verbatim.
+- Each arm was scored once. The set has been SEEN since then.
+
+| Metric (service caps) | A TS only | B always | C selective |
+|---|---|---|---|
+| **Fully correct** | 111/181 (61.3%) | 113/181 (+1.1pp) | 114/181 (+1.7pp) |
+| Unsafe | 3 | 2 | 2 |
+| Payment-gate bypasses | 3/204 | 2/204 | 2/204 |
+| Legit checkout prepared | 58/140 | 64/140 | 65/140 |
+| False HOLD | 16/140 | 19/140 | 19/140 |
+| False INVESTIGATE | 53/121 | 48/121 | 47/121 |
+| Wrong locks | 6 | 3 | 2 |
+| Wrong product prepared / compare | 0 | 0 | 0 |
+| Korean | 5/21 | 6/21 | 6/21 |
+| Escalated (C) | – | 181 | 146 (80.7%) |
+| Haiku cost at list price | – | about $0.00047 per request | same |
+
+**Verdict under DECISION-CRITERIA.md: REJECT, for both B and C.** The gain is below the 5pp floor.
+
+Every other criterion passes:
+
+- No new unsafe case caused by the adapter or the interpreter.
+- No new unsafe case that the hybrid merely exposed.
+- Bypasses went down (3 → 2).
+- Wrong product stayed at 0.
+- Cost is under the bar.
+
+The two unsafe cases left (d16, q13) are unsafe in all three arms. In both, a conditional sentence on an accessory page verifies the plain product. That is the known evidence-attribution weakness, and the parser did not hide it.
+
+The seen-set loosening classes did not recur on IW-23. The household/recipient context, the reversed "up to" and the misattached weight were all read correctly. Every exclusion was extracted.
+
+### Why a large parse gain gives a small purchase gain
+
+1. **The adapter keeps parsed constraints as literal must-haves.** Haiku's numeric and compatibility constraints become verbatim `unrecognized:` MUSTs, because the adapter never trusts the interpreter's direction or attachment. The evidence engine cannot verify them, so correct parses still end in INVESTIGATE. The purchase funnel names intent as the main failure cause in every arm: 59 failures in A and 61 in B and C.
+2. **The interpreter marks place or recipient phrases as compatibility.** The adapter tightens those into MUSTs, which produces false INVESTIGATE or HOLD.
+3. **Hangul brands break product identity.** The adapter accepts the brand as written, no listing matches it, and the request goes to HOLD. Accessories fell from 23 to 19 correct on IW-23.
+4. **Selective escalation (C) misses confident-but-wrong parses.** Of the 35 requests C did not escalate, 8 were wrong in A, mostly in money or evidence handling.
+
+### What would have to change before another attempt
+
+This branch does not try any of these.
+
+- Map typed numeric and compatibility constraints into checkable engine capabilities, instead of keeping them as literal text.
+- Normalize non-Latin brand names before identity matching.
+- Read context versus compatibility from the request words, not the interpreter's label.
+- Fix evidence attribution separately, for accessory-conditional sentences and sibling pages.
+
+None of these is a parser change. As built, the hybrid parser is not worth adopting.
 
 ## What was built
 
