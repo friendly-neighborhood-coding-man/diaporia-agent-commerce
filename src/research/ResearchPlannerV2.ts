@@ -7,6 +7,7 @@ import type { EvidenceRouter, RouterResult, RouterStep } from "../evidence/Evide
 import { judgeV2, type CapabilityVerdict, type EvidenceItem } from "../evidence/EvidenceV2.js";
 import { hostOf } from "../evidence/SourceRegistry.js";
 import { clauseStatement, evidenceCapabilityOf, fitKey } from "./capabilities.js";
+import { applyObligationKernel } from "../verification/ObligationKernel.js";
 
 /** True when any clause of a listing text claims the capability (planner prior only). */
 function clauseStatementAny(text: string, cap: string): boolean | null {
@@ -47,6 +48,8 @@ export interface PlannerDeps {
   limits?: Partial<PlannerLimits>;
   /** V2.14: true when the offer's merchant is known to be ineligible (registry not ACTIVE, payee revoked). */
   merchantIneligible?: (offer: MerchantOffer) => Promise<boolean>;
+  /** Obligation kernel: the request text as written (identity words, numbers). */
+  requestText?: string | null;
 }
 export interface PlannerTrace {
   queries: Array<{ query: string; page: number; results: number; purpose: "PRIMARY" | "FALLBACK" | "NEXT_PAGE" | "VARIANT_DETAIL" }>;
@@ -288,6 +291,9 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   });
   const exactFailure = namedFallback ? null : exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
   const decision = decide(intent, inputs, { exactLock: lock, exactFailure, weights: d.weights ?? null, now: d.now() });
+  // Architecture experiment: typed obligations checked after the decision; can only demote RECOMMEND (ObligationKernel.ts).
+  const klog = await applyObligationKernel({ lookupAllowed: trace.evidenceSearches < L.maxEvidenceSearches, intent, requestIntent: intentIn, requestText: d.requestText ?? null, products: [...products.values()], offers, decision, verdicts, excluded: resolution && "excluded" in resolution ? resolution.excluded.map((e) => ({ productId: e.productId, reason: e.reason })) : [] }, { router: d.router, ctx: d.ctx });
+  trace.evidenceSearches += klog.pageLookups;
   return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace, namedFallback, intent };
 }
 

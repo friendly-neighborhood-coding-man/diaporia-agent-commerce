@@ -75,6 +75,8 @@ export interface Decision {
   holdReasons: string[];
   ranking: RankedCandidate[];
   disclaimer: string;
+  /** Architecture experiment: the obligation kernel's per-check log (present when it ran on a RECOMMEND). */
+  kernel?: import("../verification/ObligationKernel.js").KernelLog;
 }
 
 const REQUIREMENT_BLOCKERS = new Set<string>(["REQUEST_UNINTERPRETED", "MUST_HAVE_UNVERIFIED", "MUST_HAVE_UNRECOGNIZED", "MUST_NOT_UNVERIFIABLE", "VERIFICATION_LIMIT_REACHED", "MUST_HAVE_CONTRADICTED", "ATTRIBUTE_UNKNOWN"]);
