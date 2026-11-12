@@ -179,11 +179,12 @@ interface NumericProposition { dir: "AT_LEAST" | "AT_MOST" | "EXACT"; n: number;
 const MIN_UNITS = /^(?:w|watts?|mah|wh|hz|mbps|gbps|nits|tb|gb)$/i;
 export function numericProposition(id: string): NumericProposition | null {
   if (!id.startsWith(PROPOSITION_PREFIX)) return null;
-  const m = /^(?:(at-least|at-most)-)?(\d+(?:\.\d+)?)(?:-?([a-z%]+))?(?:-(.+))?$/i.exec(id.slice(PROPOSITION_PREFIX.length));
+  // V2.10: "up-to" is a bound of unclear direction (Requirements.ts): only the exact value meets it (fail closed).
+  const m = /^(?:(at-least|at-most|up-to)-)?(\d+(?:\.\d+)?)(?:-?([a-z%]+))?(?:-(.+))?$/i.exec(id.slice(PROPOSITION_PREFIX.length));
   if (!m) return null;
   const rest = (m[4] ?? "").split("-").filter((w) => w && !PROP_STOP.has(w));
   const unit = (m[3] ?? "").toLowerCase();
-  const dir = m[1] === "at-least" ? "AT_LEAST" : m[1] === "at-most" ? "AT_MOST" : MIN_UNITS.test(unit) ? "AT_LEAST" : "EXACT";
+  const dir = m[1] === "at-least" ? "AT_LEAST" : m[1] === "at-most" ? "AT_MOST" : m[1] === "up-to" ? "EXACT" : MIN_UNITS.test(unit) ? "AT_LEAST" : "EXACT";
   if (!unit && !rest.length) return null;
   return { dir, n: Number(m[2]), unit, rest };
 }

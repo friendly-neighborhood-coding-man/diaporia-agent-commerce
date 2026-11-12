@@ -107,3 +107,26 @@ describe("V2.9 a part noun after or before the model asks for the part", () => {
     expect(r.status).toBe("NOT_FOUND");
   });
 });
+
+describe("V2.10 the direction of 'up to' comes from the verb (IW-11 is seen; fictional products only)", () => {
+  it("after a capacity verb it is a minimum; after a weight word a maximum; otherwise it must be met exactly", async () => {
+    const { clauseStatement } = await import("../src/research/capabilities.js");
+    const must = (r: string) => intent(r).unresolvedMust as string[];
+    expect(must("Abrin smart scale that supports up to 180 kg")).toContain("unrecognized:at-least-180-kg");
+    expect(clauseStatement("It supports users up to 150 kg.", "unrecognized:at-least-180-kg")).toBe(false);
+    expect(clauseStatement("Rated for users up to 200 kg.", "unrecognized:at-least-180-kg")).toBe(true);
+    expect(must("Contoso laptop that weighs up to 1.5 kg")).toContain("unrecognized:at-most-1.5-kg");
+    expect(must("Toska vacuum with up to 60 minutes")).toContain("unrecognized:up-to-60-minutes");
+    expect(clauseStatement("It runs for up to 45 minutes.", "unrecognized:up-to-60-minutes")).toBe(false);
+  });
+  it("a limit word inside a model name is never money", () => {
+    const i = intent("Quillon K2 Max 3D printer");
+    expect(i.target.model).toBe("K2 Max 3D");
+    expect(i.budgetMinor ?? null).toBeNull();
+  });
+  it("'doesn't need X' excludes X", () => {
+    const m = intent("smart scale that doesn't need an app subscription").unresolvedMust as string[];
+    expect(m).toContain("not:app-subscription");
+    expect(m.some((k) => /^unrecognized:.*app-subscription/.test(k))).toBe(false);
+  });
+});

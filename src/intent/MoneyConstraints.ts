@@ -101,7 +101,7 @@ const RANGE_SEP = /^\s*(?:-|–|—|~|to|and|부터|에서)\s*/i;
 const RANGE_TAIL = /^\s*(?:사이|사이에서|사이의|까지|정도|선)?/;
 
 /** Units that make a bare number a quantity, never money. */
-const QUANTITY_UNIT = String.raw`(?:\+|-?\s*(?:hours?|hrs?|h|cups?|oz|ounces?|weeks?|wks?|days?|months?|years?|yrs?|minutes?|mins?|watts?|w|wh|kwh|lumens?|lm|pa|kpa|nits?|gb|tb|mb|mah|inch(?:es)?|in|ft|feet|lbs?|pounds?|kg|kilograms?|grams?|g|mm|cm|m|l|liters?|litres?|ml|%|x|pack|pcs|pieces|items?|people|persons?|devices?|ports?|db|hz|khz|mph|km|miles?|steps?|users?|seats?|players?|keys?|buttons?|v|volts?|amps?|a|rpm|psi|bar|qt|quarts?|gallons?|cu|sq|°|degrees?|fps|p\b|k\b)\b|\s*["”'%°]|\d|\.\d)`;
+const QUANTITY_UNIT = String.raw`(?:\+|-?\s*(?:hours?|hrs?|h|cups?|oz|ounces?|weeks?|wks?|days?|months?|years?|yrs?|minutes?|mins?|watts?|w|wh|kwh|lumens?|lm|pa|kpa|nits?|gb|tb|mb|mah|inch(?:es)?|in|ft|feet|lbs?|pounds?|kg|kilograms?|grams?|g|mm|cm|m|l|liters?|litres?|ml|%|x|pack|pcs|pieces|items?|people|persons?|devices?|ports?|db|hz|khz|mph|km|miles?|steps?|users?|seats?|players?|keys?|buttons?|v|volts?|amps?|a|rpm|psi|bar|qt|quarts?|gallons?|cu|sq|°|degrees?|fps|d|p\b|k\b)\b|\s*["”'%°]|\d|\.\d)`;
 const LIMIT_EN = new RegExp(String.raw`(?:^|[^A-Za-z])(under|below|less than|at most|max(?:imum)?(?: of)?|no more than|never (?:go over|exceed)|not exceed|up to|budget(?: of| is)?|within|cheaper than|cap(?:ped)? at|spend(?:ing)? (?:at most|up to)?|between|from) ?[:=]? ?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?:\s?(k)\b|\s+(thousand)\b)?(?!${QUANTITY_UNIT})`, "gi");
 const LIMIT_KO = /(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?) ?(천|만|백)? ?(이하|미만|까지|이내|안쪽|아래|선에서)|(예산|최대|상한) ?[:은는이가]? ?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?) ?(천|만)?(?!\s*(?:시간|개|대|명|인치|와트|분|일|주|개월|년|%|mAh|W|kg|g|GB|TB))/g;
 const KO_UNIT_BEFORE_LIMIT = /(?:시간|개|대|명|인치|와트|분|일|주|개월|년|%|mah|w|kg|g|gb|tb|원|달러|유로|파운드)\s*$/i;
@@ -253,7 +253,7 @@ export function parseMoneyConstraints(text: string, structured?: string, opts: {
   for (const m of masked0.matchAll(LIMIT_EN)) {
     const word = m[1]!;
     const at = m.index! + m[0].indexOf(word);
-    if (/^Max/.test(word) && /[A-Za-z]\s+$/.test(t.slice(0, at))) continue; // "AirPods Max 2" is a model name
+    if (/^Max/.test(word) && /[A-Za-z0-9]\s+$/.test(t.slice(0, at))) continue; // "AirPods Max 2", "K2 Max 3D" are model names
     const numStart = m.index! + m[0].lastIndexOf(m[2]!);
     let end = m.index! + m[0].length;
     const mult = m[3] || m[4] ? 1000 : 1;

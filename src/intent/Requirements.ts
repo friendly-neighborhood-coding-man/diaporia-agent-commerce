@@ -51,11 +51,11 @@ const EN_MUST = [
   /\b(?:must|has to|have to|needs? to|got to|should)\s+(?:have|has|support|include|come with|offer|feature|provide|be|use|work with|do)\s+(.+)/i,
   // V2.3: any other verb after must/has to/needs to states a requirement ("it must fold flat into a slim case").
   /\b(?:must|has to|have to|needs to|need to|got to)\s+(?!(?:have|has|support|include|come|offer|feature|provide|be|use|work|do|not|never|cost|ship|arrive)\b)([a-z][a-z-]*\s+.+)/i,
-  /\b(?:i\s+)?(?:need|require)s?\s+(?:it\s+to\s+(?:have|support|be)\s+)?(?!to\b)(.+)/i,
+  /\b(?<!(?:n't|not|never|no longer)\s+)(?:i\s+)?(?:need|require)s?\s+(?:it\s+to\s+(?:have|support|be)\s+)?(?!to\b|no\b)(.+)/i,
   /\b(?:only if it|as long as it)\s+(?:has|supports|includes|is|comes with)\s+(.+)/i,
   /\b(?:with|featuring|that has|that have|which has|that supports?|which supports?|that comes with|that includes)\s+(.+)/i,
   // V2.3 (V22-02): any other relative clause states a requirement ("that packs into its own pocket", "which folds flat").
-  /\b(?:that|which)\s+(?!(?:has|have|supports?|comes|includes|i|you|we|they|it'?s|is a|are a|costs?|will|would|can i|ships?|arrives?|must|should|needs?|has to|have to|got to)\b)((?:is|are|can|will)?\s*[a-z].+)/i,
+  /\b(?:that|which)\s+(?!(?:has|have|supports?|comes|includes|i|you|we|they|it'?s|is a|are a|costs?|will|would|can i|ships?|arrives?|must|should|needs?|has to|have to|got to|does(?:n't| not)|do(?:n't| not)|won't|will not|never)\b)((?:is|are|can|will)?\s*[a-z].+)/i,
   // V2.4: "ideally dimmable", "preferably foldable": an optional preference (NICE, never blocks), never an uninterpreted word.
   /\b(?:ideally|preferably)\s+(?!with\b|a\b|an\b|the\b|under\b|below\b|around\b|less\b|in\s+(?:black|white))([a-z].+)/i,
   // V2.5: "powered by a single USB-C cable", "runs on AA batteries": the power source is a requirement.
@@ -69,6 +69,8 @@ const EN_NOT = [
   /\b(?:without|free of)\s+(?:an?\s+|any\s+)?(.+)/i,
   /\b(?:must|should|can)\s*(?:not|n't)\s+(?:have|include|use|come with|be)\s+(.+)/i,
   /\bno\s+(.+)/i,
+  // V2.10 (IW-11): "doesn't need an app subscription", "won't require a boundary wire" exclude the thing named.
+  /\b(?:does(?:n't| not)|do(?:n't| not)|won't|will not|should(?:n't| not)|never)\s+(?:need|require|use|rely on)s?\s+(?:an?\s+|any\s+|the\s+)?(.+)/i,
   /\b([a-z][a-z0-9 -]{1,30})-free\b/i,
 ];
 /** Korean: "<X> 있어야/돼야/필수/꼭", adjectival "<X> 되는/지원되는/가능한/있는/달린/탑재된", negative "<X> 없는/없어야/제외". */
@@ -112,6 +114,11 @@ const CAP_MOD_STOP = /^(?:a|an|the|with|without|and|or|has|have|having|had|that|
 /** V2.5: parts a property applies to ("dishwasher-safe basket", "removable lid"). */
 const CAP_PART = /baskets?|lids?|jars?|bowls?|trays?|carafes?|parts|pots?|blades?|cups?|containers?|tanks?|bins?|pans?|inserts?|accessories|attachments|components|cases?|shells?|housings?|body/;
 /** V2.5: spans of context (lead-in before a colon, purpose phrases, relative clauses about a person). */
+/** V2.10: verbs after which "up to N" is a rating the product must reach (a minimum). */
+const CAPACITY_VERB = /\b(?:supports?|supporting|holds?|holding|carr(?:y|ies)|carrying|covers?|covering|seats?|seating|fits?|fitting|handles?|handling|takes?|accommodates?|lifts?|loads?|rated(?: for)?|capacity(?: of)?|runs?|lasts?|reaches|reach|charges?|stores?|serves?|cleans?|cools?|heats?|prints?|records?|mows?|tows?|pulls?|plays?|goes|go|travels?|ranges?|range of|brews?|makes?|cooks?|connects?|pairs?|users?|people|persons?|riders?)\s+(?:\w+\s+){0,2}$/i;
+/** V2.10: words after which "up to N" is a maximum ("weighs up to 2 kg", "noise up to 40 dB"). */
+const MAX_CONTEXT = /\b(?:weighs?|weighing|weight|measures?|noise|loud|loudness|costs?|thick|thickness|tall|height|wide|width|deep|depth|long|length|sized?|draws?|uses?|consumes?)\s+(?:\w+\s+){0,2}$/i;
+
 export function contextSpans(text: string, targetSpan: [number, number] | null): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   const colon = /^([^:;.!?]{1,80}):\s/.exec(text);
@@ -286,9 +293,18 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     // MUST propositions; the number and its direction are never dropped (see thresholdStatement in capabilities.ts).
     for (const t of clause.matchAll(/\b(at least|minimum(?: of)?|no less than|more than|over|above|at most|no more than|less than|under|below|up to|maximum(?: of)?|(?:quiet|light|small|thin|short)er than|(?:big|bigg|long|larg|bright|fast|strong|high)er than)\s+(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([a-z%][a-z0-9/%]*(?:\s+(?!(?:and|or|under|with|that|which|who|for|to|can|could|is|are|it|and|but|so|from|at|in|on|of)\b)[a-z]+){0,2})/gi)) {
       if (recognizedSpans.some(([s, e]) => s <= t.index! + t[0].length && e >= t.index!)) continue;
-      const dir = /^(?:at most|no more than|less than|under|below|up to|maximum|(?:quiet|light|small|thin|short)er than)/i.test(t[1]!) ? "at-most" : "at-least";
+      let dir: "at-most" | "at-least" | "up-to" = /^(?:at most|no more than|less than|under|below|up to|maximum|(?:quiet|light|small|thin|short)er than)/i.test(t[1]!) ? "at-most" : "at-least";
+      // V2.10 (IW-11): "up to N" states a bound whose direction comes from the verb before it. After a capacity or
+      // ability verb ("supports up to 180 kg", "covers up to 1,200 m²", "runs up to 60 minutes") it is the rating the
+      // product must reach: a minimum. After a size, weight or noise word ("weighs up to 2 kg") it is a maximum. With
+      // neither, the direction is unclear and the bound must be met exactly (fail closed: never read as a maximum).
+      if (/^up to$/i.test(t[1]!)) {
+        const before = clause.slice(Math.max(0, t.index! - 40), t.index!);
+        if (CAPACITY_VERB.test(before)) dir = "at-least";
+        else if (!MAX_CONTEXT.test(before)) dir = "up-to";
+      }
       const unit = t[3]!.trim().replace(/\s+(?:a|per|each|on|in|at|its|of|the|day)$/i, "");
-      const phrase = `${dir === "at-most" ? "at most" : "at least"} ${t[2]!.replace(/,/g, "")} ${unit}`;
+      const phrase = `${dir === "at-most" ? "at most" : dir === "at-least" ? "at least" : "up to"} ${t[2]!.replace(/,/g, "")} ${unit}`;
       const abs = at + t.index!;
       if (inTarget(abs)) continue;
       add({ key: `unrecognized:${slugOf(phrase)}`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
