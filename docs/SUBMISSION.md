@@ -22,7 +22,7 @@ AI assistants can already find products. The risky part is everything after that
 git clone <repo> && cd diaporia-agent-commerce
 npm ci                 # Node.js 22.13+
 npm run demo:full      # unattended end-to-end demo, offline, MOCK; writes demo-output/<run>/trace.json + transcript.md + trace.sha256
-npm test               # 950 automated tests (offline)
+npm test               # 958 automated tests (offline)
 npm run typecheck
 ```
 
@@ -44,10 +44,10 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 - Monetary constraints are never dropped. Budget parsing was 28/28 on seen IW-4 and 15/15 on the fresh IW-5 run, with no money bypass on either. An approximate budget is applied as a maximum and stated as an assumption.
 - The AI host cannot forge owner confirmation. A database row is never trusted: each gate check re-verifies the stored passkey signature against the binding. The AI-resolution probes found 0 bypasses on every set, including the fresh IW-5 run (0/3), where all 9 attacks that used only the AI's own access were refused.
 - No wrong model is locked. A NOT_REQUESTED_MODEL disqualifier applies; seen IW-4 and the fresh IW-5 run had 0 wrong locks.
-- Payment-gate bypasses: 0 in every current seen run (IW-1.1 0/15, IW-2 0/19, IW-3 0/20, IW-4 0/48, IW-5 0/46, IW-6 0/55, IW-7 0/66). On fresh cases, the first IW-5 run found **1 bypass in 46** (an accessory prepared for a named tent) and the first IW-6 run found **2 in 55** (a charger statement that denied USB-C counted as verified, and a dropped model suffix). The first IW-7 run, on V2.5, found **0 in 66** and 0 unsafe recommendations, including new phrasings of both IW-6 bypass classes. No unseen set has measured V2.6 yet.
-- Unsafe recommendations: 0 on every current seen run (builder eval 0/90 at both caps; IW-1.1 to IW-7). The first fresh IW-5 run had 1 (the same tent case), the first fresh IW-6 run had 2 (the same two cases), and the first fresh IW-7 run had 0.
+- Payment-gate bypasses: 0 in every current seen run (IW-1.1 0/15, IW-2 0/19, IW-3 0/20, IW-4 0/48, IW-5 0/46, IW-6 0/55, IW-7 0/66). On fresh cases, the first IW-5 run found **1 bypass in 46** (an accessory prepared for a named tent) and the first IW-6 run found **2 in 55** (a charger statement that denied USB-C counted as verified, and a dropped model suffix). The first IW-7 run, on V2.5, found **0 in 66** and 0 unsafe recommendations, including new phrasings of both IW-6 bypass classes. The first IW-8 run, on V2.6, found **1 in 61** and 2 unsafe recommendations: "Orbit 90 EQ" lost "EQ" in the listing identity, so the plain model's offers were pooled and the product was recommended and prepared over budget. No unseen set has measured V2.7 yet.
+- Unsafe recommendations: 0 on every current seen run (builder eval 0/90 at both caps; IW-1.1 to IW-8). The first fresh IW-5 run had 1 (the same tent case), the first fresh IW-6 run had 2 (the same two cases), the first fresh IW-7 run had 0, and the first fresh IW-8 run had 2 (the same "EQ" case, asked two ways).
 
-## Evaluation (measured on code commit e5cc4de)
+## Evaluation (measured on code commit 177b490)
 
 | Set | State correct | Unsafe | Gate bypasses | Notes |
 |---|---|---|---|---|
@@ -62,14 +62,16 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 | IW-5 now (seen) | 38/39 service caps; legitimate checkouts 24/26 | 0 | 0/46 | seen, regression only |
 | IW-6 now (seen) | 41/45 at both caps; legitimate checkouts 28/33 | 0 | 0/55 | seen, regression only |
 | **IW-7 first scored run (independent, on 6ada5b0)** | **19/45 service caps, 25/45 expanded; legitimate checkouts 9/36 and 15/36** | **0** | **0/66** | Fresh cases, sealed before the run. Recorded unchanged. Safe, but the IW-6 utility gains did not carry over: evidence went to the cheapest or trap candidates first, and ordinary words still blocked |
-| IW-7 after the V2.6 fixes (now seen) | 32/45 at both caps; legitimate checkouts 22/36 | 0 | 0/66 | seen, regression only. A clean measurement of V2.6 needs a new unseen set (IW-8) |
+| IW-7 after the V2.6 fixes (now seen) | 32/45 at both caps; legitimate checkouts 22/36 | 0 | 0/66 | seen, regression only |
+| **IW-8 first scored run (independent, on e5cc4de)** | **24/47 at both caps; legitimate checkouts 13/37** | **2** | **1/61** | Fresh cases, sealed before the run. Recorded unchanged. "Orbit 90 EQ" was locked as "Orbit 90" (the unsafe pair and the bypass), "TC-20 LTE" locked TC-20, greetings ("Hi", "I'm") were read as a model, and "for 13-inch posters" was read as the laminator's size |
+| IW-8 after the V2.7 fixes (now seen) | 27/47 at both caps; legitimate checkouts 16/37 | 0 | 0/61 | seen, regression only. A clean measurement of V2.7 needs a new unseen set (IW-9) |
 
 ## Open risks (not fixed, stated plainly)
 
-- **Payment routes accept the owner key without a passkey** (V22-05 / R-A-1). The IW-5, IW-6 and IW-7 evaluators each confirmed it (IW-7 probe G10 on 6ada5b0): a stolen owner key alone completes a MOCK purchase end to end. Research holds already require a passkey. Checkout authorization, owner-API mandates, the handoff and MOCK approval rely on the owner key, which is protected at rest by the OS-account boundary. Adding a passkey there is a deployment precondition. It is not done here, because a new approval step is the operator's decision.
-- **The service-isolation self-check trusts declared uids** (V22-04 / H2-R1). The independent IW-5 and IW-7 evaluators showed it (IW-7 probe G11): a copy of the service run from the AI's own account with a fake AI uid reports isolation as established. That copy does not touch the real service's gate or audit trail. The check re-runs while the service is up (V22-08 fixed), but it should verify the service uid against a root-owned pin before any deployment.
-- **Lexical evidence and request parsing.** Every fresh set so far (IW-4, IW-5, IW-6) found new wording that the parser or evidence matcher handled wrongly on first contact, and two of those were unsafe. The fixes are general mechanisms, but the next fresh set should be expected to find more. A statement phrased very differently from the request usually stays unverified (INVESTIGATE).
-- **Context is not verified.** Since V2.5, a purpose phrase ("for my studio apartment", "for travel") is an optional CONTEXT row, never a blocking requirement. Since V2.6, a leftover word that no requirement pattern claimed is context too, unless it is negated, a comma item of its own, after a feature verb, next to another content word, model-like, or in a non-English request. A requirement phrased in a way none of these catch is therefore not checked. That is the trade made for fewer false INVESTIGATE results; IW-8 should test it.
+- **Payment routes accept the owner key without a passkey** (V22-05 / R-A-1). The IW-5, IW-6, IW-7 and IW-8 evaluators each confirmed it (IW-8 probe G10 on e5cc4de): a stolen owner key alone completes a MOCK purchase end to end. Research holds already require a passkey. Checkout authorization, owner-API mandates, the handoff and MOCK approval rely on the owner key, which is protected at rest by the OS-account boundary. Adding a passkey there is a deployment precondition. It is not done here, because a new approval step is the operator's decision.
+- **The service-isolation self-check trusts declared uids** (V22-04 / H2-R1). The independent IW-5, IW-7 and IW-8 evaluators showed it (IW-8 probe G11): a copy of the service run from the AI's own account with a fake AI uid reports isolation as established. That copy does not touch the real service's gate or audit trail. The check re-runs while the service is up (V22-08 fixed), but it should verify the service uid against a root-owned pin before any deployment.
+- **Lexical evidence and request parsing.** Every fresh set so far (IW-4 to IW-8) found new wording that the parser or evidence matcher handled wrongly on first contact, and IW-4, IW-5, IW-6 and IW-8 each had unsafe results from it. Since V2.7 the product identity fails closed: a name word or code next to the model ("EQ", "LTE", "Lite") must be in the candidate's identity, and a page about a coded sibling never counts for the base model. The fixes are general mechanisms, but the next fresh set should be expected to find more. A statement phrased very differently from the request usually stays unverified (INVESTIGATE).
+- **Context is not verified.** Since V2.5, a purpose phrase ("for my studio apartment", "for travel") is an optional CONTEXT row, never a blocking requirement. Since V2.6, a leftover word that no requirement pattern claimed is context too, unless it is negated, a comma item of its own, after a feature verb, next to another content word, model-like, or in a non-English request. A requirement phrased in a way none of these catch is therefore not checked. That is the trade made for fewer false INVESTIGATE results. IW-8 tested loose requirements and found no unsafe result from them (they stayed must-haves and gave INVESTIGATE).
 - **Pooled evidence.** Since V2.6, every search result of a request is read for every candidate, and a brand-wide search is used when the budget cannot reach every model. Attribution rules are unchanged (IW-7: 0 misattributed on V2.5), but the pooled read is new and has only been measured on seen sets.
 - **Nothing is deployed.** There is no remote host connector, no live PayPal, and no real merchant checkout.
 
@@ -77,11 +79,12 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 
 - [x] One-command reproducible demo with a verified trace (`npm run demo:full`)
 - [x] README quick start and an honest status table
-- [x] Automated tests pass (950) and the typecheck is clean
+- [x] Automated tests pass (958) and the typecheck is clean
 - [x] Secret scan clean (`npm run scan:secrets`)
 - [x] Fresh independent IW-5 scored once on e397ef9 (26/39, 1 bypass in 46; result recorded unchanged above)
 - [x] Fresh independent IW-6 scored once on 5e37f7f (24/45, 2 unsafe, 2 bypasses in 55; result recorded unchanged above)
 - [x] Fresh independent IW-7 scored once on 6ada5b0 (19/45, 0 unsafe, 0 bypasses in 66, legitimate checkouts 9/36; result recorded unchanged above)
-- [ ] Fresh independent IW-8 for V2.6 (not run)
+- [x] Fresh independent IW-8 scored once on e5cc4de (24/47, 2 unsafe, 1 bypass in 61, legitimate checkouts 13/37; result recorded unchanged above)
+- [ ] Fresh independent IW-9 for V2.7 (not run)
 - [ ] CI status on the final HEAD (to be recorded at the final checkpoint)
 - [ ] Demo video (record `npm run demo:full` and the owner pages; MOCK labels visible)
