@@ -38,7 +38,7 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
   좋은 괜찮은 싼 저렴한 가성비 최저가 가장 제일 새 새것 정품 신품 하나 개 제품 상품 것 이하 이상 정도 짜리 용 대 쓸 쓸만한 있는 없는 되는 해줘 주세요
   그리고 하지만 또는 및 꼭 반드시 무조건 가능하면 이면 으로 로 에 에서 를 을 이 가 은 는 의 도 만 와 과 랑 하고 예산 가격 원 달러 만원`.split(/\s+/).filter(Boolean));
 
-const CONVERSATIONAL = /^(?:lol|lmao|tbh|honestly|ngl|btw|fyi|imo|basically|actually|literally|anyway|anyways|okay|ok|yeah|yep|hmm|um|uh|roommate|roommates|flatmate|neighbor|neighbour|coworker|colleague|partner|boyfriend|girlfriend|borrow|borrows|borrowing|borrowed|own|mine|keeps|keep|happy|glad|fine|died|dead|broke|broken|old|team|quick|question|questions|wondering|curious|night|weekend|morning|evening|finally|already|still|again|since|because|cause|cuz|before|after|pile|piles)$/i;
+const CONVERSATIONAL = /^(?:lol|lmao|tbh|honestly|ngl|btw|fyi|imo|basically|actually|literally|anyway|anyways|okay|ok|yeah|yep|hmm|um|uh|roommate|roommates|flatmate|neighbor|neighbour|coworker|colleague|partner|boyfriend|girlfriend|borrow|borrows|borrowing|borrowed|own|mine|keeps|keep|happy|glad|fine|died|dead|broke|broken|old|team|quick|question|questions|wondering|curious|night|weekend|morning|evening|finally|already|still|again|since|because|cause|cuz|before|after|pile|piles|mostly|mainly|ugh|ugh+|meh|asap|pls|plz|quit|quits|grab|whatever|fine|kinda|sorta|probably|maybe|anything|any)$/i;
 const KO_CONVERSATIONAL = /^(?:안녕하세요|안녕|감사합니다|고맙습니다|수고하세요|혹시|그냥|요즘|이번|다음|올해|(?:장마|장마철|여름|겨울|봄|가을|연말|명절|추석|설|설날|휴가|이사)(?:철)?(?:이라서요|이라서|이라|이니까|이어서|에는|엔|에|이라고|이에요|이네요|이고)?|주실|수|있나요|있을까요|될까요|부탁드려요|부탁드립니다|부탁해요)$/u;
 
 /** V2.15 (IW-15 d04): materials ("stainless steel", "glass") describe what the product is made of: never dropped as generic. */
@@ -131,9 +131,16 @@ function leadingNounPhrases(text: string, covered: Array<[number, number]>): Arr
     const lw = w[0].toLowerCase();
     const inCov = covered.some(([s, e]) => w.index! >= s && w.index! < e);
     const fn = /^(?:with|without|that|which|for|under|below|over|above|at|and|or|but|in|on|to|from|by|than|is|are|can|must|should|ideally|preferably|max|budget|less|more)$/.test(lw);
+    // V2.18 (IW-18 q07): after the named product, a noun phrase that follows "for" ("Riffle 1HP for an in-ground
+    // pool") is what it must fit, never the product type; it stays a word to account for.
+    if (lw === "for" && !run.length && covered.some(([s0]) => s0 < w.index!)) return out;
     if (fn || /^\d/.test(lw)) { if (run.length) { flush(); return out; } continue; }
     // V2.5: a covered capability before the noun ("a USB-C rechargeable lantern") does not end an article-only run.
     if (inCov) { if (run.some((x) => !STOP.has(x[0].toLowerCase()))) { flush(); return out; } run = []; continue; }
+    // V2.18 (IW-18 q15): after the named product, only the noun right after it is its product type ("Nib 16in kids
+    // bike"); a phrase after punctuation ("Nib 16in, aluminum frame only") is a statement to account for.
+    if (!run.length) { const prev = covered.filter(([s0, e0]) => e0 <= w.index! && s0 < w.index!).sort((x, y) => y[1] - x[1])[0];
+      if (prev && /[,;:.!?()]/.test(text.slice(prev[1], w.index!))) return out; }
     run.push(w);
     const after = text.slice(w.index! + w[0].length, w.index! + w[0].length + 1);
     if (/[,;.!?()]/.test(after)) { flush(); return out; }

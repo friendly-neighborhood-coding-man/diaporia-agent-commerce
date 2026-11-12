@@ -153,7 +153,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   // V2.4: a request that only names the product (no buy verb) and leaves its variant open ("Fabrikam Aero 14 laptop"
   // when 16 GB and 32 GB exist) is researched as discovery among that model's listings; the model rule still excludes
   // every other model, bundle and accessory.
-  const namedFallback = exact && resolution?.status === "AMBIGUOUS" && intent.lockBasis === "NAMED";
+  const namedFallback = exact && resolution?.status === "AMBIGUOUS" && intent.lockBasis === "NAMED" && !resolution.productTypeAmbiguous;
   if (exact && !namedFallback) pool = resolution?.status === "LOCKED" ? [lockedAs(products.get(resolution.productId)!, resolution.identity.model)] : [];
   // V2.5: under the fallback only the listings the resolver matched to the named identity are candidates (never a
   // sibling model the resolver excluded).

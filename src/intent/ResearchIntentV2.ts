@@ -113,7 +113,7 @@ function anyAccessoryLead(before: string): string | null {
   // V2.14 (IW-14 a21): an -ing/-ed modifier before a noun is part of the noun phrase ("grinding discs", "cutting
   // wheels"); only the head word must be a noun (never "looking", "shopping around").
   const head = ws.at(-1)!;
-  const nounHead = REQUEST_PART_NOUN.test(head) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(head) || ACCESSORY_NOUN.test(head) || (/^[a-z]{3,}s$/i.test(head) && !/(?:ss|us|is|ous)$/i.test(head))
+  const nounHead = /^(?:kits?|sets?)$/i.test(head) || REQUEST_PART_NOUN.test(head) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(head) || ACCESSORY_NOUN.test(head) || (/^[a-z]{3,}s$/i.test(head) && !/(?:ss|us|is|ous)$/i.test(head))
     // V2.15 (IW-15 a14): any other plain word that is not a verb form or a descriptor is the noun ("welding wire").
     || (!/(?:ing|ed|ly)$/i.test(head) && !GENERIC_DESCRIPTOR.test(head) && !GENERIC_WORDS.has(head.toLowerCase()) && !NOT_PART_LEAD.test(head));
   // V2.16 (IW-16 a25, fail-closed): any other noun phrase before "for the <model>" is something for that model
@@ -254,7 +254,8 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       }
       // V2.4: "replacement ear tips for my Sonara Hush 2" asks for the part, named before the product it fits.
       const lead = ACC_LEAD.exec(text.slice(0, brandHit.index));
-      const anyLead = !lead && kind === "STANDALONE" ? anyAccessoryLead(text.slice(segStart <= brandHit.index ? segStart : 0, brandHit.index)) : null;
+      // V2.18 (IW-18 a15): "<noun> kit for the <model>" is a part kit for that model, not a bundle of the model.
+      const anyLead = !lead && (kind === "STANDALONE" || kind === "BUNDLE") ? anyAccessoryLead(text.slice(segStart <= brandHit.index ? segStart : 0, brandHit.index)) : null;
       if (anyLead) { kind = "ACCESSORY"; accessoryNoun = anyLead; }
       if ((kind === "STANDALONE" || (kind === "ACCESSORY" && accessoryNoun === "part")) && lead) {
         kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, "");
@@ -489,8 +490,12 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     for (;;) {
       const m = /^\s+([A-Za-z][a-z-]*)/.exec(text.slice(u.span[1]));
       const k = m ? productTypeWords.findIndex((w) => w.toLowerCase() === m[1]!.toLowerCase()) : -1;
-      if (!m || k < 0 || !/^(?:steel|iron|glass|wood|carbon|plastic|leather|mesh|ceramic|titanium|aluminium|aluminum|copper|brass|silicone)$/i.test(m[1]!)) break;
+      // V2.18 (IW-18 failure 7): a modifier and the type word right after it are one term ("dual fuel generator",
+      // "variable speed pump") whenever another type word (the head noun) still follows it.
+      const notHead = k >= 0 && productTypeWords.length >= 2 && !/ing$/i.test(m![1]!) && !GENERIC_DESCRIPTOR.test(m![1]!) && !/^(?:mini|small|large|big|tiny|full|half|micro|mega|jumbo|kids?|baby|adult)$/i.test(m![1]!) && new RegExp(`(?<![A-Za-z])${m![1]!}\\s+(?:${productTypeWords.filter((_, j) => j !== k).join("|")})(?![A-Za-z])`, "i").test(text.slice(u.span[1]));
+      if (!m || k < 0 || (!notHead && !/^(?:steel|iron|glass|wood|carbon|plastic|leather|mesh|ceramic|titanium|aluminium|aluminum|copper|brass|silicone)$/i.test(m[1]!))) break;
       productTypeWords.splice(k, 1); u.span = [u.span[0], u.span[1] + m[0].length]; u.text = text.slice(u.span[0], u.span[1]);
+      if (notHead) break;
     }
     const key = `unrecognized:${slugOf(u.text)}`;
     if (requirements.some((r) => r.key === key)) continue;
@@ -502,7 +507,9 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // V2.17 (IW-17 d22, hard word accounting): a leftover word is background only inside a purpose phrase ("for my
   // camping trips", "because my son ...") or conversation; any other word ("cooling only") is a must-have that must
   // be checked, never dropped as context.
-  const purpose = (u: UninterpretedWord) => /\b(?:for|because|since|so|when|while|as|my|our|his|her|their)\b[^,.;!?]{0,40}$/i.test(text.slice(Math.max(0, u.span[0] - 48), u.span[0]));
+  // V2.18 (IW-18 d06/q07): "for a/an/the <thing>" states what it must fit or suit, so it is never a purpose phrase.
+  const purpose = (u: UninterpretedWord) => { const pre = text.slice(Math.max(0, u.span[0] - 48), u.span[0]);
+    return /\b(?:because|since|so|when|while|as|my|our|his|her|their)\b[^,.;!?]{0,40}$/i.test(pre) || /\bfor\s+(?!(?:a|an|the)\s)[^,.;!?]{0,40}$/i.test(pre); };
   const contextWords = contextAll.filter(purpose);
   const tailWords = new Set(requestTail.map((w) => w.toLowerCase()));
   for (const u of contextAll.filter((x) => !purpose(x) && !tailWords.has(x.text.toLowerCase()) && !(target && /^[A-Z]/.test(x.text)))) {
@@ -514,6 +521,15 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   }
   for (const u of contextWords) requirements.push({ key: `context:${slugOf(u.text)}`, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT", evidenceCapability: null });
   if (contextWords.length) assumptions.push(`Read as context, not as requirements: ${contextWords.map((u) => `"${u.text}"`).join(", ")}. State a requirement explicitly ("with ...", "must ...") to have it checked.`);
+  // V2.18 (IW-18 q24): "<feature> only" is exclusive ("gasoline only" excludes a dual-fuel unit); a plain feature check
+  // cannot confirm "only", so it stays open until settled. A quantity or form ("pair only", "tool only") is a pack or kit
+  // word handled elsewhere.
+  for (const m of text.matchAll(/(?<![\p{L}])([\p{L}][\p{L}-]*)\s+only\b/giu)) {
+    const a = m.index!, b = a + m[0].length;
+    if (/^(?:pair|one|unit|units|body|tool|bare|single|set|the|a|an|it|this|that|new|me|us|you|cash|card|pickup|online|weekdays?|weekends?|usd|dollars?)$/i.test(m[1]!)) continue;
+    if (!requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] >= a)) continue;
+    if (!uninterpreted.some((u) => u.span[0] <= a && u.span[1] >= b)) uninterpreted.push({ text: m[0], span: [a, b] });
+  }
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
