@@ -449,7 +449,12 @@ export class CommerceGateway {
     const productId = ps.mode === "EXACT_PRODUCT_PURCHASE" ? ps.productId
       : ((ps.research.candidates ?? []) as Array<{ identity: ProductIdentity; productId: string }>).find((c) => identityEquals(c.identity, locked!))?.productId ?? null;
     const readiness = this.purchaseReadiness(ps, productId);
-    const offers = await this.research.findOffers(locked);
+    // V2.15 (IW-15 i09): a locked product is only ever checked out from its own listings (its product id and the
+    // listings research merged into it), never from another listing whose title merely parses to the same model.
+    const ownIds = productId ? new Set([productId, ...(((ps.research?.identity as { alsoListedAs?: string[] } | undefined)?.alsoListedAs) ?? [])]) : null;
+    // A listing filed under another product counts only when it carries the locked SKU itself (an exact catalog id).
+    const sameSku = (o: MerchantOffer) => !!locked!.sku && !!o.listedIdentity.sku && o.listedIdentity.sku === locked!.sku;
+    const offers = (await this.research.findOffers(locked)).filter((o) => !ownIds || ownIds.has(o.productId) || sameSku(o));
     // Quote anything not known to be out of stock: a merchant cart may establish availability.
     const items = await Promise.all(offers.map(async (offer) => ({ offer, quote: offer.availability !== "OUT_OF_STOCK" ? await this.research.getQuote(offer.offerId, 1, destination) : null,
       identity: await this.verifyMerchant(offer) })));
@@ -652,6 +657,9 @@ export class CommerceGateway {
     // Re-verify with a fresh server-side quote for the requested quantity. Client values are never trusted.
     const offer = (await this.research.findOffers(ps.lockedIdentity)).find((o) => o.offerId === input.offerId);
     if (!offer) throw new CommerceError("OFFER_NOT_ELIGIBLE", "Offer no longer exists at the merchant.");
+    // V2.15: the offer must be a listing of the locked product itself (or a listing research merged into it).
+    const ownPrep = ps.productId ? new Set([ps.productId, ...(((ps.research?.identity as { alsoListedAs?: string[] } | undefined)?.alsoListedAs) ?? [])]) : null;
+    if (ownPrep && !ownPrep.has(offer.productId) && !(ps.lockedIdentity.sku && offer.listedIdentity.sku === ps.lockedIdentity.sku)) throw new CommerceError("IDENTITY_MISMATCH", "The offer is a listing of another product than the one locked for this session. DIAPORIA never substitutes another product or variant.");
     if (offer.merchantId !== known.merchantId || offer.merchantDomain !== known.merchantDomain)
       throw new CommerceError("MERCHANT_IDENTITY_MISMATCH", "Merchant id or domain changed since comparison; the offer is not the one that was verified.", { compared: known.merchantId, now: offer.merchantId });
     const quote = await this.research.getQuote(offer.offerId, input.quantity, ps.destination);

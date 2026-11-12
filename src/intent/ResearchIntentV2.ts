@@ -112,8 +112,10 @@ function anyAccessoryLead(before: string): string | null {
   // V2.14 (IW-14 a21): an -ing/-ed modifier before a noun is part of the noun phrase ("grinding discs", "cutting
   // wheels"); only the head word must be a noun (never "looking", "shopping around").
   const head = ws.at(-1)!;
-  const nounHead = REQUEST_PART_NOUN.test(head) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(head) || ACCESSORY_NOUN.test(head) || (/^[a-z]{3,}s$/i.test(head) && !/(?:ss|us|is|ous)$/i.test(head));
-  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)) || GENERIC_WORDS.has(w.toLowerCase()) && !REQUEST_PART_NOUN.test(w))) return null;
+  const nounHead = REQUEST_PART_NOUN.test(head) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(head) || ACCESSORY_NOUN.test(head) || (/^[a-z]{3,}s$/i.test(head) && !/(?:ss|us|is|ous)$/i.test(head))
+    // V2.15 (IW-15 a14): any other plain word that is not a verb form or a descriptor is the noun ("welding wire").
+    || (!/(?:ing|ed|ly)$/i.test(head) && !GENERIC_DESCRIPTOR.test(head) && !GENERIC_WORDS.has(head.toLowerCase()) && !NOT_PART_LEAD.test(head));
+  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)) || GENERIC_WORDS.has(w.toLowerCase()) && !REQUEST_PART_NOUN.test(w) && (i === ws.length - 1 || !nounHead))) return null;
   return ws.join(" ").replace(/s$/, "");
 }
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;
@@ -470,7 +472,21 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     return false;
   };
   const modifierWords = leftover.filter((u) => !uninterpreted0.includes(u) && modifiesType(u));
-  for (const u of modifierWords) {
+  // V2.15 (IW-15 d04): adjacent modifier words are one requirement ("stainless steel"), never split or dropped.
+  const modifierPhrases: UninterpretedWord[] = [];
+  for (const u of [...modifierWords].sort((a, b) => a.span[0] - b.span[0])) {
+    const last = modifierPhrases.at(-1);
+    if (last && /^\s+$/.test(text.slice(last.span[1], u.span[0]))) { last.text = text.slice(last.span[0], u.span[1]); last.span = [last.span[0], u.span[1]]; }
+    else modifierPhrases.push({ text: u.text, span: [...u.span] as [number, number] });
+  }
+  for (const u of modifierPhrases) {
+    // A material word the noun-phrase pass took as a product-type word belongs to the modifier ("stainless steel").
+    for (;;) {
+      const m = /^\s+([A-Za-z][a-z-]*)/.exec(text.slice(u.span[1]));
+      const k = m ? productTypeWords.findIndex((w) => w.toLowerCase() === m[1]!.toLowerCase()) : -1;
+      if (!m || k < 0 || !/^(?:steel|iron|glass|wood|carbon|plastic|leather|mesh|ceramic|titanium|aluminium|aluminum|copper|brass|silicone)$/i.test(m[1]!)) break;
+      productTypeWords.splice(k, 1); u.span = [u.span[0], u.span[1] + m[0].length]; u.text = text.slice(u.span[0], u.span[1]);
+    }
     const key = `unrecognized:${slugOf(u.text)}`;
     if (requirements.some((r) => r.key === key)) continue;
     requirements.push({ key, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT", note: "TYPE_MODIFIER" } as StatedRequirement);

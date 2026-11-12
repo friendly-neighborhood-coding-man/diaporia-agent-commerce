@@ -208,9 +208,12 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   const vc = modelCode(model);
   // V2.9: a page that also names another variant of this model ("the Kestra A5 4K" on a page read for the A5) names
   // another product: only clauses that name this exact product count, never a pronoun clause.
-  const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit || (!!vc && mentionsOtherVariant(text, product.title, vc));
+  // V2.15 (IW-15 d02): a page whose title names this brand but not this product is about another product (a part, a
+  // sibling): only clauses that name this product themselves count, never a pronoun clause.
+  const titleAboutOther = !!model && !namesThis(hit.title) && !!product.identity.brand && hit.title.toLowerCase().includes(product.identity.brand.toLowerCase());
+  const hitNamesOther = titleAboutOther || namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit || (!!vc && mentionsOtherVariant(text, product.title, vc));
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
-  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b)/i));
+  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b)|,\s+(?:and|but|while|whereas)\s+(?=(?:the|a|an|its|this|that)\s+[A-Z])/i));
   for (const clause of clauses) {
     if (/\|/.test(clause) || /\?\s*$/.test(clause)) continue; // table rows and questions are not statements
     if (OTHER_GENERATION.test(clause)) continue;

@@ -112,7 +112,7 @@ export function variantRuns(titles: string[], brand: string | null, code: string
     const run = leadingRun(ws);
     const w0 = ws[0];
     const noun = (w: string) => new RegExp(`^(?:${PRODUCT_NOUN_PHRASES.source})$`, "i").test(w.toLowerCase()) || !!requestCategory(w.toLowerCase());
-    if (w0 && ws.length > 1 && run[0] !== w0 && /^[A-Z]/.test(w0) && !NOT_NAME.test(w0) && !PAGE_WORDS.test(w0) && (!noun(w0) || capitalizedProductWord(w0)) && !attributeWord(w0) && key(ws.slice(1)).split(" ").length >= 2 && keys.has(key(ws.slice(1)))) return [w0, ...run];
+    if (w0 && ws.length > 1 && run[0] !== w0 && /^[A-Z]/.test(w0) && !NOT_NAME.test(w0) && !PAGE_WORDS.test(w0) && (!noun(w0) || capitalizedProductWord(w0)) && !attributeWord(w0) && key(ws.slice(1)).split(" ").length >= 2 && keys.has(key(ws.slice(1)))) return [w0, ...leadingRun(ws.slice(1))];
     return run;
   });
   // V2.13 (IW-13 i24): a product noun inserted before a sibling's whole product phrase ("Mikra 30L Grill Microwave Oven"

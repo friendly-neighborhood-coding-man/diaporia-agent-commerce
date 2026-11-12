@@ -3,6 +3,7 @@
  * products only: Corvan, Mirelle, Toska, Pellan, Quillon, Abrin, Contoso). Nothing is copied from any IW set.
  */
 import { describe, expect, it } from "vitest";
+import { variantRuns } from "../src/identity/VariantTail.js";
 import { parseResearchIntent } from "../src/intent/ResearchIntentV2.js";
 import { extractIdentity, mentionsExactModel, namedModelAfter } from "../src/identity/ProductIdentityExtractor.js";
 import { clauseStatement } from "../src/research/capabilities.js";
@@ -21,7 +22,10 @@ describe("V2.7 every name token next to the model is part of it", () => {
     expect(extractIdentity("Pellan Arc 10x50 Binoculars", "Pellan").model).toBe("Arc 10x50");
   });
   it("a listing title keeps an upper-case name code, and trims descriptive codes", () => {
-    expect(extractIdentity("Pellan Arc 90 EQ Telescope", "Pellan").model).toBe("Arc 90 EQ");
+    // V2.15: a title's model ends at its number; the name code is the title's tail, and the sibling comparison makes it
+    // a variant word, so the EQ listing is still never the plain Arc 90.
+    expect(extractIdentity("Pellan Arc 90 EQ Telescope", "Pellan").model).toBe("Arc 90");
+    expect(variantRuns(["Pellan Arc 90 EQ Telescope", "Pellan Arc 90 Telescope"], "Pellan", "Arc 90").map((r) => r.join(" "))).toEqual(["EQ", ""]);
     expect(extractIdentity("Pellan Arc 90 Telescope", "Pellan").model).toBe("Arc 90");
     expect(extractIdentity("Toska TC-20 HD Dash Cam", "Toska").model).toBe("TC-20");
   });

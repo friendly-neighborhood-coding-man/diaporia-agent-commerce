@@ -41,6 +41,8 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
 const CONVERSATIONAL = /^(?:lol|lmao|tbh|honestly|ngl|btw|fyi|imo|basically|actually|literally|anyway|anyways|okay|ok|yeah|yep|hmm|um|uh|roommate|roommates|flatmate|neighbor|neighbour|coworker|colleague|partner|boyfriend|girlfriend|borrow|borrows|borrowing|borrowed|own|mine|keeps|keep|happy|glad|fine|died|dead|broke|broken|old|team|quick|question|questions|wondering|curious|night|weekend|morning|evening|finally|already|still|again|since|because|cause|cuz|before|after|pile|piles)$/i;
 const KO_CONVERSATIONAL = /^(?:안녕하세요|안녕|감사합니다|고맙습니다|수고하세요|혹시|그냥|요즘|이번|다음|올해|(?:장마|장마철|여름|겨울|봄|가을|연말|명절|추석|설|설날|휴가|이사)(?:철)?(?:이라서요|이라서|이라|이니까|이어서|에는|엔|에|이라고|이에요|이네요|이고)?|주실|수|있나요|있을까요|될까요|부탁드려요|부탁드립니다|부탁해요)$/u;
 
+/** V2.15 (IW-15 d04): materials ("stainless steel", "glass") describe what the product is made of: never dropped as generic. */
+const MATERIAL_WORD = /^(?:stainless|steel|plastic|glass|leather|mesh|aluminium|aluminum|wood|wooden|bamboo|ceramic|titanium|carbon|cast|iron|copper|brass|silicone|cotton|wool|linen|nylon|canvas)$/i;
 export interface UninterpretedWord { text: string; span: [number, number] }
 
 /**
@@ -92,7 +94,7 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
     }
     if (inCovered(a, b) || covered.some(([s, e]) => a >= s && a < e) || nounSpans.some(([s, e]) => a >= s && a < e) || nounSpans.some(([s, e]) => a >= s && b <= e)) continue;
     if (/^\d+(?:st|nd|rd|th)$/.test(w) || /^\d+(?:인분|인용|구|세대)$/.test(w) || DECORATIVE.test(w)) continue;
-    if (STOP.has(w) || STOP.has(bare) || ident.has(w) || ident.has(bare) || GENERIC_WORDS.has(w) || COLOR_WORDS[w] || COLOR_WORDS[bare]) continue;
+    if (STOP.has(w) || STOP.has(bare) || ident.has(w) || ident.has(bare) || (GENERIC_WORDS.has(w) && !MATERIAL_WORD.test(w)) || COLOR_WORDS[w] || COLOR_WORDS[bare]) continue;
     if (Object.keys(parseAttributes(raw)).length || /^\d+(?:\.\d+)?[a-z]{1,4}$/i.test(w) && Object.keys(parseAttributes(raw.replace(/(\d)([a-z])/i, "$1 $2"))).length) continue;
     if (/^(?:refurb(?:ished)?|renewed|reconditioned|used|pre-?owned|second-hand|open-box|리퍼|중고|미개봉|새것)$/i.test(w)) continue;
     if (w.length < 2 && !/[가-힣]/.test(w)) continue;

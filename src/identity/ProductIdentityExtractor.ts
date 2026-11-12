@@ -351,6 +351,18 @@ export function extractIdentity(title: string, brand: string | null, opts: { req
     model = named && normalizeKey(named).includes(normalizeKey(num)) ? named : num; basis = "MODEL_NUMBER";
     if (named && normalizeKey(named).includes(normalizeKey(num)) && named.split(" ").length > 1) basis = "NAMED_MODEL";
   } else if (named) { model = named; basis = "NAMED_MODEL"; }
+  // V2.15 (IW-15 i25/q03): in a LISTING title the model ends at its number (plus family extensions such as Pro / Max /
+  // Gen 2). Name words after the number ("Fuse 200A MIG", "Orbit 90 EQ") are the title's tail: whether they name a
+  // variant is decided by comparing sibling titles (VariantTail), the same rule a request's tail gets, so a
+  // descriptor that every sibling carries ("MIG") never makes the base listing a different model.
+  if (!opts.request && model && basis === "NAMED_MODEL") {
+    const ws = model.split(/\s+/); const k = ws.findIndex((w) => /\d/.test(w));
+    if (k >= 0 && k < ws.length - 1) {
+      let end = k + 1;
+      while (end < ws.length && (isModelExtension(ws[end]!.toLowerCase()) || /\d/.test(ws[end]!))) end++;
+      if (end < ws.length) model = ws.slice(0, end).join(" ");
+    }
+  }
   const stripped = stripVersion(model);
   // V2.2 WP-3: "AP-400 Gen 2" is model number AP-400 plus generation 2 (an attribute), not a named model.
   if (basis === "NAMED_MODEL" && num && stripped && normalizeKey(stripped) === normalizeKey(num)) basis = "MODEL_NUMBER";
