@@ -22,3 +22,7 @@
 - Phase 1 kind errors rose under v1.1, because brand+model requests with no product noun are now read as UNKNOWN. Tolerant scoring is reported alongside, defined after seeing outputs.
 - Repeat trial (second generation, finalists only, scored after the freeze): K3 282 / 3 unsafe, K3F 278 / 4 (a27), K7 281 / 3. A one-case unsafe difference is within generation noise.
 - IW-29 evaluator requested via coordinator, about 20:50Z.
+
+## IW-29 (fresh, independent evaluator), scored 2026-11-12 ~21:00Z
+- Fully correct: A0 82, C2 86, K3 81, K3F 83, K7 78 of 132. Unsafe: 2 / 1 / 1 / 1 / 1. Bypass: 1 / 0 / 0 / 0 / 0.
+- Recommended K is K3. The category schema adds no value over v1.1. Predictions: 3 hit (one vacuous), 5 miss. See IW29-SCORING.md. IW-29 is SEEN.

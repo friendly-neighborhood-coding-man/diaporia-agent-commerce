@@ -1,4 +1,8 @@
-# DIAPORIA Buy: optimal semantic category count (SEEN development report)
+# DIAPORIA Buy: optimal semantic category count
+
+> **Fresh result (IW-29, independent evaluator, 132 cases; see IW29-SCORING.md).** Fully correct: A0 82, C2 86, K3 81, K3F 83, K7 78. Unsafe is 1 in every interpreter arm (a02, an engine-level case) and 2 in A0. Bypasses are 0 apart from A0's 1. **Recommended category count: K3. Category count is not a lever. The category schema adds no value over the typed adapter v0.2.** K7 is significantly worse than C2 (p = 0.008). Do not adopt the category schema. The next lever is identity: bundle and tail-product kind, and host-for-part. The seen-set development report follows.
+
+## SEEN development report
 
 **Status.** Every number in this report comes from SEEN data (IW-23, IW-25, and the frozen gold of the earlier parser study). None of it is fresh evidence. The finalists were frozen at a929a44 and preregistered in PREREGISTRATION-IW29.md. The deciding test is the independent IW-29 holdout, which is still pending.
 
