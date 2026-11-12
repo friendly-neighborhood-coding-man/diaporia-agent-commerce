@@ -156,11 +156,21 @@ export function pickVariant<T>(items: T[], titleOf: (x: T) => string, brand: str
     return { x, covered, extra };
   });
   const bestCov = Math.max(...scored.map((s) => s.covered));
-  const atCov = scored.filter((s) => s.covered === bestCov);
+  // Post-submission cycle 5, invariant I5 (variant minimality, IW-22 w10): among listings that match the request equally,
+  // a title whose words after the code are a strict superset of another's ("Hollin 10-Frame Insulated Beehive" beside
+  // "Hollin 10-Frame Beehive") adds a variant the request does not name, so it is never kept over the plainer one.
+  const fullWords = (x: T) => new Set((tailAfter(titleOf(x), brand, code) ?? []).map(canon).filter((w) => w && !want.has(w)));
+  const fw = new Map(scored.map((sc) => [sc, fullWords(sc.x)]));
+  const strictSuper = (a: Set<string>, b: Set<string>) => a.size > b.size && [...b].every((w) => a.has(w));
+  const atCov0 = scored.filter((s) => s.covered === bestCov);
+  const atCov = atCov0.filter((sc) => !atCov0.some((o) => o !== sc && strictSuper(fw.get(sc)!, fw.get(o)!)));
   const minExtra = Math.min(...atCov.map((s) => s.extra.length));
   const best = atCov.filter((s) => s.extra.length === minExtra);
   const drop: VariantPick<T>["drop"] = [];
-  for (const s of scored) if (!best.includes(s)) drop.push({ item: s.x, extra: s.extra, reason: s.extra.length ? `a different variant (the title adds "${s.extra.join(" ")}", which the request does not name)` : "a different variant (another listing matches more of the requested name)" });
+  for (const s of scored) if (!best.includes(s)) {
+    const sup = atCov0.includes(s) && !atCov.includes(s) ? [...fw.get(s)!].filter((w) => !atCov.some((o) => fw.get(o)!.has(w))) : [];
+    drop.push({ item: s.x, extra: sup.length ? sup : s.extra, reason: sup.length ? `a different variant (the title adds "${sup.join(" ")}", which the request does not name)` : s.extra.length ? `a different variant (the title adds "${s.extra.join(" ")}", which the request does not name)` : "a different variant (another listing matches more of the requested name)" });
+  }
   // Different variants tied: the request does not say which one, so nothing is kept (fail closed).
   const variants = new Set(best.map((s) => s.extra.map(canon).sort().join(" ")));
   if (variants.size > 1) return { keep: [], drop: [...drop, ...best.map((s) => ({ item: s.x, extra: s.extra, reason: `the request does not say which variant (${best.map((b) => b.extra.join(" ") || "plain").join(" / ")})` }))] };

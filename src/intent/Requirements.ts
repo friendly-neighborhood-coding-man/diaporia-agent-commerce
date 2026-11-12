@@ -129,7 +129,56 @@ const PURPOSE_FOR_RX = /^for\s+(?:(?:the\s+|a\s+)?(?:lowest|cheapest|best|least|
  * an objective, never an activity ("for cycling" is a use the product must be fit for) and never a quantity: a weight,
  * a household size or an altitude ("for my 45 lb son", "for a family of 5", "for use at 3,800 m") is a checked limit.
  */
-export const PURPOSE_FOR = { test: (t: string): boolean => PURPOSE_FOR_RX.test(t) && !/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b/i.test(t.replace(/(?:\$|usd|eur|£|€|₩)\s*\d[\d,.]*/gi, "")) };
+// Post-submission cycle 4 (IW-21 d22/q25): "heavy", "light", "long" and "short" are a use intensity only before a use
+// noun ("for heavy use", "for long trips"); "for heavy snow" or "for light loads" names a condition the product must meet.
+const INTENSITY_FOR = /^for\s+(?:(?:a|an|the|some)\s+)?(?:light|heavy|long|short)\s+([\p{L}-]+)/iu;
+const INTENSITY_USE = /^(?:use|uses|usage|using|duty|work|working|commutes?|commuting|travel|traveling|travelling|trips?|days?|hours?|sessions?|runs?|rides?|drives?|weekends?|stays?|users?|periods?|term)$/i;
+// Cycle 4 (IW-21 w01): one free modifier before a closed list of occasion nouns ("for a backyard party") is still an occasion.
+const OCCASION_FOR = /^for\s+(?:a|an|the|our|my|this|that|next)\s+[\p{L}-]+\s+(?:party|parties|trip|trips|vacation|holiday|gift|present|wedding|birthday|anniversary|graduation|weekend|event)\b/iu;
+// Post-submission cycle 5, invariant I2: context covers the whole phrase. PURPOSE_FOR_RX is a prefix test ("for winter"
+// matches "for winter camping"), so a phrase that is not about a person or a price is context only when every word is an
+// occasion/use word or modifier and the last one is an occasion/use noun.
+const OCC_NOUN = new Set(("gift gifts present presents friend change while bit start treat living price reason day days week weeks month months year years trip trips " +
+  "vacation vacations holiday holidays travel traveling travelling commute commuting work working home office school college university dorm study studying fun hobby " +
+  "hobbies everyday daily personal occasional regular general casual light heavy long short now later today tonight tomorrow christmas birthday birthdays wedding " +
+  "anniversary graduation party parties season winter summer spring fall autumn weekend weekends weekdays mornings evenings nights backup emergencies emergency " +
+  "beginner beginners event events guest guests visitor visitors family families kids children household couple use uses usage using sale").split(" "));
+const OCC_EVENT = new Set("reunion project projects gathering gatherings getaway getaways outing outings cookout cookouts barbecue barbecues bbq picnic picnics festival festivals celebration celebrations retreat retreats visit visits stay stays".split(" "));
+// Season words are occasions on their own ("for this winter") but never modifiers: "winter camping" names a condition.
+const OCC_MOD = new Set(("ski beach camping road business family weekend holiday christmas birthday wedding anniversary graduation house " +
+  "school work backyard garden office dinner first one big little small").split(" "));
+// Indoor or domestic places say where the product will be, not a condition it must meet ("for the office kitchen").
+const OCC_PLACE = new Set("kitchen kitchens bedroom bedrooms garage basement cabin workshop woodshop shop studio den attic patio porch deck apartment flat dorm house home office cottage".split(" "));
+const OCC_DET = /^(?:a|an|the|this|that|next|our|some|one|these|those)$/i;
+const OCC_PREP = /^(?:in|at|on|near|during|from|by|over|around|of|with|to|for|who|that|which)$/i;
+function wholePhraseContext(t: string): boolean {
+  if (/^for\s+(?:(?:the\s+|a\s+)?(?:lowest|cheapest|best|least|lower|cheaper|lowest-priced|good|great|fair|reasonable|decent|total)\b|(?:\$|usd|eur|£|€|₩)|(?:my|our|your|his|her|their|me|us|him|them|myself|ourselves|yourself|someone|somebody|everyone)\b|(?:the\s+|a\s+)?[\p{L}]+['’]s?\s+(?:room|bedroom|nursery|kitchen|office|house|home|apartment|flat|dorm|place|playroom)\b|(?:less|under|about|around)\b)/iu.test(t)) return true;
+  const words = t.replace(/^for\s+/i, "").replace(/\s+(?:too|also|as well|please|thanks|thank you)$/i, "").toLowerCase().split(/[\s-]+/).filter(Boolean);
+  // The head is the last word before a preposition ("a weekend in the desert" -> weekend, "a camping trip with the kids" -> trip).
+  const pi = words.findIndex((w, i) => i > 0 && OCC_PREP.test(w));
+  const head = (pi >= 0 ? words.slice(0, pi) : words).filter((w) => !OCC_DET.test(w));
+  const tail = pi >= 0 ? words.slice(pi) : [];
+  if (!head.length) return false;
+  const h = head.at(-1)!;
+  // A person described by experience ("a beginner skier", "a first-time beekeeper") is an audience, like "for my dad".
+  const audience = head.length >= 2 && /^(?:beginner|beginners|novice|first-time|firsttime|new|young|amateur|experienced|casual|occasional)$/.test(head.at(-2)!) && head.length === 2;
+  if (!audience && !OCC_NOUN.has(h) && !OCC_EVENT.has(h) && !OCC_PLACE.has(h)) return false;
+  // An intensity word modifies only a use noun ("for heavy use", "for long trips"), never a condition ("heavy snow").
+  const useHead = /^(?:use|uses|usage|using|duty|work|working|commute|commuting|travel|traveling|travelling|trip|trips|day|days|hours|sessions|weekends?|stays?)$/.test(h);
+  if (!audience && !head.slice(0, -1).every((w) => OCC_MOD.has(w) || OCC_PLACE.has(w) || (/^(?:light|heavy|long|short)$/.test(w) ? useHead : OCC_NOUN.has(w) && !/^(?:winter|summer|spring|fall|autumn)$/.test(w)))) return false;
+  // A trailing phrase is context only when it says who comes along ("with the kids") or when ("next week").
+  if (tail.length && tail[0] === "for" && /^(?:my|our|your|his|her|their|me|us|him|them)$/.test(tail[1] ?? "")) return true;
+  if (tail.length && !(tail[0] === "with" && tail.slice(1).every((w) => OCC_DET.test(w) || /^(?:my|our|the|kids|children|family|friends|grandkids|guests|dog|dogs|wife|husband|partner|parents)$/.test(w)))
+    && !/^(?:next|this|last)\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn)$/.test(tail.slice(0).join(" ").replace(/^(?:in|at|on|during)\s+/, ""))) return false;
+  return true;
+}
+export const PURPOSE_FOR = { test: (t: string): boolean => {
+  const im = INTENSITY_FOR.exec(t);
+  if (im && !INTENSITY_USE.test(im[1]!)) return false;
+  const whole = wholePhraseContext(t.replace(/[\s,.;:!?]+$/, ""));
+  if ((PURPOSE_FOR_RX.test(t) || OCCASION_FOR.test(t)) && !whole) return false;
+  if (whole && !/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b/i.test(t.replace(/(?:\$|usd|eur|£|€|₩)\s*\d[\d,.]*/gi, ""))) return true;
+  return (PURPOSE_FOR_RX.test(t) || OCCASION_FOR.test(t)) && !/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b/i.test(t.replace(/(?:\$|usd|eur|£|€|₩)\s*\d[\d,.]*/gi, "")); } };
 const CHAT_FILLER = /^(?:honestly|ugh+|lol|lmao|mostly|mainly|asap|pls|plz|kinda|sorta|probably|maybe|finally|literally|basically|actually|tbh|ngl|btw|anyway|anyways|whatever|fine|quit|died|broke|broken)$/i;
 export function contextSpans(text: string, targetSpan: [number, number] | null): Array<[number, number]> {
   const out: Array<[number, number]> = [];
@@ -231,6 +280,14 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     if (/^for\s+\S/i.test(t) && !PURPOSE_FOR.test(t))
       add({ key: `unrecognized:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" });
     else add({ key: `context:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT" });
+  }
+  // Post-submission cycle 5, invariant I3: no request word is dropped without an interpretation. A Korean direction word
+  // after a number ("10인용 이상", "14kg 이상", "40분 이하") makes it a threshold must-have, never a stop word.
+  const KO_UNIT: Record<string, string> = { 인용: "people", 인분: "people", 명: "people", kg: "kg", 킬로그램: "kg", 킬로: "kg", l: "liters", 리터: "liters", w: "watts", 와트: "watts", 시간: "hours", 분: "minutes", 평: "pyeong", 개: "count", 구: "count", 인치: "inches", cm: "cm", 미터: "m", m: "m" };
+  for (const m of text.normalize("NFKC").matchAll(/(\d+(?:[.,]\d+)?)\s*(인용|인분|명|kg|킬로그램|킬로|l|리터|w|와트|시간|분|평|개|구|인치|cm|미터|m)\s*(이상|이하)/giu)) {
+    const n = m[1]!.replace(",", "."); const unit = KO_UNIT[m[2]!.toLowerCase()] ?? m[2]!;
+    const dir = m[3] === "이상" ? "at-least" : "at-most";
+    out.push({ key: `unrecognized:${dir}-${n.replace(".", "-")}-${unit}`, text: m[0], span: [m.index!, m.index! + m[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" });
   }
   let offset = 0;
   let prevTriggered = false;
@@ -483,7 +540,9 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // 3,800 m") states a limit the product must meet. It is kept whole as a must-have, whatever else read its number.
   for (const m of text.matchAll(/\bfor\s+(?![$€£₩]|usd\b|eur\b|under\b|less\b|about\b|around\b|up to\b|no more\b)((?:[^,.;!?\d]{0,30}?)(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten)\b[^,.;!?]{0,24}?)(?=\s*(?:[,.;!?]|$|\s(?:and|but|with|under|please|that|which)\b))/giu)) {
     const t = m[0].trim(); const a0 = m.index!;
-    if (inTarget(a0) || /^for\s+(?:the\s+)?(?:\$|usd|eur|£|€|₩)/i.test(t)) continue;
+    // Post-submission cycle 3 (F3): the number of the named host ("for the Tote 1-Seat", "for the Delve 1/3HP") is the
+    // product reference, not a quantity requirement: a phrase that reaches into the target span is skipped.
+    if (inTarget(a0) || (!!targetSpan && a0 < targetSpan[1] && a0 + m[0].length > targetSpan[0]) || /^for\s+(?:the\s+)?(?:\$|usd|eur|£|€|₩)/i.test(t)) continue;
     const key = `unrecognized:${slugOf(t)}`;
     const nums = [...t.matchAll(/\d[\d,.]*/g)].map((n) => n[0].replace(/[,.]/g, ""));
     // A requirement that already reads this number ("at least 800 m2 lawn") checks it; a unit alone ("lb") does not.

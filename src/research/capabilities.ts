@@ -101,7 +101,9 @@ function propositionStatement(rawClause: string, id: string): boolean | null {
   const words = propositionWords(id);
   if (!words.length) return null;
   const num = numericProposition(id);
-  if (num) return numericStatement(clause, num);
+  // Cycle 2: a "for <quantity>" phrase is first compared with a stated limit or range; when no bounded statement speaks to it,
+  // a literal restatement can still verify it ("for 20 lb propane tanks": the number names a class of compatible object).
+  if (num) { const v = numericStatement(clause, num); if (v !== null || num.dir !== "WITHIN") return v; }
   const ev = evaluativeStatement(clause, id);
   if (ev !== undefined) return ev;
   const gap = "(?:[^\\p{L}\\p{N}]+[\\p{L}\\p{N}][\\p{L}\\p{N}'’-]*){0,3}?[^\\p{L}\\p{N}]*";
@@ -178,38 +180,100 @@ function evaluativeStatement(clause: string, id: string): boolean | null | undef
  * A bare spec of a capacity-like unit (W, mAh, Wh, Hz, Mbps, Gbps, nits) is a minimum ("100W" accepts 140 W, not 65 W);
  * any other bare number must match exactly.
  */
-interface NumericProposition { dir: "AT_LEAST" | "AT_MOST" | "EXACT"; n: number; unit: string; rest: string[] }
+interface NumericProposition { dir: "AT_LEAST" | "AT_MOST" | "EXACT" | "WITHIN"; n: number; unit: string; rest: string[] }
 const MIN_UNITS = /^(?:w|watts?|mah|wh|hz|mbps|gbps|nits|tb|gb)$/i;
+/**
+ * Post-submission cycle 2 (F4): one dimension, many spellings. A page that says "10 A", "7 kW", "150 ft" or "450 L" states the
+ * same unit as a request for "8 amps", "5 kilowatts", "120 feet" or "400 liters". Unknown units match only themselves.
+ */
+const UNIT_DIMENSIONS: string[][] = [
+  ["ft", "foot", "feet"], ["in", "inch", "inches", '"'], ["cm", "centimeter", "centimeters", "centimetre", "centimetres"], ["mm", "millimeter", "millimeters"],
+  ["m", "meter", "meters", "metre", "metres"], ["a", "amp", "amps", "ampere", "amperes"], ["kw", "kilowatt", "kilowatts"], ["v", "volt", "volts"],
+  ["l", "liter", "liters", "litre", "litres"], ["gal", "gallon", "gallons"], ["lb", "lbs", "pound", "pounds"], ["kg", "kilogram", "kilograms"],
+  ["sq-ft", "sqft", "square-feet", "square-foot", "sq ft", "square feet", "square foot", "ft2"], ["people", "person", "persons"], ["ah", "amp-hours"],
+];
+const unitForms = (unit: string): string[] | null => UNIT_DIMENSIONS.find((g) => g.includes(unit.toLowerCase())) ?? null;
+/** Count nouns: a spelled or digit count may stand a measurement away from the noun ("three 10,000 BTU burners"). */
+const COUNT_UNIT = /^(?:burners?|seats?|bikes?|zones?|people|persons?|ports?|outlets?|tanks?|doors?|wheels?|shelves|shelf|slots?|speeds?|settings?|blades?|drawers?)$/i;
+const WORDNUM = "one|two|three|four|five|six|seven|eight|nine|ten";
 export function numericProposition(id: string): NumericProposition | null {
   if (!id.startsWith(PROPOSITION_PREFIX)) return null;
+  const body = id.slice(PROPOSITION_PREFIX.length);
+  // Post-submission cycle 2 (F2/F4): "for <a quantity> [noun]" ("for my 45 lb son", "for a 57 cm head", "for a family of 5",
+  // "for use at 3,800 m", "for a 650 sq ft garage") names a value the product must accommodate: it is inside the limit or
+  // range the manufacturer states. The person or object noun is context for the number, not a word the page must repeat.
+  const f = /^for-(?:(?:a|an|the|my|our|his|her|their|use|at|up|of|family|household|home)-)*(\d{1,3}(?:-\d{3})+|\d+(?:\.\d+)?)-?([a-z]+(?:-ft|-feet)?)?(?:-(.+))?$/i.exec(body)
+    ?? /^for-(?:a|an|the|my|our)-(?:family|household|home|group)-of-(\d+)(?:-(people|persons?))?$/i.exec(body);
+  if (f && /^for-/i.test(body)) {
+    const raw = f[1]!; const n = Number(/^\d{1,3}(?:-\d{3})+$/.test(raw) ? raw.replace(/-/g, "") : raw);
+    let unit = (f[2] ?? "").toLowerCase();
+    if (/^(?:sq|square)$/.test(unit) && /^(?:ft|feet|foot)\b/.test(f[3] ?? "")) unit = "sq-ft";
+    if (!unit && /(?:family|household|home|group)-of-/i.test(body)) unit = "people";
+    if (unit === "sq-ft" || unit === "square-feet") unit = "sq-ft";
+    if (unitForms(unit)) return { dir: "WITHIN", n, unit, rest: [] };
+  }
   // V2.10: "up-to" is a bound of unclear direction (Requirements.ts): only the exact value meets it (fail closed).
-  const m = /^(?:(at-least|at-most|up-to)-)?(\d+(?:\.\d+)?)(?:-?([a-z%]+))?(?:-(.+))?$/i.exec(id.slice(PROPOSITION_PREFIX.length));
+  const m = /^(?:(at-least|at-most|up-to)-)?(\d+(?:\.\d+)?)(?:-?([a-z%]+))?(?:-(.+))?$/i.exec(body);
   if (!m) return null;
   const rest = (m[4] ?? "").split("-").filter((w) => w && !PROP_STOP.has(w));
-  const unit = (m[3] ?? "").toLowerCase();
+  let unit = (m[3] ?? "").toLowerCase();
+  // "at least 600 square feet" / "sq ft": one area unit.
+  if (/^(?:sq|square)$/.test(unit) && /^(?:ft|feet|foot)$/.test(rest[0] ?? "")) { unit = "sq-ft"; rest.shift(); }
   const dir = m[1] === "at-least" ? "AT_LEAST" : m[1] === "at-most" ? "AT_MOST" : m[1] === "up-to" ? "EXACT" : MIN_UNITS.test(unit) ? "AT_LEAST" : "EXACT";
   if (!unit && !rest.length) return null;
   return { dir, n: Number(m[2]), unit, rest };
 }
+const num = (s: string) => Number((NUMBER_WORDS[s.toLowerCase()] ?? s).replace(/,/g, ""));
+function unitPattern(unit: string): string {
+  const forms = unitForms(unit);
+  if (forms) return `(?:${forms.map((x) => escRe(x).replace(/[\s-]/g, "[\\s-]?")).sort((a, b) => b.length - a.length).join("|")})`;
+  return /^watts?$|^w$/.test(unit) ? "(?:w|watts?)" : /^percent$/.test(unit) ? "(?:%|percent|per ?cent)" : /^[a-z]{3,}$/.test(unit) ? `${escRe(unit.replace(/e?s$/, ""))}(?:e?s)?` : escRe(unit);
+}
 function numericStatement(clause: string, p: NumericProposition): boolean | null {
   const c = clause.normalize("NFKC");
   // V2.7: a word unit is matched in its plural ("13 inches", "40 lumens").
-  const unitRe0 = p.unit ? (/^watts?$|^w$/.test(p.unit) ? "(?:w|watts?)" : /^percent$/.test(p.unit) ? "(?:%|percent|per ?cent)" : /^[a-z]{3,}$/.test(p.unit) ? `${escRe(p.unit.replace(/e?s$/, ""))}(?:e?s)?` : escRe(p.unit)) : "";
+  const unitRe0 = p.unit ? unitPattern(p.unit) : "";
   // V2.11: a rating qualifier between the number and the unit ("3,200 ANSI lumens", "500 W peak") is the same unit.
   const unitRe = unitRe0 ? `(?:(?:ANSI|ISO|LED|rated|nominal|continuous|usable|effective)\\s+)?${unitRe0}` : "";
+  const NUM = "\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?";
+  if (p.dir === "WITHIN") {
+    // Only a bounded statement decides: "up to N u", "N to M u" / "N-M u", "maximum N u", "not above/over N u".
+    const after = `\\s?-?${unitRe}(?![A-Za-z])`;
+    let verdict = null as boolean | null;
+    const vote = (ok: boolean) => { verdict = verdict === null ? ok : verdict === ok ? ok : null; };
+    let conflict = false;
+    for (const m of c.matchAll(new RegExp(`(?<![\\p{L}\\p{N}.,])(${NUM})\\s*(?:to|-|–)\\s*(${NUM})${after}`, "giu"))) {
+      const lo = num(m[1]!), hi = num(m[2]!); const before = c.slice(Math.max(0, m.index! - 40), m.index!);
+      if (new RegExp(`\\b${NEG}\\b(?:\\s+\\S+){0,3}\\s*$`, "i").test(before)) continue;
+      const ok = p.n >= lo && p.n <= hi; if (verdict !== null && verdict !== ok) conflict = true; vote(ok);
+    }
+    for (const m of c.matchAll(new RegExp(`\\b(up to|maximum(?: of)?|max\\.?|at most|no more than|(?:not|never)\\s+(?:\\w+\\s+){0,3}?(?:above|over|beyond|more than))\\s+(${NUM})${after}`, "giu"))) {
+      const before = c.slice(Math.max(0, m.index! - 30), m.index!);
+      const negLimit = /^(?:not|never)\b/i.test(m[1]!);
+      if (!negLimit && new RegExp(`\\b${NEG}\\b(?:\\s+\\S+){0,3}\\s*$`, "i").test(before)) continue;
+      const hi = num(m[2]!); const ok = p.n <= hi;
+      // "not suitable above 3,000 m" says what is NOT allowed: a value inside it is still not affirmed (no statement for it).
+      if (negLimit) { if (!ok) { if (verdict === true) conflict = true; verdict = false; } continue; }
+      if (verdict !== null && verdict !== ok) conflict = true; vote(ok);
+    }
+    return conflict ? null : verdict;
+  }
   const tok = (w: string) => /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
   // The other words ("USB-C power delivery") must be stated next to the number, before or after it ("USB-C with 90 W
   // power delivery", "90W USB-C charging"): within 40 characters on either side.
   const restRe = p.rest.map((w) => new RegExp(`(?<![\\p{L}\\p{N}])${tok(w)}(?![A-Za-z0-9])`, "iu"));
   // V2.4: "4,000 Pa" and "2,000 ANSI lumens" are thousands, never "000".
-  const re = new RegExp(`(?<![\\p{L}\\p{N}.,])(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)\\s?-?${unitRe}${p.unit ? "(?![A-Za-z])" : ""}`, "giu");
+  // Cycle 2: a count noun may follow its count word with one measurement in between ("three 10,000 BTU burners").
+  const countGap = COUNT_UNIT.test(p.unit) ? `(?:\\s+(?:${NUM})\\s?[A-Za-z]{1,4})?\\s+` : "";
+  const numAlt = COUNT_UNIT.test(p.unit) ? `${NUM}|${WORDNUM}` : NUM;
+  const re = new RegExp(`(?<![\\p{L}\\p{N}.,])(${numAlt})${countGap ? `(?:${countGap}|\\s?-?)` : "\\s?-?"}${unitRe}${p.unit ? "(?![A-Za-z])" : ""}`, "giu");
   let verdict: boolean | null = null;
   for (const m of c.matchAll(re)) {
     const win = c.slice(Math.max(0, m.index! - 40), m.index! + m[0].length + 40);
     if (!restRe.every((r) => r.test(win))) continue;
     const before = c.slice(Math.max(0, m.index! - 40), m.index!);
     if (new RegExp(`\\b${NEG}\\b(?:\\s+\\S+){0,3}\\s*$`, "i").test(before)) return null;
-    const v = Number(m[1]!.replace(/,/g, ""));
+    const v = num(m[1]!);
     const ok = p.dir === "AT_LEAST" ? v >= p.n : p.dir === "AT_MOST" ? v <= p.n : v === p.n;
     if (verdict === null) verdict = ok; else if (verdict !== ok) return null;
   }
@@ -260,7 +324,7 @@ export function requestCapabilities(text: string): Array<{ id: string; index: nu
  */
 export const FIT_PREFIX = `${PROPOSITION_PREFIX}fits-model-`;
 export const fitKey = (model: string) => `${FIT_PREFIX}${model.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
-const FIT_VERB = /\b(?:(does\s+not|doesn['’]t|do\s+not|don['’]t|will\s+not|won['’]t|is\s+not|isn['’]t|are\s+not|aren['’]t|not|never)\s+)?(?:fits?|fitting|(?:is\s+|are\s+)?compatible\s+with|works?\s+with|(?:is\s+)?designed\s+for|(?:is\s+)?made\s+for|for\s+use\s+with)\s+/gi;
+const FIT_VERB = /\b(?:(does\s+not|doesn['’]t|do\s+not|don['’]t|will\s+not|won['’]t|is\s+not|isn['’]t|are\s+not|aren['’]t|not|never)\s+)?(?:fits?|fitting|(?:is\s+|are\s+)?compatible\s+with|works?\s+with|(?:is\s+)?designed\s+for|(?:is\s+)?made\s+for|for\s+use\s+with|clips?\s+(?:on)?to|attach(?:es)?\s+to|mounts?\s+(?:on|to))\s+/gi;
 const FIT_TAIL_OK = /^(?:electric|smart|cordless|robotic|robot|digital|stand|pizza|portable|wireless|3d|action|bread|maker|machine|models?|series|only|versions?|[a-z-]*[a-z]s)$/i;
 const FIT_NOT_TAIL = /^(?:plus|max|mini|lite|pro|ultra|duo|dual|go|se|xl|xs|long|range|colou?r|gen|edition|kids?)$/i;
 const fitNorm = (x: string) => x.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -282,7 +346,12 @@ export function fitStatement(clause: string, id: string): boolean | null {
   const c = clause.normalize("NFKC");
   let out: boolean | null = null;
   for (const m of c.matchAll(FIT_VERB)) {
-    const rest = c.slice(m.index! + m[0].length).split(/[.;:!?()]|,\s*(?:which|whose|but|so|while)\b|\s+(?:which|whose|because|but|except|unlike|not)\b/i)[0]!;
+    // Post-submission cycle 6b: "fits every Spindra lathe: the Spindra 12, Spindra 16 and Spindra 16 VS" lists the hosts
+    // after a colon; the list is read, and each item must still name the exact host.
+    let raw = c.slice(m.index! + m[0].length);
+    const colon = /^[^.;:!?()]{0,40}:\s*/.exec(raw);
+    if (colon) raw = raw.slice(colon[0].length);
+    const rest = raw.split(/[.;:!?()]|,\s*(?:which|whose|but|so|while)\b|\s+(?:which|whose|because|but|except|unlike|not)\b/i)[0]!;
     const items = rest.split(/\s*,\s*(?:and\s+|or\s+)?|\s+(?:and|or|&)\s+|\s*\/\s*/);
     if (items.some((it) => fitItem(it, want))) { if (m[1]) return false; out = true; }
   }
@@ -293,7 +362,7 @@ export function fitStatement(clause: string, id: string): boolean | null {
  * negation, exclusion or "sold separately" ("It is not for the top of stairs.", "A lid is not included.") never
  * verifies it. The specific matchers below still turn a clear denial into FALSE; anything else becomes unverified.
  */
-const ANY_NEGATION = /\b(?:not|no|never|none|neither|nor|without|except|excluding|excluded|isn['’]t|aren['’]t|doesn['’]t|don['’]t|didn['’]t|won['’]t|wasn['’]t|weren['’]t|cannot|can['’]t|unable|incompatible|unsuitable|unsafe|unsafely|unfit|lacks?|lacking|only|needs?|requires?|required|needed|adapter|avoid|warning|caution|dangerous|hazard)\b|sold\s+separately|purchased?\s+separately|available\s+separately|\bnot\s+included\b|않|없|불가|미지원|미포함|별매|별도\s*구매/i;
+const ANY_NEGATION = /\b(?:not|no|never|none|neither|nor|without|except|excluding|excluded|isn['’]t|aren['’]t|doesn['’]t|don['’]t|didn['’]t|won['’]t|wasn['’]t|weren['’]t|cannot|can['’]t|unable|incompatible|unsuitable|unsafe|unsafely|unfit|lacks?|lacking|only|needs?|requires?|required|needed|adapter|avoid|warning|caution|dangerous|hazard)\b|sold\s+separately|purchased?\s+separately|available\s+separately|\bnot\s+included\b|않|없|불가|미지원|미포함|별매|별도\s*구매|안\s*(?:함|됨|돼|되)|아니[오요]/i;
 export function clauseStatement(clause: string, id: string): boolean | null {
   const v = clauseStatementInner(clause, id);
   // Known capabilities have their own scoped negation rules ("not as strong as" is not a denial); free-text

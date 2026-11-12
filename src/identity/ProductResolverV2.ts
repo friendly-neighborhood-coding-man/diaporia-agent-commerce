@@ -63,7 +63,21 @@ function partNamedAfterModel(p: CatalogProduct, noun: string): boolean {
   if (at < 0) return false;
   const head = noun.trim().split(/\s+/).at(-1)!;
   const after = title.slice(at + m!.length);
+  // Post-submission cycle 1 (F3): the part noun must be the head of the noun phrase after the model, never a modifier
+  // inside the host's own product noun: "Hose Reel" after the model is a reel (the host), not a "leader hose".
+  const phrase = after.split(/[,;(|–—]|\s-\s|\s+(?:with|for|and|in|by|includes?)\s/i)[0]!;
+  const lastWord = (phrase.match(/[A-Za-z][A-Za-z-]*/g) ?? []).at(-1) ?? "";
+  if (!nounRe(head).test(lastWord)) return false;
   return nounRe(head).test(after) && !(after.match(KIND_NOUN) ?? []).some((k) => nounKey(k) !== nounKey(head));
+}
+/** Cycle 4: the title, after its model, ends with the requested part noun ("Tessel 4000 Pre-Filter" for "pre-filter"). */
+function titleEndsWithPart(p: CatalogProduct, noun: string): boolean {
+  const m = p.identity.model; const title = p.title.normalize("NFKC");
+  const at = m ? title.toLowerCase().indexOf(m.toLowerCase()) : -1;
+  if (at < 0) return false;
+  const k = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const after = k(title.slice(at + m!.length)), want = k(noun);
+  return want.length >= 3 && after.endsWith(want) && (after === want || after.length - want.length <= 12);
 }
 export type ResolutionV2 =
   | { status: "LOCKED"; productId: string; identity: ProductIdentity; facts: ProductFacts; conditionConfirmed: boolean; duplicates: string[]; assumptions: string[]; excluded: Exclusion[];
@@ -116,6 +130,21 @@ type ResolveIntent = Pick<ResearchIntentV2, "target" | "attributes" | "condition
  * model (capabilities.fitStatement), and a page that says it does not fit, or says nothing, never recommends it.
  */
 export function resolveExactV2(intent: ResolveIntent, products: CatalogProduct[], offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {
+  const t0 = intent.target;
+  // Post-submission cycle 4 (IW-21 a04/a07): a part noun the parser does not know ("Tessel 4000 pre-filter") leaves the
+  // request STANDALONE with the part as its tail. When a listed same-brand ACCESSORY's title has that tail as the head
+  // noun after its model, and the requested model is that model or extends it, the request names the part. The part
+  // path decides; if it does not lock, the original reading stands.
+  if (t0?.kind === "STANDALONE" && t0.brand && t0.model && !t0.sku && intent.targetNoun && (intent.requestTail?.length ?? 0) > 0) {
+    const noun = intent.targetNoun;
+    const want = normalizeKey(t0.model);
+    const parts = products.map(factsOf).filter((f) => f.kind === "ACCESSORY" && f.product.identity.model && familyKey(f.product.identity.brand, f.product.identity.model) === familyKey(t0.brand, f.product.identity.model)
+      && want.startsWith(normalizeKey(f.product.identity.model)) && titleEndsWithPart(f.product, noun));
+    if (parts.length) {
+      const asPart = resolveExactV2({ ...intent, target: { ...t0, kind: "ACCESSORY", accessoryNoun: noun } }, products, offersOf);
+      if (asPart.status === "LOCKED" && factsOf(products.find((p) => p.productId === asPart.productId)!).kind === "ACCESSORY") return asPart;
+    }
+  }
   const r = resolveCore(intent, products, offersOf);
   const t = intent.target;
   if (r.status !== "NOT_FOUND" || t?.kind !== "ACCESSORY" || !t.brand || !t.model || t.sku) return r;
@@ -138,6 +167,32 @@ export function resolveExactV2(intent: ResolveIntent, products: CatalogProduct[]
     const r2 = resolveCore({ ...intent, target: { ...t, model: m }, requestTail: [], targetNoun: null }, products, offersOf);
     if (r2.status === "LOCKED") return { ...r2, fitModel: host, excluded: [...r.excluded, ...r2.excluded.filter((e) => !r.excluded.some((x) => x.productId === e.productId))],
       assumptions: [...r2.assumptions, `No ${t.accessoryNoun ?? "part"} listing names the ${t.brand} ${host}; the ${t.brand} ${m} listing is checked against the manufacturer's statement that it fits the ${host}.`] };
+  }
+  // Post-submission cycle 3 (F3): a part is often titled with the family name only ("Corvan Tide Seat Pad" for a pad that fits
+  // the Tide 1-Seat and Tide 2-Seat). A same-brand listing whose title names the brand, the host's family word and the
+  // requested part noun as its head noun, and names no other number token than the host's, is the part candidate; it is
+  // locked only with fitModel, so the manufacturer must state that it fits the full requested host. The host itself
+  // (whose title's head noun is its own product noun) is never such a candidate.
+  if (t.accessoryNoun) {
+    const fam = t.model.split(/\s+/)[0]!;
+    const hostNums = new Set((host.match(/\d[\w./-]*/g) ?? []).map((x) => normalizeKey(x)));
+    const noun = t.accessoryNoun.trim();
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const famRe = new RegExp(`(?:^|[^A-Za-z0-9])${esc(t.brand)}\\s+${esc(fam)}(?![A-Za-z0-9])`, "i");
+    const cands = products.map(factsOf).filter((f) => {
+      const title = f.product.title.normalize("NFKC");
+      if (f.kind === "BUNDLE" || !famRe.test(title) || (f.product.identity.brand ?? "").toLowerCase() !== t.brand!.toLowerCase()) return false;
+      const head = (title.split(/[,;(|–—]|\s-\s/)[0]!.match(/[A-Za-z][A-Za-z-]*/g) ?? []).at(-1) ?? "";
+      if (!nounRe(noun.split(/\s+/).at(-1)!).test(head) || !nounRe(noun).test(title)) return false;
+      const nums = (title.match(/\d[\w./-]*/g) ?? []).map((x) => normalizeKey(x));
+      return nums.every((n) => hostNums.has(n));
+    });
+    if (cands.length === 1) {
+      const f = cands[0]!; const m = f.product.identity.model ?? fam;
+      const r3 = resolveCore({ ...intent, target: { ...t, model: m, kind: f.kind, accessoryNoun: f.accessoryNoun }, requestTail: [], targetNoun: null }, [f.product], offersOf);
+      if (r3.status === "LOCKED") return { ...r3, fitModel: host, excluded: [...r.excluded, ...r3.excluded.filter((e) => !r.excluded.some((x) => x.productId === e.productId))],
+        assumptions: [...r3.assumptions, `The ${t.brand} ${noun} is listed for the ${t.brand} ${fam} family; it is checked against the manufacturer's statement that it fits the ${host}.`] };
+    }
   }
   return r;
 }

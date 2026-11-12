@@ -1,7 +1,7 @@
 import type { CatalogProduct, EvidenceKind } from "../domain/types.js";
 import { generationsIn, mentionsExactModel, normalizeKey, parseAttributes, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
 import { factsOf } from "../identity/ProductResolverV2.js";
-import { mentionsOtherVariant, modelCode, namesOtherVariant, namesVariantRun } from "../identity/VariantTail.js";
+import { canon, mentionsOtherVariant, modelCode, namesOtherVariant, namesVariantRun } from "../identity/VariantTail.js";
 import { clauseStatement, FIT_PREFIX, isPerformanceClaim, PROPOSITION_PREFIX } from "../research/capabilities.js";
 import { jaccard, registrableDomain, shingles, hostOf, type SourceClass, type SourceRegistry } from "./SourceRegistry.js";
 
@@ -137,6 +137,78 @@ export function namesOtherProduct(text: string, product: CatalogProduct): boolea
   return false;
 }
 
+
+/**
+ * Post-submission cycle 5, invariant I1: a statement verifies only the product it is about. Among the products this
+ * research listed, a mention of this product's model that a longer listed name covers ("Crucible 18 Glass" beside the
+ * Crucible 18, "Kerfmaster 14in Riser Block" beside the Kerfmaster 14in) is a mention of that other product.
+ * Returns, for each other listed product whose title contains this model, the first word it has after the model where
+ * this product's title has a different one.
+ */
+function extensionWords(product: CatalogProduct, listed: CatalogProduct[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const model = product.identity.model;
+  if (!model) return out;
+  const esc = model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
+  const re = new RegExp(`(?<![A-Za-z0-9])${esc}(?![A-Za-z0-9])`, "i");
+  const after = (title: string) => { const m = re.exec(title.normalize("NFKC")); return m ? title.normalize("NFKC").slice(m.index + m[0].length).split(/[\s,;:()|/–—]+/).map(canon).filter(Boolean) : null; };
+  const own = after(product.title) ?? [];
+  const brand = (product.identity.brand ?? "").toLowerCase();
+  for (const q of listed) {
+    if (q.productId === product.productId || (q.identity.brand ?? "").toLowerCase() !== brand) continue;
+    const a = after(q.title);
+    if (!a?.length || a[0] === own[0]) continue;
+    // Words this product's own title also has after the model ("Electric", "Kiln") never mark another product.
+    const distinct = a.filter((w) => !own.includes(w));
+    if (distinct.length && distinct[0] === a[0]) out.set(q.productId, distinct);
+  }
+  return out;
+}
+const PAGE_WORD = /^(?:specifications?|specs?|review|reviews|reviewed|manual|manuals|guide|faq|support|overview|vs|versus|comparison|compared|price|prices|deal|deals|our|setup|instructions?|warranty|owners?|user|product|page|official|buy|sale|details?|features?|hands|test|tested|first|long|full|quick|video|accessories|parts|and|or|with|the|a|an|is|in|for|at|by|from|on|of|to|model|models|series|edition)$/i;
+/** I1: the distinguishing words a page title writes right after this model, if they are not this product's own. */
+function titleContinuation(title: string, product: CatalogProduct): string[] | null {
+  const model = product.identity.model!;
+  const esc = model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
+  const re = new RegExp(`(?<![A-Za-z0-9])${esc}(?![A-Za-z0-9])`, "i");
+  const rest = (t: string) => { const n = t.normalize("NFKC"); const m = re.exec(n); return m ? n.slice(m.index + m[0].length) : null; };
+  const after = (t: string) => { const r = rest(t); return r === null ? null : r.trim().split(/[\s,;:()|/–—]+/).filter(Boolean); };
+  const r0 = rest(title);
+  // Punctuation right after the model ("Kerfmaster 14in: our pick") ends the name.
+  if (r0 === null || !/^\s+[\p{L}]/u.test(r0)) return null;
+  const raw = after(title)!;
+  const own = new Set((after(product.title) ?? []).map(canon).filter(Boolean));
+  const words = raw.map(canon).filter(Boolean);
+  const first = words[0];
+  // Only a Latin-script word continues an English product name; a Hangul word after the model ("CX-500 리뷰") is a page word
+  // or particle, so Korean titles keep the earlier attribution rules.
+  if (!first || !/^[a-z]/.test(first) || own.has(first) || PAGE_WORD.test(first)) return null;
+  const distinct = words.filter((w) => !own.has(w) && !PAGE_WORD.test(w));
+  return distinct.length && distinct[0] === first ? distinct : null;
+}
+const tokensOf = (t: string) => new Set(t.normalize("NFKC").split(/[\s,;:()|/–—.]+/).map(canon).filter(Boolean));
+/** I1: the distinguishing words of the listed product that the first covered mention of this model in `text` belongs to. */
+function nextNamed(text: string, model: string, ext: Map<string, string[]>): string[] | null {
+  const esc = model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
+  const t = text.normalize("NFKC");
+  const m = new RegExp(`(?<![A-Za-z0-9])${esc}(?![A-Za-z0-9])`, "i").exec(t);
+  if (!m) return null;
+  const next = canon(/^[\s-]*([\p{L}\p{N}][\p{L}\p{N}'’+.-]*)/u.exec(t.slice(m.index + m[0].length))?.[1] ?? "");
+  return [...ext.values()].find((x) => x[0] === next) ?? null;
+}
+/** I1: true if `text` names this model at least once where no listed longer name covers the mention. */
+function namesUnconsumed(text: string, model: string, ext: Map<string, string[]>): boolean {
+  if (!ext.size) return true;
+  const firsts = new Set([...ext.values()].map((x) => x[0]!));
+  const esc = model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
+  const t = text.normalize("NFKC");
+  let any = false;
+  for (const m of t.matchAll(new RegExp(`(?<![A-Za-z0-9])${esc}(?![A-Za-z0-9])`, "gi"))) {
+    any = true;
+    const next = canon(/^[\s-]*([\p{L}\p{N}][\p{L}\p{N}'’+.-]*)/u.exec(t.slice(m.index! + m[0].length))?.[1] ?? "");
+    if (!firsts.has(next)) return true;
+  }
+  return !any;
+}
 /**
  * Statements one search hit makes about a capability (first attributable clause), or null.
  * ATTRIBUTION (review R-01, generalized in V2.1): a clause counts only if
@@ -147,12 +219,22 @@ export function namesOtherProduct(text: string, product: CatalogProduct): boolea
  * Questions, table rows and reported or second-hand speech ("according to", "via", "X says") never count.
  */
 const PART_TITLE_WORD = /\b(?:spare|replacement|batter(?:y|ies)|chargers?|mounts?|sleeves?|filters?|covers?|blades?|remotes?|nozzles?|pans?|housings?|straps?|attachments?|adapters?|guards?|pedals?|rollers?|peels?|cases?)\b/i;
-export function statementFrom(hit: { title: string; snippet: string }, product: CatalogProduct, capability: string): { value: boolean; quote: string } | null {
+export function statementFrom(hit: { title: string; snippet: string }, product: CatalogProduct, capability: string, listed: CatalogProduct[] = []): { value: boolean; quote: string } | null {
   const model = product.identity.model;
   const text = `${hit.title}. ${hit.snippet}`;
   const genAttr = factsOf(product).attributes.generation;
   const generation = genAttr && genAttr !== "CONFLICT" ? genAttr : null;
-  const namesThis = (t: string) => !!model && mentionsExactModel(t, model, { generation }) && (/\d/.test(model) || brandWithModel(t, product));
+  const ext = extensionWords(product, listed);
+  // I1: the page title is a product name too. When it continues this model with words this product's title does not have
+  // there ("Kerfmaster 14in Riser Block" read for the Kerfmaster 14in Band Saw), the page is about that other product,
+  // listed or not. Page words ("specifications", "review", "manual") are not a continuation.
+  if (model) {
+    const t = titleContinuation(hit.title, product);
+    if (t && !ext.has("page")) ext.set("page", t);
+  }
+  const namesThis = (t: string) => !!model && mentionsExactModel(t, model, { generation }) && (/\d/.test(model) || brandWithModel(t, product)) && namesUnconsumed(t, model, ext);
+  // I1: the listed product this page's title is about, when it is another one (its distinguishing words).
+  const titleOther = model && mentionsExactModel(hit.title, model, { generation }) && !namesUnconsumed(hit.title, model, ext) ? nextNamed(hit.title, model, ext) : null;
   if (model) {
     if (!namesThis(text)) return null;
     // V2.9: a page that names this code only as another variant ("Kestra A5 4K" for the A5) is about that variant.
@@ -188,7 +270,14 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   const fit = capability.startsWith(FIT_PREFIX);
   if (fit) {
     const strip = [product.identity.brand, product.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), product.title);
-    const partWords = strip.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && !/^(?:for|the|and|with|new)$/.test(w));
+    let partWords = strip.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && !/^(?:for|the|and|with|new)$/.test(w));
+    // Post-submission cycle 3 (F3): a family-titled part's parsed model can hold its whole name ("Pacer Snowshoe Tails").
+    // Its own words are then the title words that are neither the brand nor the host named in the fit key.
+    if (!partWords.length) {
+      const host = new Set(capability.slice(FIT_PREFIX.length).split("-"));
+      const brand = (product.identity.brand ?? "").toLowerCase();
+      partWords = product.title.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && w !== brand && !host.has(w) && !/^(?:for|the|and|with|new)$/.test(w));
+    }
     const low = text.toLowerCase();
     if (!partWords.length || partWords.some((w) => !new RegExp(`(?<![a-z])${w}`).test(low))) return null;
   }
@@ -210,10 +299,12 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   // another product: only clauses that name this exact product count, never a pronoun clause.
   // V2.15 (IW-15 d02): a page whose title names this brand but not this product is about another product (a part, a
   // sibling): only clauses that name this product themselves count, never a pronoun clause.
-  const titleAboutOther = !!model && !namesThis(hit.title) && !!product.identity.brand && hit.title.toLowerCase().includes(product.identity.brand.toLowerCase());
+  const titleAboutOther = !!titleOther || (!!model && !namesThis(hit.title) && !!product.identity.brand && hit.title.toLowerCase().includes(product.identity.brand.toLowerCase()));
   const hitNamesOther = titleAboutOther || namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit || (!!vc && mentionsOtherVariant(text, product.title, vc));
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
-  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b)|,\s+(?:and|but|while|whereas)\s+(?=(?:the|a|an|its|this|that)\s+[A-Z])/i));
+  // Post-submission cycle 6c, invariant I8: a spec line "<label>: <value>" is read whole when the value is short (at most
+  // four words): "온도 조절: 없음" is a denial, never the bare label "온도 조절".
+  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b|(?:[^\s.;:!?]+\s*){1,4}[.!?]?\s*$)|,\s+(?:and|but|while|whereas)\s+(?=(?:the|a|an|its|this|that)\s+[A-Z])/i));
   // V2.19 (IW-19 failure 1): a page that both states and denies a requirement denies it. Every clause is read, and a
   // denial wins over an earlier match ("Above Ground Pool Pump ... it is not for in-ground pools").
   let firstTrue: { value: boolean; quote: string } | null = null;
@@ -234,6 +325,9 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     }
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product, asked)) continue;
     if (vc && mentionsOtherVariant(clause, product.title, vc)) continue;
+    // I1: on a page about another listed product, a clause that names this product together with that product's own
+    // words ("With the riser block, the Kerfmaster 14in resaws up to 12 in") describes the two together, not this one.
+    if (titleOther && titleOther.some((w) => tokensOf(clause).has(w))) continue;
     // V2.10: a spec line ("Built-in pump: yes") on a page whose title names only this product is about this product,
     // even when the page body compares it with a sibling.
     const specLine = /^\s*[A-Z][A-Za-z0-9 /-]{1,30}:\s*[^:]{1,40}$/.test(clause.replace(/\.\s*$/, "")) && !comparisonPage && namesThis(hit.title)

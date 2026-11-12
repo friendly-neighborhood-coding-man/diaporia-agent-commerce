@@ -39,7 +39,9 @@ export function modelYear(text: string): string | null {
   return null;
 }
 /** The model string without a trailing model-year token ("Drift 15 2024" → "Drift 15"; never "RX-2000" → "RX-"). */
-export const stripYear = (model: string | null): string | null => model ? (model.replace(/(?:\s+\(?|\s*\()20[0-3]\d\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, "").trim() || model) : model;
+// Post-submission cycle 4 (IW-21 d15): only a token modelYear accepts as a year (2005..2035) is stripped. "Tessel 2000"
+// is a model number, not the year 2000: stripping it made the Tessel 4000's pages count for the Tessel 2000.
+export const stripYear = (model: string | null): string | null => model ? (model.replace(/(?:\s+\(?|\s*\()(20[0-3]\d)\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, (m, y: string) => Number(y) >= 2005 && Number(y) <= 2035 ? "" : m).trim() || model) : model;
 
 /**
  * Product generation (N-02): "(2nd Gen)", "2nd generation", "Gen 2", "second-gen", "2세대". Value is the number ("2").
@@ -238,9 +240,40 @@ function siblingSuffix(w: string, raw: string, next: string[], request: boolean)
   return false;
 }
 
+/**
+ * Post-submission cycle 1 (F5): one canonical spelling for a quantity written inside a model name. "150 ft", "150-foot",
+ * "150 feet" and "150ft" are the same model token; so are "10 A" / "10-amp" / "10A", "54 centimeter" / "54cm", "40 inch" /
+ * '40"' / "40in", "40 gallon" / "40gal", "7-kilowatt" / "7kW", "1/2 HP" / "1/2HP". Request and title then produce the same
+ * family key, and the unit is never dropped from the model. Spaced single-letter units are joined only when written in
+ * capitals ("10 A", never "10 a"), and a spaced "in" never is (it is the preposition). Count nouns and grains stay as written.
+ */
+const UNIT_CANON: Array<[RegExp, string]> = [
+  [/^(?:ft|foot|feet)$/i, "ft"], [/^(?:in|inch|inches|"|”|″)$/i, "in"], [/^(?:cm|centimet(?:er|re)s?)$/i, "cm"], [/^(?:mm|millimet(?:er|re)s?)$/i, "mm"],
+  [/^(?:a|amps?|amperes?)$/i, "A"], [/^(?:kw|kilowatts?)$/i, "kW"], [/^(?:w|watts?)$/i, "W"], [/^(?:l|lit(?:er|re)s?)$/i, "L"],
+  [/^(?:gal|gallons?)$/i, "gal"], [/^(?:hp|horsepower)$/i, "HP"], [/^(?:v|volts?)$/i, "V"],
+];
+const UNIT_WORD = /(\d+(?:\.\d+)?(?:\/\d+)?)(?:(?:\s*-\s*|\s+)(feet|foot|ft|inch(?:es)?|centimet(?:er|re)s?|millimet(?:er|re)s?|cm|mm|amps?|amperes?|kilowatts?|kw|watts?|lit(?:er|re)s?|gallons?|gal|horsepower|hp|volts?|A|W|V|L)(?![\p{L}\p{N}])|\s*("|”|″))/giu;
+export function canonicalUnits(text: string): string {
+  return text.replace(UNIT_WORD, (all, num: string, unit: string | undefined, mark: string | undefined) => {
+    const u = unit ?? mark!;
+    // A spaced single letter is a unit only in capitals ("10 A"); "10 a" stays as written.
+    if (unit && u.length === 1 && u !== u.toUpperCase()) return all;
+    const hit = UNIT_CANON.find(([re]) => re.test(u));
+    return hit ? `${num}${hit[1]}` : all;
+  });
+}
+/** A regex source that matches any spelling of a canonical unit model token ("150ft" -> 150 ft / 150-foot / 150 feet ...). */
+export function unitTokenPattern(token: string): string | null {
+  const m = /^(\d+(?:\.\d+)?(?:\/\d+)?)(ft|in|cm|mm|A|kW|W|L|gal|HP|V)$/i.exec(token);
+  if (!m) return null;
+  const alt: Record<string, string> = { ft: "ft|foot|feet", in: 'in|inch|inches|"|”|″', cm: "cm|centimet(?:er|re)s?", mm: "mm|millimet(?:er|re)s?", a: "a|amps?|amperes?",
+    kw: "kw|kilowatts?", w: "w|watts?", l: "l|lit(?:er|re)s?", gal: "gal|gallons?", hp: "hp|horsepower", v: "v|volts?" };
+  return `${m[1]!.replace(/[./]/g, (c) => "\\" + c)}\\s*-?\\s*(?:${alt[m[2]!.toLowerCase()]})`;
+}
+
 /** Named model phrase: words after the brand up to the first generic word, product noun, attribute or punctuation (max 4 words). */
 export function namedModelAfter(text: string, brand: string | null, request = false): string | null {
-  const t = text.normalize("NFKC");
+  const t = canonicalUnits(text.normalize("NFKC"));
   let rest = t;
   if (brand) {
     const m = new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(brand)}(?:'s)?(?=[^A-Za-z0-9]|$)`, "i").exec(t);
@@ -291,7 +324,7 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // stay attributes.
     // V2.16 (IW-16 failure 4): any unit letter does the same ("Gale 6G", "Tarn 4P"); only storage, pack and count
     // units stay attributes.
-    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?[a-z]{1,3}$/i.test(w) && !/^\d+(?:\.\d+)?(?:gb|tb|mb|pk|ct|pcs?|oz|ft|hrs?|h|x)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?[a-z]{1,3}$/i.test(w) && !/^\d+(?:\.\d+)?(?:gb|tb|mb|pk|ct|pcs?|oz|hrs?|h|x)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);
@@ -307,8 +340,10 @@ const DESCRIPTIVE_CODE = /^(?:HD|FHD|UHD|QHD|RGB|TWS|USB|LED|LCD|OLED|ANC|ENC|NF
 const TECH_SUFFIX = /^(?:IH|GaN|PD|ANC|ENC|OLED|QLED|IPS|HDR|HDR10|Wi-?Fi|BT|NFC|USB-?C|LED|LCD|DC|AC|UV|HEPA|IPX?\d|IP\d\d)$/;
 const AIR_NOUN = /^\s+(?:compressors?|purifiers?|fryers?|pumps?|mattress(?:es)?|hoses?|conditioners?|filters?|beds?|cleaners?|cooler|coolers|circulators?|movers?|inflators?|tools?|guns?|tanks?)\b/i;
 export function extractIdentity(title: string, brand: string | null, opts: { request?: boolean } = {}): ExtractedIdentity {
-  const t = title.normalize("NFKC").replace(/\s+/g, " ").trim();
-  const attributes = parseAttributes(t);
+  const t0 = title.normalize("NFKC").replace(/\s+/g, " ").trim();
+  // Attributes are read from the title as written (screen sizes, capacities); only the model parse uses canonical units.
+  const attributes = parseAttributes(t0);
+  const t = canonicalUnits(t0);
   const titleCondition = /\b(renewed|refurbished|reconditioned|refurb)\b/i.test(t) ? "refurbished" : /\bopen[- ]box\b/i.test(t) ? "open_box" : /\b(used|pre-?owned)\b/i.test(t) ? "used" : null;
   // Accessory: "<accessory noun> ... for <product>" or "Replacement ...". The model is the TARGET product's model.
   const forIdx = t.search(/\b(?:for|compatible with|fits)\b/i);
@@ -404,6 +439,7 @@ export function familyKey(brand: string | null, model: string | null): string {
  * True when `text` mentions exactly this model: separator-tolerant, and not followed by a family extension
  * ("Nova 9" does not match "Nova 9 Pro"; "CX-500" does not match "CX-5000").
  */
+const modelYearToken = (t: string) => /^20[0-3]\d$/.test(t) && Number(t) >= 2005;
 export function mentionsExactModel(text: string, model: string, own: { generation?: string | null } = {}): boolean {
   const body = model.replace(/[^A-Za-z0-9]/g, "").split("").map((ch) => escapeRe(ch)).join("[- ]?");
   if (!body) return false;
@@ -417,6 +453,12 @@ export function mentionsExactModel(text: string, model: string, own: { generatio
     if (next && own.generation && modelGeneration(after.slice(0, 24).replace(/^[-\s(]*/, "")) === own.generation && /^[-\s(]*(?:\d{1,2}(?:st|nd|rd|th)|gen|generation|first|second|third|fourth|fifth|sixth|\d{1,2}\s*세대)/i.test(after)) return true;
     // V2.5: "Air" in "AF-55 Duo Air Fryer" starts the product noun, it is not the "Air" model extension.
     if (next && isModelExtension(next) && !ownWords.has(next) && nounPhraseAt(after.split(/\s+/).filter(Boolean)) !== "STOP") continue;
+    // Post-submission cycle 4 (IW-21 d15): a model with no digit of its own followed by a bare number or number code
+    // ("Tessel 4000" for the model "Tessel") names a numbered sibling, unless the number carries a unit ("Aero 20 ft").
+    if (!/\d/.test(model)) {
+      const num = /^[-\s(]*(\d[\d,.]*[A-Za-z]{0,3})(?=$|[^A-Za-z0-9])(\s*[A-Za-z]+)?/.exec(after);
+      if (num && !ownWords.has(num[1]!.toLowerCase()) && !UNIT_TOKEN.test(num[1]!) && !UNIT_TOKEN.test(`${num[1]}${(num[2] ?? "").trim()}`) && !modelYearToken(num[1]!)) continue;
+    }
     // V2.7: an upper-case name code right after the model ("Glide 5 GTX", "Orbit 90 EQ") names a sibling model.
     const rawNext = /^[\s(]*([A-Za-z0-9+]+)/.exec(after)?.[1] ?? "";
     if (rawNext && !ownWords.has(rawNext.toLowerCase()) && /^[A-Z][A-Z0-9+]{1,4}$/.test(rawNext) && !UNIT_TOKEN.test(rawNext) && !DESCRIPTIVE_CODE.test(rawNext) && !TECH_SUFFIX.test(rawNext)) continue;

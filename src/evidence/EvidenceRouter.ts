@@ -106,7 +106,7 @@ export class EvidenceRouter {
    * source, applies the V2 sufficiency rule (EvidenceV2.ts) and returns traceable evidence for each capability.
    * `sellers` = domains that sell any candidate in this session (always retailer-class). Fails closed on limits.
    */
-  async verifyMany(product: CatalogProduct, capabilities: string[], ctx: { userId: string; requestId: string }, o: { sellers?: string[]; maxSearches?: number; broad?: boolean } = {}): Promise<VerifyManyResult> {
+  async verifyMany(product: CatalogProduct, capabilities: string[], ctx: { userId: string; requestId: string }, o: { sellers?: string[]; maxSearches?: number; broad?: boolean; listed?: CatalogProduct[] } = {}): Promise<VerifyManyResult> {
     const steps: RouterStep[] = [];
     const sellers = o.sellers ?? [];
     const brand = product.identity.brand || null;
@@ -137,7 +137,7 @@ export class EvidenceRouter {
     const absorb = (hits: EvidenceSearchResponse["hits"], requestId: string | null, caps: string[]) => {
       let gained = false;
       for (const h of hits) for (const cap of caps) {
-        const st = statementFrom(h, product, cap);
+        const st = statementFrom(h, product, cap, o.listed);
         if (!st || items[cap]!.some((x) => x.url === h.url)) continue;
         const it = classifyItem({ url: h.url, domain: hostOf(h.url), sourceClass: this.registry.classify(h.url, brand, sellers, h.publishedDate), value: st.value, quote: st.quote, publishedDate: h.publishedDate,
           provider: this.search!.name, requestId, observedAt: nowIso }, this.now());
