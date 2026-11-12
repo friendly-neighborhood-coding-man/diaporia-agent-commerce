@@ -188,7 +188,14 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   const fit = capability.startsWith(FIT_PREFIX);
   if (fit) {
     const strip = [product.identity.brand, product.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), product.title);
-    const partWords = strip.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && !/^(?:for|the|and|with|new)$/.test(w));
+    let partWords = strip.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && !/^(?:for|the|and|with|new)$/.test(w));
+    // Post-submission cycle 3 (F3): a family-titled part's parsed model can hold its whole name ("Pacer Snowshoe Tails").
+    // Its own words are then the title words that are neither the brand nor the host named in the fit key.
+    if (!partWords.length) {
+      const host = new Set(capability.slice(FIT_PREFIX.length).split("-"));
+      const brand = (product.identity.brand ?? "").toLowerCase();
+      partWords = product.title.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && w !== brand && !host.has(w) && !/^(?:for|the|and|with|new)$/.test(w));
+    }
     const low = text.toLowerCase();
     if (!partWords.length || partWords.some((w) => !new RegExp(`(?<![a-z])${w}`).test(low))) return null;
   }

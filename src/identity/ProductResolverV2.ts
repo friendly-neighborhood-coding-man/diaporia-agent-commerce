@@ -144,6 +144,32 @@ export function resolveExactV2(intent: ResolveIntent, products: CatalogProduct[]
     if (r2.status === "LOCKED") return { ...r2, fitModel: host, excluded: [...r.excluded, ...r2.excluded.filter((e) => !r.excluded.some((x) => x.productId === e.productId))],
       assumptions: [...r2.assumptions, `No ${t.accessoryNoun ?? "part"} listing names the ${t.brand} ${host}; the ${t.brand} ${m} listing is checked against the manufacturer's statement that it fits the ${host}.`] };
   }
+  // Post-submission cycle 3 (F3): a part is often titled with the family name only ("Corvan Tide Seat Pad" for a pad that fits
+  // the Tide 1-Seat and Tide 2-Seat). A same-brand listing whose title names the brand, the host's family word and the
+  // requested part noun as its head noun, and names no other number token than the host's, is the part candidate; it is
+  // locked only with fitModel, so the manufacturer must state that it fits the full requested host. The host itself
+  // (whose title's head noun is its own product noun) is never such a candidate.
+  if (t.accessoryNoun) {
+    const fam = t.model.split(/\s+/)[0]!;
+    const hostNums = new Set((host.match(/\d[\w./-]*/g) ?? []).map((x) => normalizeKey(x)));
+    const noun = t.accessoryNoun.trim();
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const famRe = new RegExp(`(?:^|[^A-Za-z0-9])${esc(t.brand)}\\s+${esc(fam)}(?![A-Za-z0-9])`, "i");
+    const cands = products.map(factsOf).filter((f) => {
+      const title = f.product.title.normalize("NFKC");
+      if (f.kind === "BUNDLE" || !famRe.test(title) || (f.product.identity.brand ?? "").toLowerCase() !== t.brand!.toLowerCase()) return false;
+      const head = (title.split(/[,;(|–—]|\s-\s/)[0]!.match(/[A-Za-z][A-Za-z-]*/g) ?? []).at(-1) ?? "";
+      if (!nounRe(noun.split(/\s+/).at(-1)!).test(head) || !nounRe(noun).test(title)) return false;
+      const nums = (title.match(/\d[\w./-]*/g) ?? []).map((x) => normalizeKey(x));
+      return nums.every((n) => hostNums.has(n));
+    });
+    if (cands.length === 1) {
+      const f = cands[0]!; const m = f.product.identity.model ?? fam;
+      const r3 = resolveCore({ ...intent, target: { ...t, model: m, kind: f.kind, accessoryNoun: f.accessoryNoun }, requestTail: [], targetNoun: null }, [f.product], offersOf);
+      if (r3.status === "LOCKED") return { ...r3, fitModel: host, excluded: [...r.excluded, ...r3.excluded.filter((e) => !r.excluded.some((x) => x.productId === e.productId))],
+        assumptions: [...r3.assumptions, `The ${t.brand} ${noun} is listed for the ${t.brand} ${fam} family; it is checked against the manufacturer's statement that it fits the ${host}.`] };
+    }
+  }
   return r;
 }
 function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {

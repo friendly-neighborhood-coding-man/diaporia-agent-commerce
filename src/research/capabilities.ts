@@ -324,7 +324,7 @@ export function requestCapabilities(text: string): Array<{ id: string; index: nu
  */
 export const FIT_PREFIX = `${PROPOSITION_PREFIX}fits-model-`;
 export const fitKey = (model: string) => `${FIT_PREFIX}${model.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
-const FIT_VERB = /\b(?:(does\s+not|doesn['’]t|do\s+not|don['’]t|will\s+not|won['’]t|is\s+not|isn['’]t|are\s+not|aren['’]t|not|never)\s+)?(?:fits?|fitting|(?:is\s+|are\s+)?compatible\s+with|works?\s+with|(?:is\s+)?designed\s+for|(?:is\s+)?made\s+for|for\s+use\s+with)\s+/gi;
+const FIT_VERB = /\b(?:(does\s+not|doesn['’]t|do\s+not|don['’]t|will\s+not|won['’]t|is\s+not|isn['’]t|are\s+not|aren['’]t|not|never)\s+)?(?:fits?|fitting|(?:is\s+|are\s+)?compatible\s+with|works?\s+with|(?:is\s+)?designed\s+for|(?:is\s+)?made\s+for|for\s+use\s+with|clips?\s+(?:on)?to|attach(?:es)?\s+to|mounts?\s+(?:on|to))\s+/gi;
 const FIT_TAIL_OK = /^(?:electric|smart|cordless|robotic|robot|digital|stand|pizza|portable|wireless|3d|action|bread|maker|machine|models?|series|only|versions?|[a-z-]*[a-z]s)$/i;
 const FIT_NOT_TAIL = /^(?:plus|max|mini|lite|pro|ultra|duo|dual|go|se|xl|xs|long|range|colou?r|gen|edition|kids?)$/i;
 const fitNorm = (x: string) => x.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");

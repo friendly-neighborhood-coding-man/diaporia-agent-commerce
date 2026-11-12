@@ -483,7 +483,9 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // 3,800 m") states a limit the product must meet. It is kept whole as a must-have, whatever else read its number.
   for (const m of text.matchAll(/\bfor\s+(?![$€£₩]|usd\b|eur\b|under\b|less\b|about\b|around\b|up to\b|no more\b)((?:[^,.;!?\d]{0,30}?)(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten)\b[^,.;!?]{0,24}?)(?=\s*(?:[,.;!?]|$|\s(?:and|but|with|under|please|that|which)\b))/giu)) {
     const t = m[0].trim(); const a0 = m.index!;
-    if (inTarget(a0) || /^for\s+(?:the\s+)?(?:\$|usd|eur|£|€|₩)/i.test(t)) continue;
+    // Post-submission cycle 3 (F3): the number of the named host ("for the Tote 1-Seat", "for the Delve 1/3HP") is the
+    // product reference, not a quantity requirement: a phrase that reaches into the target span is skipped.
+    if (inTarget(a0) || (!!targetSpan && a0 < targetSpan[1] && a0 + m[0].length > targetSpan[0]) || /^for\s+(?:the\s+)?(?:\$|usd|eur|£|€|₩)/i.test(t)) continue;
     const key = `unrecognized:${slugOf(t)}`;
     const nums = [...t.matchAll(/\d[\d,.]*/g)].map((n) => n[0].replace(/[,.]/g, ""));
     // A requirement that already reads this number ("at least 800 m2 lawn") checks it; a unit alone ("lb") does not.
