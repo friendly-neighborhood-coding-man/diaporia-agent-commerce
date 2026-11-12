@@ -48,3 +48,21 @@ These are service-arm results for C (`c9a4353`) and F (this branch):
 | CX probes | 15/18, 0 unsafe | identical |
 
 The full test suite has 1106 tests, and all of them pass. No existing assertion was relaxed. A fresh sealed IW-28 evaluation decides the question.
+
+## IW-28 result (independent, sealed, scored once; now SEEN)
+
+| Arm | Correct /185 | Unsafe | Bypass /165 | Legit prepared /112 |
+|---|---:|---:|---:|---:|
+| B f17a8c5 | 134 | 2 | 1 | 54 |
+| C c9a4353 | 130 | 0 | 0 | 50 |
+| F (this branch) | 128 | 0 | 0 | 48 |
+
+Ablations:
+- With the binder off, F equals C on every case.
+- With the obligation switch or the UNCHECKED switch off, F is unchanged.
+
+E4.1 had no measurable safety effect on this fresh set. It cost 2 legitimate purchases. In both, a sentence on a bundle's own page was attributed to another product: once through an included part, and once through an "it" that followed a component carrying a sibling's name.
+
+Most of the set's binding cases never reached evidence, because the parser did not recognise the requirement phrase.
+
+Decision: C, not F, remains the kernel candidate. Interpretation is the next lever.
