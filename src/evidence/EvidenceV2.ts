@@ -2,7 +2,7 @@ import type { CatalogProduct, EvidenceKind } from "../domain/types.js";
 import { generationsIn, mentionsExactModel, normalizeKey, parseAttributes, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
 import { factsOf } from "../identity/ProductResolverV2.js";
 import { mentionsOtherVariant, modelCode, namesOtherVariant, namesVariantRun } from "../identity/VariantTail.js";
-import { clauseStatement, isPerformanceClaim, PROPOSITION_PREFIX } from "../research/capabilities.js";
+import { clauseStatement, FIT_PREFIX, isPerformanceClaim, PROPOSITION_PREFIX } from "../research/capabilities.js";
 import { jaccard, registrableDomain, shingles, hostOf, type SourceClass, type SourceRegistry } from "./SourceRegistry.js";
 
 /**
@@ -146,6 +146,7 @@ export function namesOtherProduct(text: string, product: CatalogProduct): boolea
  *      other product AND the page is not a comparison page (a pronoun clause in a single-product review).
  * Questions, table rows and reported or second-hand speech ("according to", "via", "X says") never count.
  */
+const PART_TITLE_WORD = /\b(?:spare|replacement|batter(?:y|ies)|chargers?|mounts?|sleeves?|filters?|covers?|blades?|remotes?|nozzles?|pans?|housings?|straps?|attachments?|adapters?|guards?|pedals?|rollers?|peels?|cases?)\b/i;
 export function statementFrom(hit: { title: string; snippet: string }, product: CatalogProduct, capability: string): { value: boolean; quote: string } | null {
   const model = product.identity.model;
   const text = `${hit.title}. ${hit.snippet}`;
@@ -173,6 +174,24 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   }
   const comparisonPage = COMPARISON_TITLE.test(hit.title);
   const facts = factsOf(product);
+  // V2.10 (IW-11 d06): a page about a part of this model ("Pedalto C1 Spare Battery": "it fits the C1 ...; it does not
+  // fit the C1 Long Range") describes the part, so it never states anything about the product itself.
+  if (facts.kind === "STANDALONE" && model) {
+    const at = hit.title.toLowerCase().indexOf(model.toLowerCase());
+    const after = at >= 0 ? hit.title.slice(at + model.length) : "";
+    const own = new Set(product.title.toLowerCase().split(/[^a-z]+/));
+    const part = PART_TITLE_WORD.exec(after);
+    if (part && !own.has(part[0].toLowerCase())) return null;
+  }
+  // V2.10: a fit statement names other products by design ("fits the C1 and C1 Step-Through"). It counts only on a page
+  // about this part: every word of the part's own name (its title without brand, model and numbers) is on the page.
+  const fit = capability.startsWith(FIT_PREFIX);
+  if (fit) {
+    const strip = [product.identity.brand, product.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), product.title);
+    const partWords = strip.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && !/^(?:for|the|and|with|new)$/.test(w));
+    const low = text.toLowerCase();
+    if (!partWords.length || partWords.some((w) => !new RegExp(`(?<![a-z])${w}`).test(low))) return null;
+  }
   // Model year (V21-03). A dated product counts only a page that names its year; a page naming another year counts only
   // a clause that names this year and no other. An undated product never counts a year-qualified page (fail closed).
   const year = facts.attributes.year && facts.attributes.year !== "CONFLICT" ? facts.attributes.year : null;
@@ -191,7 +210,7 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   // another product: only clauses that name this exact product count, never a pronoun clause.
   const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit || (!!vc && mentionsOtherVariant(text, product.title, vc));
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
-  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+/));
+  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b)/i));
   for (const clause of clauses) {
     if (/\|/.test(clause) || /\?\s*$/.test(clause)) continue; // table rows and questions are not statements
     if (OTHER_GENERATION.test(clause)) continue;
@@ -200,9 +219,19 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     const clauseGens = generationsIn(clause);
     if ([...clauseGens].some((g) => g !== generation)) continue;
     const clauseNamesThis = namesThis(clause) && (!otherYearInHit || (!!year && clauseYears.has(year)) || (!!generation && clauseGens.has(generation)));
+    if (fit) {
+      if (comparisonPage) continue;
+      const v = clauseStatement(clause, capability);
+      if (v !== null) return { value: v, quote: clause.trim().slice(0, 300) };
+      continue;
+    }
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product, asked)) continue;
     if (vc && mentionsOtherVariant(clause, product.title, vc)) continue;
-    if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
+    // V2.10: a spec line ("Built-in pump: yes") on a page whose title names only this product is about this product,
+    // even when the page body compares it with a sibling.
+    const specLine = /^\s*[A-Z][A-Za-z0-9 /-]{1,30}:\s*[^:]{1,40}$/.test(clause.replace(/\.\s*$/, "")) && !comparisonPage && namesThis(hit.title)
+      && !namesOtherProduct(hit.title, product) && !(vc && mentionsOtherVariant(hit.title, product.title, vc));
+    if (!clauseNamesThis && (comparisonPage || hitNamesOther) && !specLine) continue;
     // V2.7: "Like the TI-5, it is cordless" on another product's page: this model is only the comparison, the subject is
     // the other product. Attribution fails closed: the clause is not a statement about this model.
     if (model && hitNamesOther && /^\s*(?:like|unlike|as with|similar to|compared (?:to|with)|just like)\s/i.test(clause)) {

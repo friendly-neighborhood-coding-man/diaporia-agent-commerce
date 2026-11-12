@@ -209,6 +209,8 @@ const nounPhraseAt = (rest: string[]): "STOP" | "MODEL" | null => {
  * candidate is a mismatch, never the base model.
  */
 function requestNameToken(w: string): boolean {
+  // V2.10: a capitalized hyphenated compound is one name word ("C1 Step-Through"), unless it describes ("Wi-Fi").
+  if (/^[A-Z][a-z]+(?:-[A-Z][a-z]+)+$/.test(w)) return !/^wi-fi$/i.test(w) && w.split("-").every((x) => !GENERIC.has(x.toLowerCase()) && !/(?:ing|ed|less|proof|able|ible|ful)$/.test(x.toLowerCase()));
   if (!/^[A-Z][A-Za-z0-9+]{0,11}$/.test(w)) return false;
   const lw = w.toLowerCase();
   if (COLOR_WORDS[lw] || UNIT_TOKEN.test(w) || ACCESSORY_NOUN.test(w) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(w)) return false;
@@ -306,7 +308,10 @@ export function extractIdentity(title: string, brand: string | null, opts: { req
     const named = namedModelAfter(src, srcBrand, !!opts.request);
     const noun = (nounMatch?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, "");
     const tAttr = parseAttributes(target);
-    return { brand, model: stripVersion(num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
+    // V2.10: in a request the product the part must fit keeps its full name ("for the Pedalto C1 Step-Through" fits the
+    // C1 Step-Through, never just the C1); the fit is then checked against the manufacturer's statement.
+    const fitName = opts.request && num && named && normalizeKey(named).startsWith(normalizeKey(num)) && named.split(" ").length > 1 ? named : null;
+    return { brand, model: stripVersion(fitName ?? num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
       attributes: { ...parseAttributes(head), ...(tAttr.capacity ? { capacity: tAttr.capacity } : {}), ...(tAttr.generation ? { generation: tAttr.generation } : {}) }, titleCondition,
       fitsBrand: targetNamesProduct && fitsBrand && (!brand || fitsBrand.toLowerCase() !== brand.toLowerCase()) ? fitsBrand : null };
   }

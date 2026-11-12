@@ -222,7 +222,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       }
       // V2.4: "replacement ear tips for my Sonara Hush 2" asks for the part, named before the product it fits.
       const lead = ACC_LEAD.exec(text.slice(0, brandHit.index));
-      if (kind === "STANDALONE" && lead) { kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, ""); }
+      if ((kind === "STANDALONE" || (kind === "ACCESSORY" && accessoryNoun === "part")) && lead) { kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, ""); }
       // V2.4: "the Volteq PS-500 bundle with the 100W solar panel" asks for the bundle itself.
       if (kind === "STANDALONE" && ex.model && /^\s*(?:bundle|kit|combo)\b/i.test(clause.slice(Math.max(0, clause.toLowerCase().indexOf(ex.model.toLowerCase())) + ex.model.length)) && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) kind = "BUNDLE";
       // V2.5: "the GV-12 with the pet tool kit bundle" asks for that bundle; its named contents must be in the title.

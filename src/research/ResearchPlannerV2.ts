@@ -6,7 +6,7 @@ import { resolveExactV2, type ResolutionV2 } from "../identity/ProductResolverV2
 import type { EvidenceRouter, RouterResult, RouterStep } from "../evidence/EvidenceRouter.js";
 import { judgeV2, type CapabilityVerdict, type EvidenceItem } from "../evidence/EvidenceV2.js";
 import { hostOf } from "../evidence/SourceRegistry.js";
-import { clauseStatement, evidenceCapabilityOf } from "./capabilities.js";
+import { clauseStatement, evidenceCapabilityOf, fitKey } from "./capabilities.js";
 
 /** True when any clause of a listing text claims the capability (planner prior only). */
 function clauseStatementAny(text: string, cap: string): boolean | null {
@@ -65,7 +65,8 @@ export interface PlannerResult {
   namedFallback?: boolean;
 }
 
-export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): Promise<PlannerResult> {
+export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps): Promise<PlannerResult> {
+  let intent = intentIn;
   const L = { ...DEFAULT_PLANNER_LIMITS, ...(d.limits ?? {}) };
   const supported = CHANNEL3_CURRENCIES.has(intent.currency);
   const trace: PlannerTrace = { queries: [], catalogCalls: 0, evidenceSearches: 0, evidenceSteps: [], stops: [],
@@ -131,6 +132,12 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
     }
   }
 
+  // V2.10: a part locked through its base model must be shown to fit the full requested model (a MUST requirement).
+  // The model checks then apply to the base model the part is listed under; the fit requirement carries the full name.
+  if (resolution?.status === "LOCKED" && resolution.fitModel && intent.target) {
+    const base = resolution.identity.model;
+    intent = { ...intent, requestedModel: base, target: { ...intent.target, model: base }, requestTail: [], targetNoun: null, unresolvedMust: [...(intent.unresolvedMust ?? []), fitKey(resolution.fitModel)] };
+  }
   // Candidates the decision will consider.
   let pool: CatalogProduct[];
   // V2.4: a request that only names the product (no buy verb) and leaves its variant open ("Fabrikam Aero 14 laptop"

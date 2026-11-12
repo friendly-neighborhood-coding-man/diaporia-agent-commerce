@@ -129,6 +129,9 @@ function propositionStatement(rawClause: string, id: string): boolean | null {
   const after = clause.normalize("NFKC").slice(m.index + m[0].length, m.index + m[0].length + 12);
   if (new RegExp(`\\b${NEG}\\b(?:\\s+(?:have|has|support|supports|offer|offers|come with|comes with|include|includes|a|an|any|the|real|true|built-in|dedicated)){0,3}\\s*$`, "i").test(before)) return false;
   if (/^\s*[-–]?\s*free\b/i.test(after)) return false;
+  // V2.10: a spec line "Built-in pump: no" / "Pump: none" answers the phrase directly.
+  if (/^\s*[:=]\s*(?:no|none|n\/a|not\s+(?:included|available|supported)|without|absent|false)\b/i.test(after)) return false;
+  if (/^\s*[:=]\s*(?:yes|included|standard|built[- ]in)\b/i.test(after)) return true;
   // Negation after the phrase. Korean is verb-final: "자동 배수(연속 배수) 기능은 없습니다" denies it; English too:
   // "two batteries are not included", "sold separately". A denial in the predicate that governs the phrase (only a
   // parenthetical, a feature noun and a particle between) is false; any other negation later in the clause makes the
@@ -246,7 +249,45 @@ export function requestCapabilities(text: string): Array<{ id: string; index: nu
  * Negation must govern the capability phrase ("no HEPA filter", "not 4K", "does not keep drinks cold"), so a
  * comparative ("not as strong as") is not a denial.
  */
+/**
+ * V2.10 (IW-11 fix order item 2): "this part fits <host model>". The key names the full requested host model; a clause
+ * states it when a fit verb ("fits", "compatible with", "works with", "designed for", "for use with") lists that exact
+ * model, optionally after its brand and followed only by the product noun ("fits the Pedalto C1 and C1 Step-Through
+ * Electric Bikes"). A listed sibling ("C1 Long Range", "Note 7" for "Note 7 Colour") never matches; a negated verb
+ * ("does not fit the P7 Go") states that it does not fit.
+ */
+export const FIT_PREFIX = `${PROPOSITION_PREFIX}fits-model-`;
+export const fitKey = (model: string) => `${FIT_PREFIX}${model.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+const FIT_VERB = /\b(?:(does\s+not|doesn['’]t|do\s+not|don['’]t|will\s+not|won['’]t|is\s+not|isn['’]t|are\s+not|aren['’]t|not|never)\s+)?(?:fits?|fitting|(?:is\s+|are\s+)?compatible\s+with|works?\s+with|(?:is\s+)?designed\s+for|(?:is\s+)?made\s+for|for\s+use\s+with)\s+/gi;
+const FIT_TAIL_OK = /^(?:electric|smart|cordless|robotic|robot|digital|stand|pizza|portable|wireless|3d|action|bread|maker|machine|models?|series|only|versions?|[a-z-]*[a-z]s)$/i;
+const FIT_NOT_TAIL = /^(?:plus|max|mini|lite|pro|ultra|duo|dual|go|se|xl|xs|long|range|colou?r|gen|edition|kids?)$/i;
+const fitNorm = (x: string) => x.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+function fitItem(item: string, want: string): boolean {
+  const ws = item.trim().replace(/^(?:the|all|both|a|an)\s+/i, "").split(/\s+/).filter(Boolean);
+  for (let start = 0; start <= Math.min(2, ws.length - 1); start++) {
+    if (start > 0 && /\d/.test(ws[start - 1]!)) break;
+    for (let k = start + 1; k <= ws.length; k++) {
+      if (fitNorm(ws.slice(start, k).join("")) !== want) continue;
+      const rest = ws.slice(k);
+      if (rest.length <= 4 && rest.every((w) => !/\d/.test(w) && FIT_TAIL_OK.test(w) && !FIT_NOT_TAIL.test(w))) return true;
+    }
+  }
+  return false;
+}
+export function fitStatement(clause: string, id: string): boolean | null {
+  const want = id.slice(FIT_PREFIX.length).replace(/-/g, "");
+  if (!want) return null;
+  const c = clause.normalize("NFKC");
+  let out: boolean | null = null;
+  for (const m of c.matchAll(FIT_VERB)) {
+    const rest = c.slice(m.index! + m[0].length).split(/[.;:!?()]|,\s*(?:which|whose|but|so|while)\b|\s+(?:which|whose|because|but|except|unlike|not)\b/i)[0]!;
+    const items = rest.split(/\s*,\s*(?:and\s+|or\s+)?|\s+(?:and|or|&)\s+|\s*\/\s*/);
+    if (items.some((it) => fitItem(it, want))) { if (m[1]) return false; out = true; }
+  }
+  return out;
+}
 export function clauseStatement(clause: string, id: string): boolean | null {
+  if (id.startsWith(FIT_PREFIX)) return fitStatement(clause, id);
   if (id.startsWith(PROPOSITION_PREFIX)) return propositionStatement(clause, id);
   const n = numericSpec(id);
   if (n) {
@@ -320,6 +361,14 @@ export const CATEGORIES: CategorySpec[] = [
   { id: "monitors", noun: "monitor", request: /\bmonitors?\b|\bdisplays?\b|모니터/i, product: /\bmonitors?\b|\bdisplays?\b/i },
   { id: "backpacks", noun: "backpack", request: /backpacks?|daypacks?|rucksacks?|백팩|배낭/i, product: /backpacks?|daypacks?|rucksacks?/i },
   { id: "vacuums", noun: "vacuum cleaner", request: /vacuums?|청소기/i, product: /vacuums?/i },
+  // V2.10 (IW-11 fix order item 6): everyday names of product categories ("e-bike", "robotic lawnmower", "ebook reader").
+  { id: "electric-bikes", noun: "electric bike", request: /\be-?bikes?\b|\belectric (?:bikes?|bicycles?)\b|전기\s*자전거/i, product: /\be-?bikes?\b|\belectric (?:bikes?|bicycles?)\b/i },
+  { id: "robot-lawn-mowers", noun: "robot lawn mower", request: /\brobot(?:ic)? (?:lawn ?)?mowers?\b|\brobot(?:ic)? lawnmowers?\b|로봇\s*잔디\s*깎이/i, product: /\brobot(?:ic)? (?:lawn ?)?mowers?\b|\brobot(?:ic)? lawnmowers?\b/i },
+  { id: "e-readers", noun: "e-reader", request: /\be-?readers?\b|\be-?book readers?\b|전자책\s*리더기?/i, product: /\be-?readers?\b|\be-?book readers?\b/i },
+  { id: "3d-printers", noun: "3D printer", request: /\b3d printers?\b|3D\s*프린터/i, product: /\b3d printers?\b/i },
+  { id: "dehumidifiers", noun: "dehumidifier", request: /\bdehumidifiers?\b|제습기/i, product: /\bdehumidifiers?\b/i },
+  { id: "pizza-ovens", noun: "pizza oven", request: /\bpizza ovens?\b|피자\s*오븐/i, product: /\bpizza ovens?\b/i },
+  { id: "smart-scales", noun: "smart scale", request: /\bsmart scales?\b|\bbody (?:fat|composition) scales?\b|\bbathroom scales?\b|체중계|체지방계/i, product: /\bsmart scales?\b|\bbody (?:fat|composition) scales?\b|\bbathroom scales?\b/i },
 ];
 const ACCESSORY_CATEGORY = /accessor|\bcases?\b|chargers?|\bparts?\b|replacement|\bpads?\b|cushions?|cables?|adapters?|protectors?|straps?/i;
 

@@ -57,7 +57,9 @@ function accessoryNounMatches(f: ProductFacts, want: string | null): boolean {
 }
 
 export type ResolutionV2 =
-  | { status: "LOCKED"; productId: string; identity: ProductIdentity; facts: ProductFacts; conditionConfirmed: boolean; duplicates: string[]; assumptions: string[]; excluded: Exclusion[] }
+  | { status: "LOCKED"; productId: string; identity: ProductIdentity; facts: ProductFacts; conditionConfirmed: boolean; duplicates: string[]; assumptions: string[]; excluded: Exclusion[];
+      /** V2.10: the part is locked through its base model; it must be shown to fit this full requested model. */
+      fitModel?: string }
   | { status: "AMBIGUOUS"; options: Array<{ productId: string; identity: ProductIdentity; differing: Partial<Record<AttributeAxis, string>> }>; differingAxes: AttributeAxis[]; question: string; excluded: Exclusion[] }
   | { status: "NOT_FOUND"; code: "NO_MODEL" | "NO_FAMILY_MATCH" | "KIND_MISMATCH" | "ATTRIBUTE_NOT_FOUND" | "CONDITION_NOT_OFFERED" | "UNAVAILABLE"; reason: string;
       /** A sibling variant (product detail) that may match the stated attributes but was not in the search results. */
@@ -74,7 +76,7 @@ const NOUN_SYNONYMS: string[][] = [["walkie talkie", "walkie-talkie", "two-way r
  * V2.9: nouns that name what a product IS. When the request names one ("Kestra A5 drone") and the listing's title names
  * another ("Kestra A5 Action Camera"), the listing is not the requested product even if no category is known.
  */
-const KIND_NOUN = /(?<![a-z])(?:headphones?|headsets?|earbuds?|earphones?|speakers?|soundbars?|laptops?|notebooks?|tablets?|smartphones?|phones?|cameras?|camcorders?|drones?|quadcopters?|scooters?|bikes?|bicycles?|monitors?|tvs?|televisions?|projectors?|printers?|routers?|keyboards?|pianos?|turntables?|record players?|mice|mouse|smartwatch(?:es)?|watch(?:es)?|kettles?|blenders?|toasters?|fryers?|cookers?|microwaves?|vacuums?|flossers?|toothbrush(?:es)?|heaters?|fans?|lamps?|purifiers?|humidifiers?|dehumidifiers?|blankets?|chairs?|desks?|tents?|backpacks?|bottles?|batter(?:y|ies)|chargers?|belts?|pans?|housings?|cases?|covers?|cables?|straps?|filters?|tips|binoculars|telescopes?|detectors?|radios?|monitors?|bread (?:makers?|machines?))(?![a-z])/gi;
+const KIND_NOUN = /(?<![a-z])(?:headphones?|headsets?|earbuds?|earphones?|speakers?|soundbars?|laptops?|notebooks?|tablets?|smartphones?|phones?|cameras?|camcorders?|drones?|quadcopters?|scooters?|bikes?|bicycles?|monitors?|tvs?|televisions?|projectors?|printers?|routers?|keyboards?|pianos?|turntables?|record players?|mice|mouse|smartwatch(?:es)?|watch(?:es)?|kettles?|blenders?|toasters?|fryers?|cookers?|microwaves?|vacuums?|flossers?|toothbrush(?:es)?|heaters?|fans?|lamps?|purifiers?|humidifiers?|dehumidifiers?|blankets?|chairs?|desks?|tents?|backpacks?|bottles?|batter(?:y|ies)|chargers?|belts?|pans?|housings?|cases?|covers?|cables?|straps?|filters?|tips|binoculars|telescopes?|detectors?|radios?|e-?readers?|ereaders?|mowers?|lawnmowers?|e-?bikes?|scales?|bread (?:makers?|machines?))(?![a-z])/gi;
 const nounRe = (n: string) => new RegExp(`(?<![a-z])${n.split(/[\s-]+/).map((w) => w.replace(/(?:es|s)$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s-]*")}e?s?(?![a-z])`, "i");
 /**
  * V2.8: is a listing the product noun the request wrote after the model? YES when its title states the noun (or a
@@ -96,8 +98,41 @@ export function targetNounMatch(p: CatalogProduct, noun: string | null | undefin
   }
   return "UNKNOWN";
 }
-export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attributes" | "condition" | "conditionStated"> & { targetNoun?: string | null; requestTail?: string[] }, products: CatalogProduct[],
-  offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {
+type ResolveIntent = Pick<ResearchIntentV2, "target" | "attributes" | "condition" | "conditionStated"> & { targetNoun?: string | null; requestTail?: string[] };
+/**
+ * V2.10 (IW-11 fix order item 2): a part is often listed under the base model of the family it fits ("Pedalto C1 Spare
+ * Battery" fits the C1 and the C1 Step-Through). When no part listing names the full requested host model, a same-brand
+ * part listing whose model is the requested model minus its trailing name words ("C1" for "C1 Step-Through", "SD-16"
+ * for "SD-16P") is locked with fitModel set: the planner then requires the manufacturer's fit statement for the full
+ * model (capabilities.fitStatement), and a page that says it does not fit, or says nothing, never recommends it.
+ */
+export function resolveExactV2(intent: ResolveIntent, products: CatalogProduct[], offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {
+  const r = resolveCore(intent, products, offersOf);
+  const t = intent.target;
+  if (r.status !== "NOT_FOUND" || t?.kind !== "ACCESSORY" || !t.brand || !t.model || t.sku) return r;
+  // The full host name: the model plus the name words the request wrote right after it ("R9" + "Dual").
+  const inModel = new Set(t.model.split(/\s+/).map((w) => w.toLowerCase()));
+  const extra: string[] = [];
+  for (const w of intent.requestTail ?? []) { if (!requestNameWord(w)) break; if (!inModel.has(w.toLowerCase())) extra.push(w); }
+  const host = [t.model, ...extra].join(" ");
+  const want = normalizeKey(host);
+  const words = host.split(/\s+/);
+  const base = (m: string) => {
+    const k = normalizeKey(m);
+    if (!k || k === want || !want.startsWith(k)) return false;
+    if (words.some((_, i) => i > 0 && normalizeKey(words.slice(0, i).join(" ")) === k)) return true;
+    return /\d$/.test(k) && /^[a-z]{1,2}$/i.test(want.slice(k.length));
+  };
+  const bases = [...new Set(products.map(factsOf).filter((f) => f.kind === "ACCESSORY" && f.product.identity.model && familyKey(f.product.identity.brand, f.product.identity.model) === familyKey(t.brand, f.product.identity.model) && base(f.product.identity.model))
+    .map((f) => f.product.identity.model!))].sort((a, b) => normalizeKey(b).length - normalizeKey(a).length);
+  for (const m of bases) {
+    const r2 = resolveCore({ ...intent, target: { ...t, model: m }, requestTail: [], targetNoun: null }, products, offersOf);
+    if (r2.status === "LOCKED") return { ...r2, fitModel: host, excluded: [...r.excluded, ...r2.excluded.filter((e) => !r.excluded.some((x) => x.productId === e.productId))],
+      assumptions: [...r2.assumptions, `No ${t.accessoryNoun ?? "part"} listing names the ${t.brand} ${host}; the ${t.brand} ${m} listing is checked against the manufacturer's statement that it fits the ${host}.`] };
+  }
+  return r;
+}
+function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {
   const t = intent.target;
   const excluded: Exclusion[] = [];
   if (!t?.model && !t?.sku) return { status: "NOT_FOUND", code: "NO_MODEL", reason: "No model was given, so no exact product can be locked.", siblingToCheck: null, excluded };

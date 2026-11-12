@@ -130,3 +130,46 @@ describe("V2.10 the direction of 'up to' comes from the verb (IW-11 is seen; fic
     expect(m.some((k) => /^unrecognized:.*app-subscription/.test(k))).toBe(false);
   });
 });
+
+describe("V2.11 a part listed under the base model is checked against the maker's fit statement (IW-11 is seen; fictional products only)", () => {
+  it("the fit statement must list the full requested model; a negated fit says it does not fit", async () => {
+    const { fitStatement, fitKey } = await import("../src/research/capabilities.js");
+    const s = "The Toska R9 Spare Battery fits the Toska R9 and R9 Dual Electric Scooters.";
+    expect(fitStatement(s, fitKey("R9 Dual"))).toBe(true);
+    expect(fitStatement(s, fitKey("R9 Max"))).toBeNull();
+    expect(fitStatement("It does not fit the R9 Max, whose battery is built in.", fitKey("R9 Max"))).toBe(false);
+    expect(fitStatement("It fits the Pellan SD-4 and SD-4P Dehumidifiers.", fitKey("SD-4P"))).toBe(true);
+    expect(fitStatement("It fits the Pellan Note 3 and Note 3 Pro E-Readers.", fitKey("Note 3 Colour"))).toBeNull();
+  });
+  it("a part request for a longer host name locks the base-model part only with a fit requirement", () => {
+    const listings = [product("dual", "Toska R9 Dual Electric Scooter", "Toska"), product("batt", "Toska R9 Spare Battery", "Toska")];
+    const i = intent("spare battery for the Toska R9 Dual");
+    expect(i.target).toMatchObject({ kind: "ACCESSORY", accessoryNoun: "battery" });
+    const r: any = resolveExactV2(i, listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("batt");
+    expect(r.fitModel).toBe("R9 Dual");
+  });
+  it("a hyphenated name word stays in the requested model", () => {
+    expect(intent("Pellan C3 Step-Through").target.model).toBe("C3 Step-Through");
+  });
+});
+
+describe("V2.11 category names, spec lines and part pages", () => {
+  it("everyday category names are categories, and the noun before a threshold is not a requirement of its own", async () => {
+    const { requestCategory } = await import("../src/research/capabilities.js");
+    expect(requestCategory("e-bike")?.id).toBe("electric-bikes");
+    expect(requestCategory("robotic lawnmower")?.id).toBe("robot-lawn-mowers");
+    expect(requestCategory("ebook reader")?.id).toBe("e-readers");
+    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).toEqual(["unrecognized:at-least-40-km"]);
+  });
+  it("'Built-in pump: no' denies the pump", async () => {
+    const { clauseStatement } = await import("../src/research/capabilities.js");
+    expect(clauseStatement("Built-in pump: no.", "unrecognized:pump")).toBe(false);
+    expect(clauseStatement("Built-in pump: yes.", "unrecognized:pump")).toBe(true);
+  });
+  it("a page about a part of the model says nothing about the product itself", () => {
+    const bike = product("c3", "Pellan C3 Electric Bike", "Pellan", "electric-bikes");
+    expect(statementFrom({ title: "Pellan C3 Spare Battery", snippet: "The Pellan C3 Spare Battery fits the Pellan C3 Electric Bike, which is cordless." }, bike, "cordless")).toBeNull();
+  });
+});

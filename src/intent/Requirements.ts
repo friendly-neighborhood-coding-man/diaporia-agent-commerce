@@ -381,6 +381,13 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     if (!/^unrecognized:\d+(?:\.\d+)?[a-z]+$/.test(r.key) || r.source !== "REQUEST_TEXT") continue;
     if (out.some((q) => q !== r && q.source === "REQUEST_TEXT" && q.note !== "CONTEXT" && (q.key.startsWith(`${r.key}-`) || /^unrecognized:at-(?:least|most)-/.test(q.key)) && q.span[0] <= r.span[0] && q.span[1] >= r.span[1])) out.splice(out.indexOf(r), 1);
   }
+  // V2.10: "a range of at least 100 km": the noun before a threshold ("range of", "capacity of") names the measured
+  // quantity; the threshold requirement right after it states it, so the dangling noun is not a requirement of its own.
+  for (const r of [...out]) {
+    if (r.source !== "REQUEST_TEXT" || r.recognized || !/\s(?:of|for)$/i.test(r.text.trim())) continue;
+    const next = out.find((q) => q !== r && q.source === "REQUEST_TEXT" && /^unrecognized:(?:at-(?:least|most)|up-to)-/.test(q.key) && q.span[0] >= r.span[1] && /^\s*$/.test(text.slice(r.span[1], q.span[0])));
+    if (next) { next.span = [r.span[0], next.span[1]]; out.splice(out.indexOf(r), 1); }
+  }
   // V2.4: "that is good with pet hair" is one performance claim ("good with pet hair"), not "is good" plus "pet hair".
   for (const r of [...out]) {
     const ev = /^(?:(?:is|are)\s+)?((?:very\s+|really\s+)?(?:good|great|excellent|ideal|perfect|better|best|effective|great))$/i.exec(r.text);
