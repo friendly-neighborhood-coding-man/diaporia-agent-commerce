@@ -132,7 +132,7 @@ describe("WP-2 the gate re-verifies every stored owner assertion", () => {
     const tamper: Array<[string, (r: any) => void]> = [
       ["assertion removed", (r) => { delete r.assertion; }],
       ["signature altered", (r) => { r.assertion.signature = r.assertion.signature.slice(0, -4) + (r.assertion.signature.endsWith("AAAA") ? "BBBB" : "AAAA"); }],
-      ["nonce altered", (r) => { r.assertion.nonce = "x" + r.assertion.nonce.slice(1); }],
+      ["nonce altered", (r) => { r.assertion.nonce = (r.assertion.nonce.startsWith("x") ? "y" : "x") + r.assertion.nonce.slice(1); }],
       ["different review session", (r) => { r.actor = "OWNER_SESSION:ffffffffffffffff"; }],
       ["different proposal digest", (r) => { r.proposalDigest = "0".repeat(64); }],
       ["credential fingerprint swapped", (r) => { r.credentialFingerprint = "0011223344556677"; }],
