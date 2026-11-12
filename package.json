@@ -23,7 +23,8 @@
     "smoke:shopify": "tsx scripts/shopify-smoke.ts",
     "demo:service": "tsx scripts/demo-service.ts",
     "live:smoke": "tsx scripts/live-smoke.ts",
-    "live:evidence": "tsx scripts/live-evidence-check.ts"
+    "live:evidence": "tsx scripts/live-evidence-check.ts",
+    "demo:handoff": "tsx scripts/demo-handoff.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "playwright-core": "1.65.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

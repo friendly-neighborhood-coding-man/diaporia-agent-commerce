@@ -11,6 +11,7 @@ import { EvidenceRouter } from "./evidence/EvidenceRouter.js";
 import { MockKernelInspector, MockTavilySearch, TavilySearch } from "./evidence/providers.js";
 import { MockPayPalBillingProvider } from "./billing/Billing.js";
 import { randomBytes } from "node:crypto";
+import { configureHandoffFromEnv } from "./handoff/config.js";
 
 const env = process.env;
 const host = env.HOST ?? "127.0.0.1";
@@ -57,8 +58,12 @@ const service = { mode: deploymentMode as "community" | "managed", ledger, route
   managedSimulation: env.DIAPORIA_MANAGED_SIMULATION === "1" };
 console.log(`[diaporia] deployment=${deploymentMode}${service.managedSimulation ? " (SIMULATION)" : ""}, catalog=${liveCatalog ? "Channel3 (live)" : "MOCK fixtures"}, evidence providers=${byok ? "BYOK Tavily (KERNEL disabled)" : "MOCK"}`);
 
+const handoff = await configureHandoffFromEnv(env);
+if (handoff) console.log(`[diaporia] browser checkout handoff: driver=${handoff.config.driver.name}${handoff.note ? ` (${handoff.note})` : ""}`);
+
 const app = createApp({
   service,
+  ...(handoff ? { handoff: handoff.config } : {}),
   ...(liveCatalog ? { research: liveCatalog } : {}),
   host, port, baseUrl, authMode, auth,
   webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath: env.DIAPORIA_DB_PATH ?? ".data/diaporia.sqlite",
@@ -73,6 +78,6 @@ app.server.listen(port, host, () => {
     .then((r) => { if (r.length) console.log(`[diaporia] startup reconciliation: ${r.map((x) => `${x.checkoutSessionId.slice(0, 11)}… ${x.outcome} → ${x.state}`).join("; ")}`); })
     .catch((e) => console.error("[diaporia] startup reconciliation failed:", e instanceof Error ? e.message : "unknown"));
 });
-const stop = () => app.server.close(() => process.exit(0));
+const stop = () => app.server.close(() => { void handoff?.shutdown().finally(() => process.exit(0)); });
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
