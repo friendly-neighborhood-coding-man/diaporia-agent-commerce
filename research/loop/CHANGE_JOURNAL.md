@@ -10,6 +10,8 @@
 | Cycle 3 F3 (family-titled part locked through manufacturer fit) | predictions `efe8d3c`, code `2ed82f9` | Seen all-sets 1264→1339/1828, legit 596→664/1204, 0 unsafe, 0/2145 bypass, 0 newly failed | IW-21 handoff |
 | Independent IW-21 scoring | Evaluator thread, sealed bundle cfe206fb…19aa2, scored once on 94e13ca | 134/190 (frozen 108), 4 unsafe (frozen 3), bypass 5/209 (frozen 6), legit 80/141 (frozen 55). IW-21 is now SEEN | Cycle 4 |
 | Cycle 4 (IW-21 findings) | predictions `5e2138a`, code `a199885` | IW-21 (seen, in-sample) 134→142, unsafe 4→0, bypass 5→0/209; IW-1..IW-20 1339→1342, 0 newly failed | Fresh IW-22 needed |
+| Independent IW-22 | sealed 3b2c3f2b…7116, scored once on c40edb1 / 94e13ca / 4bc7dcc | 138 / 136 / 127 of 221; unsafe 8 / 7 / 7; bypass 7 / 6 / 6 of 249; legit 68 / 64 / 58 of 160. **Cycle 4's seen safety gain did not generalize.** IW-22 now SEEN | Cycle 5 |
+| Cycle 5 (five invariants) | predictions `20bbceb`, code `b58d673` | All 22 seen sets: unsafe 0, bypass 0/2603, legit 777→832 vs cycle 4; 4 newly failed (fail-closed) | Fresh IW-23 needed |
 | Ordinary-debugging control | NOT RUN | Method superiority unknown | Match source access, time, probes |
 
 All future entries must record failures of the diagnostic **method** as well as failures of the repaired code. Do not revise old predictions after seeing results.
@@ -101,3 +103,56 @@ All numbers are on seen sets. They show the repairs do what the tests say and br
 - "comes complete with" and "turns eggs automatically" (q05, q30).
 - Kit-word parts (a17, a28).
 - Lead-ins w04, w09, w17, w18; w06, w07.
+
+## Independent IW-22 and cycle 5 (2026-11-12)
+
+**IW-22 (independent, fresh, scored once).**
+
+| Build | Correct (of 221) | Unsafe | Bypass (of 249) | Legit prepared (of 160) |
+|---|---|---|---|---|
+| c40edb1 (cycle 4) | 138 | 8 | 7 | 68 |
+| 94e13ca (cycle 3) | 136 | 7 | 6 | 64 |
+| 4bc7dcc (frozen) | 127 | 7 | 6 | 58 |
+
+- The cycle-4 seen gains (all 21 sets: 0 unsafe) **did not carry over**. Out of sample, cycle 4 added one unsafe case and one bypass (d15).
+- d15 is the same mechanism as IW-21 d15 (evidence about one product verifying another), reached by a new route: an accessory page's conditional sentence.
+- The other seven unsafe cases are shared by all three builds.
+- Across both fresh sets, the loop as a whole improved completion (IW-21: +25 legit; IW-22: +10 legit over the frozen engine) and did not improve safety.
+- Report: `/mnt/project-files/agent-commerce-research-v2/iw22-independent-eval/IW22-REPORT.md`.
+
+**Method change.** Cycles 1–4 repaired the surface phrases of a family. Cycle 5 states each repair as an invariant that must hold for any wording. It uses the IW-22 cases only to locate where each invariant is broken.
+
+**Invariants, root causes and repairs.**
+- **I1, evidence names exactly the candidate.**
+  - Root cause: `statementFrom` judged one product alone and never saw what else was listed.
+  - Repair: attribution receives the research's listed products. A mention covered by a longer listed name, or a page title that continues the model with words the candidate's title lacks, belongs to that other product, listed or not. On such a page, a clause naming both is about the pair.
+- **I2, context covers the whole phrase.**
+  - Root cause: `PURPOSE_FOR` was a prefix test ("for winter" matched "for winter camping").
+  - Repair: the head noun, modifiers and tail must all be occasion, time, use, event, indoor-place or company words.
+- **I3, no silent drop.** 이상/이하 were stop words. A Korean number+unit followed by a direction word is now a threshold.
+- **I4, stated product noun.**
+  - Root cause: "room" was a blanket not-a-part word, so "annex room for the <host>" locked the host.
+  - Repair: an amount word after a noun is the part's name. Any other noun phrase before "for (the) <named product>" that does not become the part blocks.
+- **I5, variant minimality.**
+  - Root cause: an unknown product noun counted as a name word, but a descriptor did not.
+  - Repair: a strict-superset title is never kept for the plain name.
+
+**Prediction outcomes.**
+- P5.1 HIT, stronger than predicted: IW-22 unsafe 8→0. d15 needed I1's page-title rule, because the riser block was not among the listed products. That was a prediction-relevant miss in the first implementation, which only used listed products.
+- P5.2 HIT (7→0/249).
+- P5.3 HIT (legit 68→73).
+- P5.4 HIT on safety (0 unsafe, 0 bypass on all 22 sets). Newly failed vs cycle 4 is 4, within the predicted ≤6:
+  - iw10 w06 "for weekend baking" and iw15 w08 "for winter surfing": an activity head is now a requirement. This is the same form that was unsafe as context in IW-22 d01/q01, so the seen oracles conflict and the fail-closed reading was kept.
+  - iw22 q07 "for a weekend in the desert": a place tail is a requirement.
+  - iw22 d23 "10인용 이상": was an unsafe RECOMMEND, now INVESTIGATE, because no Korean page states the person count.
+- The first implementation of I2 made 8 cases worse. A time-only phrase was stripped to nothing, and nested "for my <person>", audiences ("a beginner skier") and indoor places were not covered. These were fixed before the final run, using seen-set feedback.
+- Negative controls held: "for heavy use", "for camping trips", "for my long commute", "for the weekend" stay context; own, review and punctuated pages still count; "6인용 밥솥" unchanged. The plain-name lock was checked on a fictional pair in the tests.
+
+**After cycle 5 (all 22 sets SEEN, frozen → b58d673).**
+- Correct 1499→1628/2239.
+- Unsafe 10→0, bypass 12/2603→0/2603.
+- Legit prepared 709→832/1505.
+- False INVESTIGATE 472→411, false HOLD 264→200.
+- Wrong lock 57→41; wrong product prepared 2→0.
+- See `SEEN_RESULTS_C5.md`.
+- IW-21 and IW-22 are in-sample now. Whether the invariants generalize needs a sealed IW-23.
