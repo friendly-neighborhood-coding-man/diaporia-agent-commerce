@@ -3,6 +3,7 @@ import { parseDecimalToMinor, type Currency } from "../domain/money.js";
 import { ACCESSORY_NOUN, COLOR_WORDS, GENERIC_WORDS, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
+import { modelCode, requestNameWord, tailAfter } from "../identity/VariantTail.js";
 import { OBJECT_SIZE, extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
 import { productType, uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
 import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
@@ -56,6 +57,8 @@ export interface ResearchIntentV2 {
   targetNoun?: string | null;
   /** V2.8: words of the product noun phrase before its noun ("video" in "video baby monitor"); each must be in the title. */
   nounModifiers?: string[];
+  /** V2.9: the words the request wrote after the model code ("R9 Dual electric scooter" → ["Dual","electric","scooter"]). */
+  requestTail?: string[];
   /** V2.4: why the request is exact. NAMED (brand + model, no buy verb) falls back to discovery among the named model's
    * variants when the variant is not stated, instead of holding. */
   lockBasis?: "STRUCTURED" | "BUY" | "NAMED" | null;
@@ -327,6 +330,16 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // V2.8: the product noun right after the model: the words up to punctuation or a connector, colours and articles
   // dropped; the last word is the noun ("BM-3 HD baby monitor" → "monitor", "MD-7 Headphones" → "headphones").
   let targetNoun: string | null = null;
+  const code = modelCode(target?.model);
+  const requestTail = target && targetSpan && code ? (tailAfter(text.slice(targetSpan[0]), target.brand, code) ?? []) : [];
+  // V2.9: the search names every name word the request wrote after the code ("Rovelo R9 Dual"), so the requested
+  // variant is among the results even when the model parse stopped at the code.
+  if (target && exact && target.kind !== "BUNDLE") {
+    const inModel = new Set((target.model ?? "").split(/\s+/).map((w) => w.toLowerCase()));
+    const extra: string[] = [];
+    for (const w of requestTail) { if (!requestNameWord(w)) break; if (!inModel.has(w.toLowerCase())) extra.push(w); }
+    if (extra.length) primary = [target.brand, target.model, ...extra, target.kind === "ACCESSORY" ? target.accessoryNoun : null].filter(Boolean).join(" ");
+  }
   const squashK = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (target?.model && targetSpan && target.kind !== "BUNDLE" && squashK(text.slice(targetSpan[0], targetSpan[1])).includes(squashK(target.model)) && /^(?:\s|$)/.test(text.slice(targetSpan[1]))) {
     const after = text.slice(targetSpan[1]).normalize("NFKC");
@@ -385,7 +398,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
   return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
-    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted, productTypeWords, targetNoun, nounModifiers, lockBasis,
+    moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted, productTypeWords, targetNoun, nounModifiers, requestTail, lockBasis,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };
 }

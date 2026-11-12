@@ -2,6 +2,7 @@ import type { CatalogProduct, MerchantOffer } from "../domain/types.js";
 import type { Currency } from "../domain/money.js";
 import { AXES, mentionsExactModel, normalizeKey, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
 import { factsOf, targetNounMatch } from "../identity/ProductResolverV2.js";
+import { missingNameWords, modelCode } from "../identity/VariantTail.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import type { CapabilityVerdict } from "../evidence/EvidenceV2.js";
 import { evidenceCapabilityOf, productCategory, propositionWords, PROPOSITION_PREFIX } from "../research/capabilities.js";
@@ -180,6 +181,12 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   // V2.5: the named contents of a requested bundle ("pet tool kit") are checked the same way, locked or not.
   // V2.8: the product noun written after the model must be what this listing is ("MD-7 Headphones" is never a metal
   // detector), locked or not.
+  // V2.9: every name word the request wrote after the model code ("R9 Dual", "A5 4K") must be in the title.
+  const code = modelCode(intent.target?.model);
+  if (code && intent.target?.model) {
+    const miss = missingNameWords(p.title, [...intent.target.model.split(/\s+/).slice(code.split(/\s+/).length), ...(intent.requestTail ?? [])]);
+    if (miss.length) dq.push({ code: "NOT_REQUESTED_MODEL", detail: `the title does not name "${miss.join(" ")}" from the requested model` });
+  }
   const nounMatch = targetNounMatch(p, intent.targetNoun);
   if (nounMatch === "NO") dq.push({ code: "NOT_REQUESTED_MODEL", detail: `not a ${intent.targetNoun}: the listing is another kind of product` });
   else if (nounMatch === "UNKNOWN") bl.push({ code: "REQUEST_UNINTERPRETED", detail: `must-have "${uninterpretedKey(intent.targetNoun!)}" ("${intent.targetNoun}") is the product the request names, and the listing does not state it` });

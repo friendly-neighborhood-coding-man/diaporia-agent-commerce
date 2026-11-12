@@ -110,7 +110,9 @@ export class EvidenceRouter {
     const steps: RouterStep[] = [];
     const sellers = o.sellers ?? [];
     const brand = product.identity.brand || null;
-    const productKey = `v2|${product.identity.brand}|${normalizeModel(product.identity.model || product.title)}|${product.identity.variant ?? ""}`.toLowerCase();
+    // V2.9: a listing's own variant words ("F2 Cordless" beside the F2) are part of the key: stored evidence never
+    // passes between siblings of one model.
+    const productKey = `v2|${product.identity.brand}|${normalizeModel(product.identity.model || product.title)}|${product.identity.variant ?? ""}${product.research?.variantRun?.length ? `|${product.research.variantRun.join(" ")}` : ""}`.toLowerCase();
     const items: Record<string, EvidenceItem[]> = Object.fromEntries(capabilities.map((c) => [c, [] as EvidenceItem[]]));
     const nowIso = new Date(this.now()).toISOString();
     // Stored evidence is reclassified with the CURRENT registry on read (a registry change takes effect immediately).
@@ -210,7 +212,7 @@ export class EvidenceRouter {
 
   async verify(product: CatalogProduct, capability: string, ctx: { userId: string; requestId: string }): Promise<RouterResult> {
     const steps: RouterStep[] = [];
-    const productKey = `${product.identity.brand}|${normalizeModel(product.identity.model)}`.toLowerCase();
+    const productKey = `${product.identity.brand}|${normalizeModel(product.identity.model)}${product.research?.variantRun?.length ? `|${product.research.variantRun.join(" ")}` : ""}`.toLowerCase();
     const modelToken = product.identity.model;
     let claims = [...product.capabilities.filter((c) => c.capability === capability), ...this.stored(productKey, capability)];
     if (claims.length > product.capabilities.filter((c) => c.capability === capability).length) steps.push({ provider: "STORE", action: "REUSED_EXISTING_EVIDENCE", capability, detail: "previously verified independent evidence (fresh)" });

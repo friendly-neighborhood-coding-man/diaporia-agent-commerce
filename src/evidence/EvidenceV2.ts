@@ -1,6 +1,7 @@
 import type { CatalogProduct, EvidenceKind } from "../domain/types.js";
 import { generationsIn, mentionsExactModel, normalizeKey, parseAttributes, type AttributeAxis } from "../identity/ProductIdentityExtractor.js";
 import { factsOf } from "../identity/ProductResolverV2.js";
+import { mentionsOtherVariant, modelCode, namesOtherVariant, namesVariantRun } from "../identity/VariantTail.js";
 import { clauseStatement, isPerformanceClaim, PROPOSITION_PREFIX } from "../research/capabilities.js";
 import { jaccard, registrableDomain, shingles, hostOf, type SourceClass, type SourceRegistry } from "./SourceRegistry.js";
 
@@ -151,8 +152,16 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   const genAttr = factsOf(product).attributes.generation;
   const generation = genAttr && genAttr !== "CONFLICT" ? genAttr : null;
   const namesThis = (t: string) => !!model && mentionsExactModel(t, model, { generation }) && (/\d/.test(model) || brandWithModel(t, product));
-  if (model) { if (!namesThis(text)) return null; }
-  else {
+  if (model) {
+    if (!namesThis(text)) return null;
+    // V2.9: a page that names this code only as another variant ("Kestra A5 4K" for the A5) is about that variant.
+    const vcode = modelCode(model);
+    if (vcode && namesOtherVariant(text, product.title, vcode)) return null;
+    // A listing whose title names a variant after the code that a listed sibling lacks ("Kestra A5 4K" beside the A5)
+    // counts only pages that name that variant.
+    const vrun = product.research?.variantRun;
+    if (vcode && vrun?.length && !namesVariantRun(text, vcode, vrun)) return null;
+  } else {
     // No model: the brand plus at least two title words must appear (weak attribution; still needs a counted source).
     const words = product.title.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
     if (!product.identity.brand || !text.toLowerCase().includes(product.identity.brand.toLowerCase()) || words.filter((w) => text.toLowerCase().includes(w)).length < 3) return null;
@@ -177,7 +186,10 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   const otherGenInHit = !!generation && [...hitGens].some((g) => g !== generation);
   const otherYearInHit = (!!year && [...hitYears].some((y) => y !== year)) || otherGenInHit;
   const asked = capability.startsWith(PROPOSITION_PREFIX) ? [capability.slice(PROPOSITION_PREFIX.length).replace(/-/g, " ")] : [];
-  const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit;
+  const vc = modelCode(model);
+  // V2.9: a page that also names another variant of this model ("the Kestra A5 4K" on a page read for the A5) names
+  // another product: only clauses that name this exact product count, never a pronoun clause.
+  const hitNamesOther = namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit || (!!vc && mentionsOtherVariant(text, product.title, vc));
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
   const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+/));
   for (const clause of clauses) {
@@ -189,6 +201,7 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     if ([...clauseGens].some((g) => g !== generation)) continue;
     const clauseNamesThis = namesThis(clause) && (!otherYearInHit || (!!year && clauseYears.has(year)) || (!!generation && clauseGens.has(generation)));
     if (namesOtherProduct(clause, product) || namesUnknownEntity(clause, product, asked)) continue;
+    if (vc && mentionsOtherVariant(clause, product.title, vc)) continue;
     if (!clauseNamesThis && (comparisonPage || hitNamesOther)) continue;
     // V2.7: "Like the TI-5, it is cordless" on another product's page: this model is only the comparison, the subject is
     // the other product. Attribution fails closed: the clause is not a statement about this model.

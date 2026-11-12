@@ -226,7 +226,7 @@ export class CommerceGateway {
       const nice = intent.niceToHave.map((c) => capabilityStatus(p, c));
       const suitability = must.some((m) => m.status === "VERIFIED_FALSE") ? "NOT_SUITABLE" : must.every((m) => m.status === "VERIFIED_TRUE") ? "SUITABLE" : "NEEDS_VERIFICATION";
       return {
-        productId: p.productId, title: p.title, identity: p.identity, suitability, mustHave: must, niceToHave: nice,
+        productId: p.productId, title: p.title, identity: candidateIdentity(p), suitability, mustHave: must, niceToHave: nice,
         listingPrice: { lowestListingMinor: lowest, currency: intent.currency, note: "Search-time listing price, not a checkout total." },
         budgetFit: lowest === null || intent.budgetMinor === null ? "UNKNOWN" : lowest <= intent.budgetMinor ? "LISTING_WITHIN_BUDGET" : "LISTING_OVER_BUDGET",
         untrustedContent: [p.description, ...p.reviews].filter((x): x is NonNullable<typeof x> => !!x).map(inspectUntrusted),
@@ -302,7 +302,7 @@ export class CommerceGateway {
       const suitability = must.some((m) => m.status === "VERIFIED_FALSE") ? "NOT_SUITABLE" : must.every((m) => m.status === "VERIFIED_TRUE") ? "SUITABLE" : "NEEDS_VERIFICATION";
       const lowest = rk?.price.lowestListingMinor ?? null;
       return {
-        productId: p.productId, title: p.title, identity: p.identity, suitability, mustHave: must, niceToHave: nice,
+        productId: p.productId, title: p.title, identity: candidateIdentity(p), suitability, mustHave: must, niceToHave: nice,
         listingPrice: { lowestListingMinor: lowest, currency: intent.currency, note: "Search-time listing price, not a checkout total." },
         budgetFit: lowest === null || intent.budgetMinor === null ? "UNKNOWN" : lowest <= intent.budgetMinor ? "LISTING_WITHIN_BUDGET" : "LISTING_OVER_BUDGET",
         untrustedContent: [p.description, ...p.reviews].filter((x): x is NonNullable<typeof x> => !!x).map(inspectUntrusted),
@@ -1565,4 +1565,16 @@ function routedFromV2(v: ResearchIntentV2): RoutedIntent {
     identityHints: { brand: v.target?.brand ?? null, model: v.target?.model ?? null, variant: canonicalVariant(v.attributes, v.target?.kind ?? "STANDALONE", v.target?.accessoryNoun ?? null),
       condition: v.conditionStated ? v.condition : null, sku: null },
     category: v.category, mustHave: v.mustHave, niceToHave: v.niceToHave, objective: v.objective, assumptions: v.assumptions };
+}
+
+/**
+ * V2.9: a candidate listed beside a sibling of the same model that differs in its variant words ("Rovelo R9 Dual" and
+ * "Rovelo R9") is identified by its full name, so a checkout for one can never select the other.
+ */
+function candidateIdentity(p: CatalogProduct): ProductIdentity {
+  const run = p.research?.variantRun;
+  if (!run?.length || !p.identity.model) return p.identity;
+  const squash = (x: string) => x.normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+  if (squash(p.identity.model).endsWith(squash(run.join(" ")))) return p.identity;
+  return { ...p.identity, model: `${p.identity.model} ${run.join(" ")}` };
 }

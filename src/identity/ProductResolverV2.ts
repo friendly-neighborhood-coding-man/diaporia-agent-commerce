@@ -2,6 +2,7 @@ import type { CatalogProduct, Condition, MerchantOffer, ProductIdentity } from "
 import { AXES, VERSION_AXES, attributesFromVariant, extractIdentity, familyKey, normalizeKey, type AttributeAxis, type ProductKind, type VariantAttributes } from "./ProductIdentityExtractor.js";
 import type { ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
 import { productCategory, requestCategory } from "../research/capabilities.js";
+import { missingNameWords, modelCode, pickVariant, requestNameWord } from "./VariantTail.js";
 
 /**
  * Research V2 exact-identity resolution (variant-aware, multi-category).
@@ -70,7 +71,7 @@ export function targetNounMatch(p: CatalogProduct, noun: string | null | undefin
   if (rc && pc && rc.id === pc) return "YES";
   return rc ? "NO" : "UNKNOWN";
 }
-export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attributes" | "condition" | "conditionStated"> & { targetNoun?: string | null }, products: CatalogProduct[],
+export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attributes" | "condition" | "conditionStated"> & { targetNoun?: string | null; requestTail?: string[] }, products: CatalogProduct[],
   offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {
   const t = intent.target;
   const excluded: Exclusion[] = [];
@@ -110,6 +111,22 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
     return false;
   });
   if (!typed.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing of the ${t!.brand ?? ""} ${t!.model ?? t!.sku} is a ${tn}.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
+  // V2.9: compare the whole name after the model code (VariantTail.ts): every name word the request wrote must be in the
+  // title, and among listings that parse to the same model, the one whose extra words the request named is the product.
+  const code = modelCode(t!.model);
+  if (code) {
+    const reqWords = [...t!.model!.split(/\s+/).slice(code.split(/\s+/).length), ...(intent.requestTail ?? [])];
+    for (let i = typed.length - 1; i >= 0; i--) {
+      const miss = missingNameWords(typed[i]!.product.title, reqWords);
+      if (miss.length) { excluded.push({ productId: typed[i]!.product.productId, title: typed[i]!.product.title, reason: `different model: the title does not name "${miss.join(" ")}"` }); typed.splice(i, 1); }
+    }
+    for (const kind of ["STANDALONE", "ACCESSORY", "BUNDLE"] as const) {
+      const group = typed.filter((f) => f.kind === kind);
+      const pick = pickVariant(group, (f) => f.product.title, t!.brand, code, reqWords);
+      for (const d of pick.drop) { excluded.push({ productId: d.item.product.productId, title: d.item.product.title, reason: d.reason }); typed.splice(typed.indexOf(d.item), 1); }
+    }
+    if (!typed.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing is exactly the ${t!.brand ?? ""} ${t!.model}.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
+  }
   // The noun names an accessory of the model when only accessory listings state it ("Delvix MD-7 Headphones").
   const nounIsAccessory = !!tn && t.kind === "STANDALONE" && typed.every((f) => f.kind === "ACCESSORY") && typed.some((f) => targetNounMatch(f.product, tn) === "YES");
   const kindOk = typed.filter((f) => {
@@ -192,7 +209,16 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
   if (!pick.confirmed) assumptions.push("No offer states its condition; NEW is not confirmed and must be verified at the merchant.");
   // V2.8: a listing locked through the full requested name ("BM-3 HD") carries that name, so offers and quotes are
   // looked up for the requested model and never for the shorter sibling the listing's own parse produced.
-  const lockedModel = suffixMatch(pick.f) && t!.model ? t!.model : pick.f.product.identity.model;
+  // V2.9: the same for name words the request wrote after the model ("R9 Dual") that the locked title shows after the code.
+  let lockedModel = suffixMatch(pick.f) && t!.model ? t!.model : pick.f.product.identity.model;
+  if (code && t!.model && t!.brand) {
+    const extra: string[] = [];
+    const inModel = new Set(t!.model.split(/\s+/).map((w) => w.toLowerCase()));
+    for (const w of intent.requestTail ?? []) { if (!requestNameWord(w)) break; if (!inModel.has(w.toLowerCase())) extra.push(w); }
+    const full = [t!.model, ...extra].join(" ");
+    const fullRe = new RegExp(`(?:^|[^A-Za-z0-9])${t!.brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+${full.split(/[\s-]+/).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[-\\s]*")}(?![A-Za-z0-9])`, "i");
+    if (extra.length && fullRe.test(pick.f.product.title.normalize("NFKC"))) lockedModel = full;
+  }
   return { status: "LOCKED", productId: pick.f.product.productId, identity: { ...pick.f.product.identity, model: lockedModel, condition: intent.condition }, facts: pick.f, conditionConfirmed: pick.confirmed,
     duplicates: g.slice(1).map((x) => x.f.product.productId), assumptions, excluded };
 }

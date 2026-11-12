@@ -137,7 +137,7 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   // when 16 GB and 32 GB exist) is researched as discovery among that model's listings; the model rule still excludes
   // every other model, bundle and accessory.
   const namedFallback = exact && resolution?.status === "AMBIGUOUS" && intent.lockBasis === "NAMED";
-  if (exact && !namedFallback) pool = resolution?.status === "LOCKED" ? [products.get(resolution.productId)!] : [];
+  if (exact && !namedFallback) pool = resolution?.status === "LOCKED" ? [lockedAs(products.get(resolution.productId)!, resolution.identity.model)] : [];
   // V2.5: under the fallback only the listings the resolver matched to the named identity are candidates (never a
   // sibling model the resolver excluded).
   else if (namedFallback && resolution?.status === "AMBIGUOUS") { const ok = new Set(resolution.options.map((o) => o.productId)); pool = [...products.values()].filter((p) => ok.has(p.productId)); }
@@ -294,4 +294,16 @@ async function verifyFor(d: PlannerDeps, p: CatalogProduct, caps: string[], sell
       basis: r.sufficiency === "CONTRADICTED" ? "CONFLICT" : r.sufficiency === "INSUFFICIENT" ? "INSUFFICIENT" : items.some((i) => i.sourceClass === "MANUFACTURER") ? "MANUFACTURER" : "TWO_EXPERT_GROUPS", evidence: items, independentGroups: 0 };
   }
   return { verdicts: out, blocked };
+}
+
+/**
+ * V2.9: a lock through the full requested name ("F2 Cordless", "A5 4K") researches the product under that name, so
+ * evidence must name the full model: a page about the shorter sibling ("the Floska F2 is corded") never counts for it.
+ */
+function lockedAs(p: CatalogProduct, model: string | null): CatalogProduct {
+  const norm = (m: string) => m.normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+  if (!model || !p.identity.model) return p;
+  const a = norm(model), b = norm(p.identity.model);
+  if (a.length <= b.length || !a.startsWith(b)) return p;
+  return { ...p, identity: { ...p.identity, model } };
 }

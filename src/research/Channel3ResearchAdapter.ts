@@ -1,6 +1,8 @@
 import type { CatalogProduct, CatalogResearchInfo, Condition, MerchantOffer, MerchantQuote, ProductIdentity } from "../domain/types.js";
 import { CURRENCY_EXPONENT, isCurrency, parseDecimalToMinor } from "../domain/money.js";
 import { normalizeModel } from "../identity/ProductIdentityResolver.js";
+import { canon, modelCode, pickVariant, variantRuns } from "../identity/VariantTail.js";
+import { factsOf } from "../identity/ProductResolverV2.js";
 import { canonicalVariant, COLOR_WORDS, extractIdentity, familyKey, modelNumberToken, parseAttributes, BUNDLE_RE as BUNDLE_PATTERN,
   type AttributeAxis, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import type { CommerceResearchAdapter, ProductSearchQuery, SearchPage } from "./CommerceResearchAdapter.js";
@@ -120,10 +122,16 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
   /** Products whose identity is identical (same family, variant and kind) are one product: offers merged, listings recorded. */
   private dedupe(list: CatalogProduct[]): CatalogProduct[] {
     const out: CatalogProduct[] = []; const byKey = new Map<string, CatalogProduct>();
+    const runOf = new Map<CatalogProduct, string>();
+    const fams = new Map<string, CatalogProduct[]>();
+    for (const p of list) { const k = `${familyKey(p.identity.brand, p.identity.model)}|${p.research?.kind ?? ""}`; fams.set(k, [...(fams.get(k) ?? []), p]); }
+    for (const g of fams.values()) { const code = modelCode(g[0]!.identity.model); if (!code) continue;
+      variantRuns(g.map((p) => p.title), g[0]!.identity.brand, code).forEach((r, i) => runOf.set(g[i]!, r.map(canon).join(" "))); }
     for (const p of list) {
       const r = p.research;
       if (!r || r.modelBasis === "NONE" || r.conflictingAxes.length) { out.push(p); continue; }
-      const key = `${familyKey(p.identity.brand, p.identity.model)}|${p.identity.variant ?? ""}|${p.identity.condition}`;
+      // V2.9: the variant words after the model code are part of what the product is ("A5 4K" is never merged into "A5").
+      const key = `${familyKey(p.identity.brand, p.identity.model)}|${runOf.get(p) ?? ""}|${p.identity.variant ?? ""}|${p.identity.condition}`;
       const first = byKey.get(key);
       if (!first) { byKey.set(key, p); out.push(p); continue; }
       const a = this.products.get(first.productId)!; const b = this.products.get(p.productId)!;
@@ -133,7 +141,31 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
       this.products.set(first.productId, { product: structuredClone(first), offers: a.offers });
       this.products.delete(p.productId);
     }
+    this.markVariants();
     return out.map((p) => structuredClone(this.products.get(p.productId)?.product ?? p));
+  }
+
+  /**
+   * V2.9: listings of one model and kind whose titles differ in the variant words right after the code ("Rovelo R9 Dual"
+   * beside "Rovelo R9") are different products. Each records its variant words: evidence must name them, and stored
+   * evidence and checkout identities never pass between the two.
+   */
+  private markVariants(): void {
+    const groups = new Map<string, Array<{ product: CatalogProduct }>>();
+    for (const e of this.products.values()) {
+      const k = `${familyKey(e.product.identity.brand, e.product.identity.model)}|${e.product.research?.kind ?? ""}`;
+      groups.set(k, [...(groups.get(k) ?? []), e]);
+    }
+    for (const g of groups.values()) {
+      const code = modelCode(g[0]!.product.identity.model);
+      if (!code || g.length < 2) continue;
+      const runs = variantRuns(g.map((e) => e.product.title), g[0]!.product.identity.brand, code);
+      if (new Set(runs.map((r) => r.map(canon).join(" "))).size < 2) continue;
+      runs.forEach((r, i) => {
+        const p = g[i]!.product; if (!p.research || !r.length) return;
+        p.research.variantRun = r;
+      });
+    }
   }
 
   private normalize(item: J, observedAt: string, prov: { query: string | null; page: number | null; mode: string | null }): CatalogProduct | null {
@@ -242,8 +274,23 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
     const named = identity.brand ? new RegExp(`(?:^|[^A-Za-z0-9])${identity.brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+${code}(?![A-Za-z0-9])`, "i") : null;
     const wantKey = normalizeModel(identity.model);
     const out: MerchantOffer[] = [];
+    // V2.9: a listing that parses to this model but carries a variant word after the code that the identity does not name
+    // ("Rovelo R9 Dual …" for the R9) is another product: its offers are listed under that fuller name (so a lock on the
+    // shorter model never accepts them) and never pooled as this model (VariantTail.pickVariant).
+    const same = [...this.products.values()].filter((p) => familyKey(p.product.identity.brand, p.product.identity.model) === key);
+    const vcode = modelCode(identity.model);
+    const kindOf = (p: (typeof same)[number]) => factsOf(p.product).kind;
+    const relabel = new Map<(typeof same)[number], string | null>();
+    if (vcode) for (const k of ["STANDALONE", "ACCESSORY", "BUNDLE"] as const) {
+      const pick = pickVariant(same.filter((p) => kindOf(p) === k), (p) => p.product.title, identity.brand, vcode, identity.model.split(/\s+/).slice(vcode.split(/\s+/).length));
+      for (const d of pick.drop) relabel.set(d.item, d.extra.length ? `${identity.model} ${d.extra.join(" ")}` : null);
+    }
     for (const p of this.products.values()) {
-      if (familyKey(p.product.identity.brand, p.product.identity.model) === key) { out.push(...structuredClone(p.offers)); continue; }
+      if (familyKey(p.product.identity.brand, p.product.identity.model) === key) {
+        if (!relabel.has(p)) out.push(...structuredClone(p.offers));
+        else { const m = relabel.get(p); if (m) out.push(...structuredClone(p.offers).map((o) => ({ ...o, listedIdentity: { ...o.listedIdentity, model: m } }))); }
+        continue;
+      }
       if (named && familyKey(p.product.identity.brand, p.product.identity.model) === familyKey(identity.brand, p.product.identity.model) && wantKey.startsWith(normalizeModel(p.product.identity.model)) && named.test(p.product.title.normalize("NFKC")))
         // The listing's title states the full model, so its offers are listed as that model.
         out.push(...structuredClone(p.offers).map((o) => ({ ...o, listedIdentity: { ...o.listedIdentity, model: identity.model } })));

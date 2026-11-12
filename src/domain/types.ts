@@ -55,6 +55,8 @@ export interface CatalogResearchInfo {
   provenance: { provider: string; providerProductId: string; observedAt: string; query: string | null; page: number | null; mode: string | null };
   /** Other provider listings merged into this product because their identity is identical. */
   alsoListedAs: string[];
+  /** V2.9: variant words after the model code that tell this listing apart from a listed sibling of the same model ("4K"). */
+  variantRun?: string[];
   /** Provider variant options that point to OTHER products (never substituted). */
   siblingVariants: Array<{ axis: string; label: string; providerProductId: string | null }>;
 }

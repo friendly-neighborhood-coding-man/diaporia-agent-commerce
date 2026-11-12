@@ -75,7 +75,7 @@ export const COLOR_WORDS: Record<string, string> = Object.fromEntries([
 ]);
 const GREY = (c: string) => (c === "Grey" ? "Gray" : c);
 
-const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:h|hr|hrs|hours?|gb|tb|mb|mm|cm|m|in|inch|ft|w|kw|mah|v|oz|ml|l|cup|cups|qt|lb|lbs|kg|g|k|p|hz|fps|pack|pk|ct|ports?|pcs?|pieces?|count|speeds?|slots?|outlets?|burners?|tiers?|layers?|zones?|person|seater|cups?)$/i;
+export const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:h|hr|hrs|hours?|gb|tb|mb|mm|cm|m|in|inch|ft|w|kw|mah|v|oz|ml|l|cup|cups|qt|lb|lbs|kg|g|k|p|hz|fps|pack|pk|ct|ports?|pcs?|pieces?|count|speeds?|slots?|outlets?|burners?|tiers?|layers?|zones?|person|seater|cups?)$/i;
 /** Words that end a named-model phrase: product nouns, descriptors, connectors. */
 const GENERIC = new Set(`wireless wired bluetooth noise cancelling canceling noise-cancelling noise-canceling active headphones headphone headset earbuds earbud earphones
   over-ear on-ear in-ear laptop laptops notebook computer smartphone phone cell mobile running shoes shoe sneakers boots boot hiking men's women's mens womens kids
