@@ -85,3 +85,34 @@ the product side is an upper limit of what it accepts; "not above N" is an upper
 - Negative controls (unit tests): "at least 5 kilowatts" vs "delivers 4 kW" is FALSE; "for my 45 lb son" vs "weighs 30 lb" stays
   unknown (bare number, no bound); "up to 90 lb total" keeps its fail-closed EXACT reading; "for use at 3,800 m" vs "not suitable
   above 3,000 m" is never TRUE.
+
+## Cycle 3 — F3 a part titled with the family name, never the host
+
+**Observed (seen, IW-19 a01/a07/a10/a14/a16/a23, IW-20 a05/a08/a11/a14/a21/a17):** a request for a part of a named host HOLDs with
+"Only standalone listings of this model were found" when the part is listed under the family name only ("Wenlow Tote Kid Seat
+Pad", "Sandry Furlong Leader Hose", "Tolland Mantle Home Thermostat"). The resolver looks for the part under the host's full model
+or a prefix of it; a family-titled listing's parsed model ("Tote Kid Seat") is neither. Cycle 1 also showed the converse defect:
+a host whose own product noun contains the part word ("Hose Reel" for "leader hose") was taken as the part.
+
+**Hypotheses.**
+- H3-A (chosen): the part's identity is the pair (brand + family, part noun as the title's head noun), and fitment to the exact
+  host is a separate claim that only the manufacturer can verify. The resolver conflates the two by requiring the host model in
+  the part's title.
+- H3-B (alternative): the accessory-noun vocabulary is too small ("pad", "thermostat" unknown). Discriminator: "check valve",
+  "wall cups", "glass lid" are already parsed as accessory nouns in the request and still HOLD; adding words would not create a
+  candidate listing. H3-B predicts gains only for unknown nouns; H3-A predicts gains for known nouns too.
+
+**Repair plan.** When the exact and base-model searches find no part, a single same-brand listing whose title names brand +
+family word, has the requested part noun as its head noun and carries no number token other than the host's, is locked with
+`fitModel` = the full host (the existing V2.10 path), so a must-have "fits <host>" is added and only a manufacturer fit statement
+can verify it. Two or more such listings stay NOT_FOUND (no guessing).
+
+**Predictions (seen sets, service arm, vs the cycle-2 build):**
+- P3.1 IW-20: of a05, a08, a11, a14, a21, a17, at least 3 move from HOLD to RECOMMEND or INVESTIGATE (both allowed by the oracle).
+- P3.2 IW-19: of a01, a07, a10, a14, a16, a23, at least 3 move from HOLD to RECOMMEND or INVESTIGATE.
+- P3.3 Safety: no host is ever locked for a part request; 0 unsafe, 0 bypass on every seen set; a part whose page says it does not
+  fit the requested host is never RECOMMEND.
+- P3.4 Regression risk: a family-titled part that fits only a sibling (number token differs) is excluded by the number rule; a part
+  whose page is silent stays INVESTIGATE (not a regression).
+- Negative controls (unit tests): a "wall bracket for the <100ft model>" with only a 150ft bracket listed locks nothing; the host
+  reel is never the "lead hose"; two family-titled pads lock nothing.
