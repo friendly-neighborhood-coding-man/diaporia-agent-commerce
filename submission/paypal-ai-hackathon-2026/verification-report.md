@@ -9,7 +9,7 @@ Prepared 2026-11-12 (UTC). Every result below was measured on the commits named 
 | Frozen research engine (PR #14, `feature/research-v2.1-reliability`) | `4bc7dcca29c3fbeb1fea791866e561521d6f8264` | Unchanged. Not rebased, not amended, not merged into `main` |
 | Buy panel before integration (PR #15 previous head) | `1b713aeddaf2707c57ca32abff203e6f49e1e6c0` | Unchanged |
 | **Submission build = PR #15 head after integration** | **`be03b52c7587c8311a51f8d3748395260e9c4e6b`** | `git merge --no-ff` of `4bc7dcc` into `feature/buy-browser-panel`. No conflicts. Tree `ee59c8d63b846ad3b1f64c405ad6b5d5c54301ed` |
-| Submission docs (this folder, README and SUBMISSION.md updates) | the commit that adds this file, on top of `be03b52` | Documentation and recording tooling only. No `src/` or `tests/` change |
+| Submission docs (this folder, README and SUBMISSION.md updates) | `cace842` and later, on top of `be03b52` (with the owner's README judge-instructions commits `4110023`, `0cdf8b5`) | Documentation and recording tooling only. No `src/`, `tests/`, `scripts/` or package change |
 
 **Engine integrity check.** `git diff 4bc7dcc be03b52 --name-only` lists only the Buy panel slice: `src/panel/**`, `docs/BUY_PANEL.md`, `scripts/buy-panel*`, `tests/buy-panel.test.ts`, plus the four opt-in hook files the panel already had in PR #15 (`package.json`, `src/http/server.ts`, `src/main.ts`, `src/mcp/MCPCommerceAdapter.ts`). No research, decision, evidence, gate, mandate or payment file differs from the frozen commit. No integration fix was needed.
 

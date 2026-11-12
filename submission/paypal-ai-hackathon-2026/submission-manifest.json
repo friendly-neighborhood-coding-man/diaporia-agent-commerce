@@ -21,7 +21,7 @@
       "tree": "ee59c8d63b846ad3b1f64c405ad6b5d5c54301ed",
       "method": "git merge --no-ff 4bc7dcc into feature/buy-browser-panel; no conflicts; no engine file changed"
     },
-    "docs_commit": "the commit that adds this manifest (documentation and recording tooling only)"
+    "docs_commit": "cace842c876c7c91228d8d385b81a85397effceb and later docs-only commits (no src/, tests/, scripts/ or package changes after be03b52)"
   },
   "validation_on_submission_build": {
     "node": "v22.23.4",
@@ -102,5 +102,5 @@
     "MCP Apps hosts",
     "fresh evaluation of the frozen build"
   ],
-  "status": "PARTIALLY_READY until the owner uploads the video to YouTube and submits on Devpost"
+  "status": "READY_TO_SUBMIT: package complete; the owner must upload the video to YouTube (Public) and submit on Devpost"
 }
