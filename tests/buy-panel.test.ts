@@ -14,8 +14,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { createDemoWorldApp } from "../scripts/buy-panel/demo-app.js";
 import type { App } from "../src/http/server.js";
 
-const TOKEN = "dct_panel_test_token_0000000000000";
-const RO_TOKEN = "dct_panel_readonly_token_000000000";
+const CLIENT = "dct_panel_test_token_0000000000000";
+const RO_CLIENT = "dct_panel_readonly_token_000000000";
 const OWNER = "dok_panel_owner_key_00000000000000";
 const REQUEST = "wireless headphones under $150 with multipoint and a lanyard loop, lowest total price";
 const DEST = { country: "US", region: "CA" };
@@ -30,15 +30,15 @@ async function port() {
 }
 async function start(dbPath = ":memory:", n?: number, researchDelayMs = 0): Promise<H> {
   const pt = n ?? await port(); const url = `http://127.0.0.1:${pt}`; const clock = { offsetMs: 0 };
-  const { app } = createDemoWorldApp({ host: "127.0.0.1", port: pt, baseUrl: url, dbPath, userId: "alice", clientToken: TOKEN, ownerKey: OWNER, researchDelayMs, now: () => Date.now() + clock.offsetMs });
+  const { app } = createDemoWorldApp({ host: "127.0.0.1", port: pt, baseUrl: url, dbPath, userId: "alice", clientToken: CLIENT, ownerKey: OWNER, researchDelayMs, now: () => Date.now() + clock.offsetMs });
   // A second, research+read-only client of the same user (cannot prepare checkouts) and another user (bob).
-  app.auth.addClientToken(RO_TOKEN, "alice", ["purchase.research", "purchase.read"]);
+  app.auth.addClientToken(RO_CLIENT, "alice", ["purchase.research", "purchase.read"]);
   app.auth.addClientToken("dct_bob_panel_token_00000000000000", "bob", ["purchase.research", "purchase.read", "purchase.prepare"]);
   await new Promise<void>((r) => app.server.listen(pt, "127.0.0.1", r));
   const h = { app, url, clock, close: () => new Promise<void>((r) => { app.server.close(() => r()); app.server.closeAllConnections(); }) };
   open.push(h); return h;
 }
-async function mcp(url: string, token = TOKEN) {
+async function mcp(url: string, token = CLIENT) {
   const c = new Client({ name: "panel-test", version: "1" });
   await c.connect(new StreamableHTTPClientTransport(new URL(`${url}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
   await c.listTools();
@@ -60,7 +60,7 @@ async function api(h: H, l: { run: string; key: string }, path = "", body?: unkn
   const r = await go().catch(go);
   return { status: r.status, body: await r.json() as any };
 }
-async function researched(h: H, token = TOKEN) {
+async function researched(h: H, token = CLIENT) {
   const c = await mcp(h.url, token);
   const out = await tool(c, "start_shopping_panel", { request: REQUEST, currency: "USD" });
   await h.app.panel!.settled(out.runId);
@@ -192,7 +192,7 @@ describe("DIAPORIA Buy panel", () => {
 
   it("a panel minted by a connection without the prepare scope cannot prepare; offers outside the verified comparison are refused", async () => {
     const h = await start();
-    const ro = await researched(h, RO_TOKEN);
+    const ro = await researched(h, RO_CLIENT);
     const v = (await api(h, ro.l)).body;
     expect(v.capabilities.prepare).toBe(false);
     await api(h, ro.l, "/select", { productId: v.candidates[0].productId });
