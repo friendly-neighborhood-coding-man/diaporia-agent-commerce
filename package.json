@@ -40,7 +40,8 @@
     "eval:research": "tsx scripts/research-eval.ts",
     "scenario-i:selftest": "node scripts/interop/scenario-i-selftest.mjs",
     "eval:semantic-fidelity": "node scripts/interop/semantic-fidelity.mjs",
-    "eval:research:v2": "tsx scripts/research-eval-v2.ts"
+    "eval:research:v2": "tsx scripts/research-eval-v2.ts",
+    "dev:buy-panel": "tsx scripts/buy-panel-dev.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

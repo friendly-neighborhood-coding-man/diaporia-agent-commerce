@@ -136,6 +136,8 @@ const app = createApp({
   ...(handoff ? { handoff: handoff.config } : {}),
   ...(liveCatalog ? { research: liveCatalog } : {}),
   host, port, baseUrl, authMode, auth,
+  // DIAPORIA Buy panel (docs/BUY_PANEL.md): /buy/ + start_shopping_panel / open_shopping_panel / get_shopping_panel.
+  buyPanel: env.DIAPORIA_BUY_PANEL === "1",
   webhookVerifier: env.PAYPAL_WEBHOOK_ID ? new PayPalWebhookSignatureVerifier({ webhookId: env.PAYPAL_WEBHOOK_ID }) : null, sandboxPlatformPayeeId: env.PAYPAL_SANDBOX_PAYEE_MERCHANT_ID || null, sandboxPlatformPayeeEmail: env.PAYPAL_SANDBOX_PAYEE_EMAIL || null, dbPath, ownerConfirmation, serviceIsolation: isolationState,
   payments: (url) => provider === "paypal_sandbox"
     ? new PayPalSandboxProvider({ clientId: env.PAYPAL_CLIENT_ID ?? "", clientSecret: env.PAYPAL_CLIENT_SECRET ?? "", env: env.PAYPAL_ENV ?? "SANDBOX" })

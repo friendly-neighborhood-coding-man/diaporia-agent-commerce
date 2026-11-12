@@ -19,6 +19,9 @@ import { createHandoffRoutes } from "../handoff/http.js";
 import { OwnerConfirmationBoundary } from "../auth/OwnerConfirmation.js";
 import { createResearchHoldRoutes } from "./researchHoldRoutes.js";
 import { OAuthAuthority, type PendingAuthorization } from "../auth/oauth.js";
+import { BuyPanel } from "../panel/BuyPanel.js";
+import { createPanelRoutes } from "../panel/routes.js";
+import { observe, observeRouter } from "../panel/progress.js";
 
 export interface AppConfig {
   host: string;
@@ -62,6 +65,11 @@ export interface AppConfig {
    * construct createApp directly may omit it.
    */
   serviceIsolation?: { established: boolean; reason: string };
+  /**
+   * DIAPORIA Buy panel (docs/BUY_PANEL.md): the browser shopping UI at /buy/ and its MCP tools. Off unless set (the MCP
+   * tool list stays unchanged by default). Never offered in public-readonly-demo mode (one shared anonymous user).
+   */
+  buyPanel?: boolean;
   /** Browser checkout handoff (separate path; absent = disabled). */
   handoff?: Omit<import("../handoff/BrowserCheckoutHandoff.js").HandoffConfig, "baseUrl" | "enabled"> | null;
 }
@@ -73,7 +81,7 @@ export function isLoopbackUrl(u: string): boolean {
   try { return LOOPBACK.test(new URL(u).hostname); } catch { return false; }
 }
 
-export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean; handoff: BrowserCheckoutHandoff | null; oauth: OAuthAuthority | null }
+export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean; handoff: BrowserCheckoutHandoff | null; oauth: OAuthAuthority | null; panel: BuyPanel | null }
 
 export function createApp(cfg: AppConfig): App {
   const now = cfg.now ?? Date.now;
@@ -86,10 +94,13 @@ export function createApp(cfg: AppConfig): App {
   if (cfg.service?.mode === "managed" && !(cfg.service.managedSimulation === true && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl)))
     throw new Error("Managed mode requires production authentication (not implemented). Only managedSimulation on loopback is allowed.");
   const ownerConfirmation = cfg.ownerConfirmation ?? OwnerConfirmationBoundary.unavailable("no protected owner confirmation boundary is configured on this server", new URL(cfg.baseUrl).hostname, [new URL(cfg.baseUrl).origin], now);
-  const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled, ownerConfirmation, serviceIsolation: cfg.serviceIsolation ?? null,
+  // DIAPORIA Buy panel: pass-through observers (identical calls and results) that only report progress inside a panel run.
+  const research = observe(cfg.research ?? new MockCommerceResearchAdapter(now));
+  const service = cfg.service?.router ? { ...cfg.service, router: observeRouter(cfg.service.router) } : (cfg.service ?? null);
+  const gateway = new CommerceGateway(store, research, payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled, ownerConfirmation, serviceIsolation: cfg.serviceIsolation ?? null,
     ...(cfg.merchantIdentity ? { merchantIdentity: cfg.merchantIdentity } : {}), sandboxPlatformPayeeId: cfg.sandboxPlatformPayeeId ?? null,
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
-    ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service: cfg.service ?? null }, now);
+    ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service }, now);
   const base = new URL(cfg.baseUrl);
   // Every human-facing page names the real payment environment. MOCK is never labelled Sandbox.
   const envBanner = payments.name === "PAYPAL_SANDBOX" ? "PayPal Sandbox: test accounts and test money only. No real money moves."
@@ -112,6 +123,8 @@ export function createApp(cfg: AppConfig): App {
     sameOriginForm: (req) => sameOriginStrict(req, allowedOrigins), readText });
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
     sameOrigin: (req) => sameOriginStrict(req, allowedOrigins), readText }) : null;
+  const panel = cfg.buyPanel && cfg.authMode !== "public-readonly-demo" ? new BuyPanel(store, gateway, { baseUrl: cfg.baseUrl, paymentExecutionEnabled, now }) : null;
+  const panelRoutes = panel ? createPanelRoutes({ panel, allowedOrigins, readText, now }) : null;
   const handoffTimer = handoff ? setInterval(() => { void handoff.tick(); }, 15_000) : null;
   handoffTimer?.unref();
 
@@ -140,13 +153,16 @@ export function createApp(cfg: AppConfig): App {
         const body = await readJson(req);
         // OAuth on a public host never offers payment-preparation tools (they would only return HOLD anyway).
         const exposePaymentTools = (cfg.authMode === "dev" || (cfg.authMode === "oauth" && paymentExecutionEnabled)) && principal.scopes.has(SCOPES.PREPARE);
-        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools, handoff });
+        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools, handoff, panel });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts, allowedOrigins });
         res.on("close", () => { void transport.close(); void mcp.close(); });
         await mcp.connect(transport);
         await transport.handleRequest(req, res, body);
         return;
       }
+
+      // DIAPORIA Buy panel: capability-authenticated, its own per-run rate limit (live updates poll more than 30/min).
+      if (panelRoutes && (url.pathname === "/buy" || url.pathname.startsWith("/buy/"))) { await panelRoutes(req, res, url); return; }
 
       if (!webLimiter.take(ip)) return send(res, 429, { error: "Rate limit exceeded" });
 
@@ -334,6 +350,7 @@ export function createApp(cfg: AppConfig): App {
           return html(res, 200, envPage("Payment status", `<p>Server-verified state: <span class="state">${esc(cs.state)}</span></p>
             ${cs.failureCode ? `<p class="muted">${esc(cs.failureCode)}: ${esc(cs.failureReason)}</p>` : ""}
             <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>
+            ${panel ? '<p><a href="/buy/">Back to the DIAPORIA Buy panel</a> <span class="muted">(shows the server-verified status)</span></p>' : ""}
             <p class="muted">Even a COMPLETED payment is only the payment step: no merchant order confirmation or shipment is verified by DIAPORIA.</p>`));
         } catch (e) {
           if (e instanceof NotFoundError) return html(res, 404, envPage("Not found", "<p>Unknown checkout.</p>"));
@@ -390,7 +407,7 @@ export function createApp(cfg: AppConfig): App {
   server.requestTimeout = 30_000;
   server.headersTimeout = 10_000;
   server.on("close", () => { if (handoffTimer) clearInterval(handoffTimer); void handoff?.shutdown(); store.close(); });
-  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled, handoff, oauth };
+  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled, handoff, oauth, panel };
 }
 
 class BodyTooLarge extends Error {}
