@@ -123,10 +123,20 @@ const THRESHOLD_VERB = /^(?:supports?|holds?|carr(?:y|ies)|covers?|handles?|take
 /** V2.10: words after which "up to N" is a maximum ("weighs up to 2 kg", "noise up to 40 dB"). */
 const MAX_CONTEXT = /\b(?:weighs?|weighing|weight|measures?|noise|loud|loudness|costs?|thick|thickness|tall|height|wide|width|deep|depth|long|length|sized?|draws?|uses?|consumes?)\s+(?:\w+\s+){0,2}$/i;
 
+const PURPOSE_FOR_RX = /^for\s+(?:(?:the\s+|a\s+)?(?:lowest|cheapest|best|least|lower|cheaper|lowest-priced|good|great|fair|reasonable|decent|total)\b|(?:\$|usd|eur|£|€|₩)|(?:my|our|your|his|her|their|me|us|him|them|myself|ourselves|yourself|someone|somebody|everyone)\b|(?:the\s+|a\s+)?[\p{L}]+['’]s?\s+(?:room|bedroom|nursery|kitchen|office|house|home|apartment|flat|dorm|place|playroom)\b|(?:a|an|the|this|that|next|our|my)?\s*(?:(?:ski|beach|camping|road|business|family|weekend|holiday|summer|winter|spring|fall|autumn|christmas|birthday|wedding|anniversary|graduation|house|school|work)\s+)?(?:gift|gifts|present|presents|friend|change|while|bit|start|treat|living|price|reason|day|days|week|weeks|month|months|year|years|trip|trips|vacation|vacations|holiday|holidays|travel|traveling|travelling|commute|commuting|work|working|home|office|school|college|university|dorm|study|studying|fun|hobby|hobbies|everyday|daily|personal|occasional|regular|general|casual|light|heavy|long|short|now|later|today|tonight|tomorrow|christmas|birthday|birthdays|wedding|anniversary|graduation|party|parties|season|winter|summer|spring|fall|autumn|weekend|weekends|weekdays|mornings|evenings|nights|backup|emergencies|emergency|beginners?|events?|guests?|visitors?|family|families|kids|children|household|couple|me|use|using|sale|less|under|about|around)\b)/iu;
+/**
+ * V2.19.2 (IW-20 seen findings): a "for ..." phrase is background only when it names an occasion, a person's own use or
+ * an objective, never an activity ("for cycling" is a use the product must be fit for) and never a quantity: a weight,
+ * a household size or an altitude ("for my 45 lb son", "for a family of 5", "for use at 3,800 m") is a checked limit.
+ */
+export const PURPOSE_FOR = { test: (t: string): boolean => PURPOSE_FOR_RX.test(t) && !/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b/i.test(t.replace(/(?:\$|usd|eur|£|€|₩)\s*\d[\d,.]*/gi, "")) };
+const CHAT_FILLER = /^(?:honestly|ugh+|lol|lmao|mostly|mainly|asap|pls|plz|kinda|sorta|probably|maybe|finally|literally|basically|actually|tbh|ngl|btw|anyway|anyways|whatever|fine|quit|died|broke|broken)$/i;
 export function contextSpans(text: string, targetSpan: [number, number] | null): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   const colon = /^([^:;.!?]{1,80}):\s/.exec(text);
-  if (colon && !PRODUCT_NOUN_PHRASES.test(colon[1]!) && !requestCategory(colon[1]!) && !requestCapabilities(colon[1]!).length && !/\d/.test(colon[1]!)
+  // V2.18: a delivery date before the colon ("Need it before the 4th of July:") is timing, not a product property.
+  const dateLead = !!colon && /^(?:need(?:ed)?\s+(?:it|this|them)\s+)?(?:by|before|until|for)\s+(?:the\s+)?(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|christmas|thanksgiving|easter|new year|the weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)[a-z]*(?:\s+\d{1,2}(?:st|nd|rd|th)?)?$/i.test(colon[1]!.trim());
+  if (colon && !PRODUCT_NOUN_PHRASES.test(colon[1]!) && !requestCategory(colon[1]!) && !requestCapabilities(colon[1]!).length && (!/\d/.test(colon[1]!) || dateLead)
     && !(targetSpan && targetSpan[0] < colon[1]!.length)) out.push([0, colon[0].length - 1]);
   for (const m of text.matchAll(/\bfor\s+(?:my|our|your|his|her|their|the|a|an|some)?\s*[^,;:.!?()]*/gi)) {
     let ph = m[0];
@@ -198,7 +208,11 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   // from home", "for travel") and a relative clause about a person ("who commutes by bike"). It is kept as an optional
   // CONTEXT row (shown, never verified, never blocking). A "for" phrase with a number or a capitalized name ("for 2
   // people", "for a 15-inch laptop", "for my Wynd Beacon") is a requirement or an accessory target, not context.
-  const ctx = contextSpans(text, targetSpan);
+  // V2.19: a "for" phrase that is not a person's own use or a listed occasion is a requirement, not context: its words
+  // are never hidden as context (they are checked below and by the word accounting).
+  const allCtx = contextSpans(text, targetSpan);
+  const ctx = allCtx.filter(([a, b]) => !(/^for\s+\S/i.test(text.slice(a, b)) && !PURPOSE_FOR.test(text.slice(a, b))));
+  const fitFor = allCtx.filter((x) => !ctx.includes(x));
   const inCtx = (s: [number, number]) => ctx.some(([a, b]) => s[0] >= a && s[1] <= b);
   const add = (r: StatedRequirement) => {
     if (r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && inCtx(r.span)) return;
@@ -206,7 +220,18 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     if (!same) { out.push(r); return; }
     if (same.strength === "NICE" && r.strength === "MUST") Object.assign(same, r); // MUST wins over NICE for the same item
   };
-  for (const [a, b] of ctx) add({ key: `context:${slugOf(text.slice(a, b))}`, text: text.slice(a, b), span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT" });
+  // V2.18 (IW-18 d06/q07/d30): "for a/an/the <thing>" names what the product must fit or suit ("for an in-ground
+  // pool", "for a 7 year old"): a must-have research has to confirm, never background. Only a person's own
+  // ("for my dad", "for our studio") or an article-less use ("for travel", "for video calls") stays context.
+  for (const [a, b] of fitFor) { const t = text.slice(a, b).replace(/\s+(?:too|as well|also)$/i, ""); out.push({ key: `unrecognized:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" }); }
+  for (const [a, b] of ctx) {
+    const t = text.slice(a, b).replace(/\s+(?:too|as well|also)$/i, "");
+    // V2.19 (IW-19 d06/q02/d08): with or without an article, "for <thing>" is a fitment or audience requirement
+    // ("for bare roof rails", "for e-bikes"); only a person's own use and a closed list of occasions and uses stay context.
+    if (/^for\s+\S/i.test(t) && !PURPOSE_FOR.test(t))
+      add({ key: `unrecognized:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" });
+    else add({ key: `context:${slugOf(t)}`, text: t, span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT" });
+  }
   let offset = 0;
   let prevTriggered = false;
   for (const clause of text.split(/(?<=[;!?])\s*|(?<=:)\s+|(?<=\.)(?!\d)\s*|(?<=,)(?!\d{3}(?!\d))\s*|\s+(?=but\b)|\s+and\s+(?=(?:a|an|the|it|ideally|preferably|must|should|with|without|no|has|have|supports?|includes?|comes with|offers?|features?)\b)|\s+(?=(?:그리고|하지만)\s)/i)) {
@@ -392,6 +417,8 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       if (recognizedSpans.some(([s, e]) => s < m.index + m.word.length && e > m.index)) continue;
       if (out.some((r) => r.source === "REQUEST_TEXT" && r.span[0] <= abs && abs < r.span[1])) continue;
       if (tw.has(m.word.toLowerCase()) || onlyRestates(m.word, tw) || requestCapabilities(m.word).length) continue;
+      // V2.18 (IW-18 failure 8): conversation is never a product property (closed list).
+      if (CHAT_FILLER.test(m.word) || (/^old$/i.test(m.word) && /\b(?:my|our|his|her|their)\s+$/i.test(clause.slice(0, m.index)))) continue;
       const decorative = DECORATIVE.test(m.word);
       add({ key: `unrecognized:${slugOf(m.word)}`, text: m.word, span: [abs, abs + m.word.length], recognized: false, capability: null, polarity: "REQUIRED", strength: decorative ? "NICE" : strength, source: "REQUEST_TEXT", ...(decorative ? { note: "DECORATIVE" as const } : {}) });
     }
@@ -451,6 +478,17 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   for (const x of out.filter((r) => r.polarity === "EXCLUDED" && !r.capability && r.source === "REQUEST_TEXT")) {
     const i = out.findIndex((r) => r !== x && r.polarity === "REQUIRED" && r.source === "REQUEST_TEXT" && r.key === `unrecognized:${x.key.slice(4)}`);
     if (i >= 0) out.splice(i, 1);
+  }
+  // V2.19.2 (IW-20 d09/d28/q04/q11): a "for" phrase with a quantity ("for my 45 lb son", "for a family of 5", "for use at
+  // 3,800 m") states a limit the product must meet. It is kept whole as a must-have, whatever else read its number.
+  for (const m of text.matchAll(/\bfor\s+(?![$€£₩]|usd\b|eur\b|under\b|less\b|about\b|around\b|up to\b|no more\b)((?:[^,.;!?\d]{0,30}?)(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten)\b[^,.;!?]{0,24}?)(?=\s*(?:[,.;!?]|$|\s(?:and|but|with|under|please|that|which)\b))/giu)) {
+    const t = m[0].trim(); const a0 = m.index!;
+    if (inTarget(a0) || /^for\s+(?:the\s+)?(?:\$|usd|eur|£|€|₩)/i.test(t)) continue;
+    const key = `unrecognized:${slugOf(t)}`;
+    const nums = [...t.matchAll(/\d[\d,.]*/g)].map((n) => n[0].replace(/[,.]/g, ""));
+    // A requirement that already reads this number ("at least 800 m2 lawn") checks it; a unit alone ("lb") does not.
+    if (out.some((x) => x.key === key || (x.strength === "MUST" && nums.length > 0 && nums.every((n) => x.key.replace(/[,.]/g, "").includes(n))))) continue;
+    out.push({ key, text: t, span: [a0, a0 + m[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength: "MUST", source: "REQUEST_TEXT" });
   }
   // V2.2 WP-4: the generic proposition of each requirement.
   for (const r of out) {

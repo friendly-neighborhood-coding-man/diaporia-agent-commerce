@@ -291,7 +291,7 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // stay attributes.
     // V2.16 (IW-16 failure 4): any unit letter does the same ("Gale 6G", "Tarn 4P"); only storage, pack and count
     // units stay attributes.
-    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?[a-z]{1,3}$/i.test(w) && !/^\d+(?:\.\d+)?(?:gb|tb|mb|pk|ct|pcs?|oz|in|ft|hrs?|h|x)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?[a-z]{1,3}$/i.test(w) && !/^\d+(?:\.\d+)?(?:gb|tb|mb|pk|ct|pcs?|oz|ft|hrs?|h|x)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);

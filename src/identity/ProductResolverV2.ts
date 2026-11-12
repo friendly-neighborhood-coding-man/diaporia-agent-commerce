@@ -69,7 +69,7 @@ export type ResolutionV2 =
   | { status: "LOCKED"; productId: string; identity: ProductIdentity; facts: ProductFacts; conditionConfirmed: boolean; duplicates: string[]; assumptions: string[]; excluded: Exclusion[];
       /** V2.10: the part is locked through its base model; it must be shown to fit this full requested model. */
       fitModel?: string }
-  | { status: "AMBIGUOUS"; options: Array<{ productId: string; identity: ProductIdentity; differing: Partial<Record<AttributeAxis, string>> }>; differingAxes: AttributeAxis[]; question: string; excluded: Exclusion[] }
+  | { status: "AMBIGUOUS"; options: Array<{ productId: string; identity: ProductIdentity; differing: Partial<Record<AttributeAxis, string>> }>; differingAxes: AttributeAxis[]; question: string; excluded: Exclusion[]; productTypeAmbiguous?: boolean }
   | { status: "NOT_FOUND"; code: "NO_MODEL" | "NO_FAMILY_MATCH" | "KIND_MISMATCH" | "ATTRIBUTE_NOT_FOUND" | "CONDITION_NOT_OFFERED" | "UNAVAILABLE"; reason: string;
       /** A sibling variant (product detail) that may match the stated attributes but was not in the search results. */
       siblingToCheck: { productId: string; providerProductId: string; axis: string; label: string } | null; excluded: Exclusion[] };
@@ -187,6 +187,9 @@ function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf
     if (lost.length) { excluded.push({ productId: typed[i]!.product.productId, title: typed[i]!.product.title, reason: `the listing does not account for "${lost.join(" ")}" from the requested product` }); typed.splice(i, 1); }
   }
   if (!typed.length) return { status: "NOT_FOUND", code: "NO_FAMILY_MATCH", reason: `No listing accounts for every product word of the ${t!.brand ?? ""} ${t!.model} request.`.replace(/\s+/g, " "), siblingToCheck: null, excluded };
+  // V2.18 (IW-18 b03/q04): one model name on products of different types ("Brace 3T" floor jack and jack stands). A
+  // request that names no product type cannot say which one it means: ask, never pick the one that parses best.
+  const famCats = new Set(typed.filter((f) => f.kind === "STANDALONE").map((f) => (f.product.category ?? "").toLowerCase()).filter(Boolean));
   // V2.9: compare the whole name after the model code (VariantTail.ts): every name word the request wrote must be in the
   // title, and among listings that parse to the same model, the one whose extra words the request named is the product.
   const code = modelCode(t!.model);
@@ -252,6 +255,12 @@ function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf
     }
   }
 
+  if (t.kind === "STANDALONE" && !tn && famCats.size > 1) {
+    const reps = new Map<string, ProductFacts>(); for (const f of [...attrOk, ...typed]) { const c = (f.product.category ?? "").toLowerCase(); if (c && !reps.has(c)) reps.set(c, f); }
+    return { status: "AMBIGUOUS", differingAxes: [], excluded, productTypeAmbiguous: true,
+      options: [...reps.values()].map((f) => ({ productId: f.product.productId, identity: { ...f.product.identity, condition: intent.condition }, differing: {} })),
+      question: `The ${t.brand ?? ""} ${t.model} name is used for different kinds of product (${[...reps.values()].map((f) => f.product.title).join("; ")}). Which one should be purchased? Name the product type.`.replace(/\s+/g, " ") };
+  }
   // Condition and availability.
   const condOk: Array<{ f: ProductFacts; confirmed: boolean }> = [];
   for (const f of attrOk) {

@@ -288,7 +288,39 @@ export function fitStatement(clause: string, id: string): boolean | null {
   }
   return out;
 }
+/**
+ * V2.19 (IW-19 failure 1, fail-closed): a clause that says something positive about the requirement but also carries a
+ * negation, exclusion or "sold separately" ("It is not for the top of stairs.", "A lid is not included.") never
+ * verifies it. The specific matchers below still turn a clear denial into FALSE; anything else becomes unverified.
+ */
+const ANY_NEGATION = /\b(?:not|no|never|none|neither|nor|without|except|excluding|excluded|isn['’]t|aren['’]t|doesn['’]t|don['’]t|didn['’]t|won['’]t|wasn['’]t|weren['’]t|cannot|can['’]t|unable|incompatible|unsuitable|unsafe|unsafely|unfit|lacks?|lacking|only|needs?|requires?|required|needed|adapter|avoid|warning|caution|dangerous|hazard)\b|sold\s+separately|purchased?\s+separately|available\s+separately|\bnot\s+included\b|않|없|불가|미지원|미포함|별매|별도\s*구매/i;
 export function clauseStatement(clause: string, id: string): boolean | null {
+  const v = clauseStatementInner(clause, id);
+  // Known capabilities have their own scoped negation rules ("not as strong as" is not a denial); free-text
+  // propositions and fit statements have none, so any negation there blocks verification.
+  if (v !== true || !(id.startsWith(FIT_PREFIX) || id.startsWith(PROPOSITION_PREFIX))) return v;
+  // The negation counts in the predicate that states the requirement: the part of the clause, between "and" / "but" /
+  // commas, that holds its words ("has a steel boiler and is not programmable" still states the steel boiler).
+  const words = id.slice(id.indexOf(":") + 1).split("-").filter((w) => w.length > 2 && !/^(?:the|and|for|with|least|most)$/.test(w));
+  // A prefix word of a compound ("in-ground", "non-stick", "self-cleaning") must be on the clause with its word:
+  // "Above Ground Pool" never states "in-ground pool".
+  const all = id.slice(id.indexOf(":") + 1).split("-");
+  for (let i = 0; i + 1 < all.length; i++)
+    if (/^(?:in|on|off|non|un|over|under|out|self|all|no|top|side|rear|front)$/.test(all[i]!) && !new RegExp(`(?<![\\p{L}])${all[i]}[\\s-]?${all[i + 1]}`, "iu").test(clause)) return null;
+  const parts = clause.split(/\s+(?:and|but|while|whereas)\s+|[,;]\s*/i);
+  const own = parts.filter((p) => words.some((w) => new RegExp(`(?<![\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "iu").test(p)));
+  const negated = (own.length ? own : [clause]).filter((p) => ANY_NEGATION.test(p));
+  if (!negated.length) return v;
+  // A plain denial right before the requirement's words ("it is not for in-ground pools", "unsafe at the top of
+  // stairs") states the opposite: FALSE. Any other negation in that predicate leaves it unverified.
+  const first = new RegExp(`(?<![\\p{L}])(?:${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "iu");
+  const denies = negated.some((p) => {
+    const m = first.exec(p);
+    return !!m && /\b(?:not|never|isn['’]t|aren['’]t|doesn['’]t|don['’]t|won['’]t|cannot|can['’]t|incompatible|unsuitable|unsafe|unfit)\b(?:[\s-]+[^\s-]+){0,3}[\s-]*$/i.test(p.slice(0, m.index));
+  });
+  return denies ? false : null;
+}
+function clauseStatementInner(clause: string, id: string): boolean | null {
   if (id.startsWith(FIT_PREFIX)) return fitStatement(clause, id);
   if (id.startsWith(PROPOSITION_PREFIX)) return propositionStatement(clause, id);
   const n = numericSpec(id);

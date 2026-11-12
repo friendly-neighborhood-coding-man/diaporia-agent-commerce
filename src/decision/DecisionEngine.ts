@@ -284,6 +284,14 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
     const r = intent.requirements?.find((x) => x.key === key);
     const negative = key.startsWith("not:");
     const v = c.must[evidenceCapabilityOf(key)];
+    // V2.18 (IW-18 i20): a number with a unit the request wrote ("2200w") is identity: only a listing whose title
+    // carries that number and unit is the product; any other listing is a different model, never "unverified".
+    const nu = /^unrecognized:(\d+(?:\.\d+)?)-?([a-z]{1,3})$/i.exec(key);
+    if (!negative && nu) {
+      const has = new RegExp(`(?<![\\d.])${nu[1]!.replace(".", "\\.")}\\s*-?\\s*${nu[2]!}(?![a-z])`, "i").test(p.title);
+      if (has) { satisfied.push({ key, basis: "CATALOG_IDENTITY", sources: [] }); continue; }
+      dq.push({ code: "NOT_REQUESTED_MODEL", detail: `the request names "${nu[1]}${nu[2]}", which the listing title does not carry` }); continue;
+    }
     if (!negative && identityWord(key, p)) { satisfied.push({ key, basis: "CATALOG_IDENTITY", sources: [] }); continue; }
     // V2.14: a word that describes the product type ("folding" trekking poles) is stated by a listing title that names it.
     if (!negative && (r as { note?: string } | undefined)?.note === "TYPE_MODIFIER" && r && new RegExp(`(?<![A-Za-z])${r.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z])`, "i").test(p.title)) { satisfied.push({ key, basis: "CATALOG_IDENTITY", sources: [] }); continue; }
