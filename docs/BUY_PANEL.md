@@ -59,6 +59,27 @@ hints per host; when the host cannot open it programmatically, the assistant sho
 - Documented residuals are unchanged: R-A-1 (owner key alone completes the MOCK/Sandbox payment approval) and H2-R1
   (spoofable isolation self-check). The panel neither widens nor fixes them.
 
+## Interface (UI polish, 2026-11-12)
+
+- Neutral slate palette with one teal accent; light and dark follow the OS (`prefers-color-scheme`); visible focus rings;
+  no horizontal scroll at 320, 360, 400 and 768 px. Plain HTML/CSS/JS, no framework, same CSP.
+- Progress: six stages (interpreting request, finding candidates, verifying requirements, comparing verified offers,
+  preparing checkout, awaiting authorization / payment confirmed) computed only from real research events and the
+  session's own records; the full event list is behind "Research activity".
+- Cards: the catalog has no product images, so each card shows a monogram labelled "No product image available" (never
+  a stock or generated picture). The price is a **listing price (unverified)** until a comparison exists; only then
+  does the selected card show the **merchant-verified total**. "Lowest verified total" appears only on a comparison
+  offer. Requirement chips use the evidence ledger's status; the one-line reason is taken from the decision engine's
+  own records.
+- Detail: verified / not yet verified / failed requirement groups, each expandable to its attributed sources (host,
+  source class, counted or not); identity; search-time merchant marked "not yet verified"; open conditions; untrusted
+  listing text collapsed.
+- Offers: lowest verified eligible offer first with item, shipping, tax, fees and total lines (unknown is shown as
+  unknown, never zero), other verified offers, rejected merchants with reasons, hold callout, one primary action.
+- Checkout: approval timeline (prepared → owner limit + confirm → payment approval → backend confirmation); the
+  handoff links are unchanged. Receipt only when the backend reports `COMPLETED`.
+- Environment pill: amber "MOCK · no money moves" vs blue "PayPal Sandbox · test funds".
+
 ## Live updates, refresh, reconnect
 
 `GET /buy/api/runs/:run/events` is a `text/event-stream` of full snapshots (sent on change; re-read every 1.5 s so
