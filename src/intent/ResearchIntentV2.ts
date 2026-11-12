@@ -3,7 +3,7 @@ import { parseDecimalToMinor, type Currency } from "../domain/money.js";
 import { ACCESSORY_NOUN, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
-import { extractRequirements, type StatedRequirement } from "./Requirements.js";
+import { extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
 import { productType, uninterpretedWords, type UninterpretedWord } from "./Uninterpreted.js";
 import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity, type MoneyConstraint, type MoneyParse } from "./MoneyConstraints.js";
 
@@ -155,7 +155,12 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   if (money.currencySource === "DEFAULT_USD") assumptions.push("Currency not given; using USD.");
   const budgetConflict = money.conflict;
   if (budgetConflict) assumptions.push(`Budget not applied: ${budgetConflict}. Confirm the budget in ${money.currency}.`);
-  const budgetUnresolved = !budgetConflict ? money.unresolved : null;
+  // V2.6: an amount written in words ("under one hundred dollars") is never silently dropped: with no parsed amount
+  // it leaves the budget unresolved (and its words are covered, so they are not read as requirements).
+  const NUMW = String.raw`(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|a|and|half)`;
+  const wordAmount = new RegExp(`\\b${NUMW}(?:[\\s-]+${NUMW})*\\s+(?:dollars?|bucks|euros?|pounds?|won|yen)\\b`, "i").exec(text);
+  const wordAmountSpan: [number, number] | null = wordAmount && /hundred|thousand|million|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|ten|eleven|twelve|fifteen|one|two|three|four|five|six|seven|eight|nine/i.test(wordAmount[0]) ? [wordAmount.index, wordAmount.index + wordAmount[0].length] : null;
+  const budgetUnresolved = !budgetConflict ? (money.unresolved ?? (wordAmountSpan && money.budget === null && input.budgetMinor === undefined ? `"${wordAmount![0]}" is an amount in words; it is not applied automatically` : null)) : null;
   if (budgetUnresolved) assumptions.push(`Budget ${budgetMinor === null ? "not applied" : "needs confirmation"}: ${budgetUnresolved}. Confirm the amount and currency.`);
   for (const c of money.parse.constraints) if (c.basis === "APPROXIMATE_AMOUNT_AS_MAXIMUM") assumptions.push(`"${c.text}" is approximate; it is applied as the maximum price (never exceeded). Confirm a different maximum if you want one.`);
   for (const c of money.parse.constraints) if (c.basis === "UNQUALIFIED_AMOUNT_AS_MAXIMUM") assumptions.push(`"${c.text}" has no limit word; it is applied as the maximum price.`);
@@ -172,7 +177,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     // The product phrase: from the buy verb (or brand) to the end of the clause.
     const from = buy && buy.index < brandHit.index && language === "en" ? buy.index + buy[0].length : 0;
     const clause = text.slice(from).split(/,\s*(?:but|and|only|if|under|budget|ideally|must|with)\b|[.!?](?:\s|$)|\s+(?:but|only if|under|below|less than|budget|with(?:out)?|money)\b|\s+\d[\d,]*\s*(?:달러|만\s*원|원)/i)[0]!;
-    const ex = extractIdentity(clause.replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand);
+    const ex = extractIdentity(clause.replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand, { request: true });
     const model = input.exactProduct?.model ?? ex.model;
     if (model) {
       // V2.2 WP-3: "Ostra AP-400 replacement filter" asks for the filter, not the purifier. An accessory noun that ends
@@ -193,7 +198,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       let withBundle: RegExpExecArray | null = null;
       if (kind === "STANDALONE" && ex.model) {
         const mi0 = text.toLowerCase().indexOf(ex.model.toLowerCase());
-        withBundle = mi0 >= 0 ? /^\s*(?:with|plus|\+)\s+(?:the|a|an)?\s*((?:[a-z][a-z-]*\s+){0,3}?)(?:bundle|kit|combo|set)\b/i.exec(text.slice(mi0 + ex.model.length)) : null;
+        withBundle = mi0 >= 0 ? /^\s*(?:[a-z][a-z-]*\s+){0,3}?(?:with|plus|\+)\s+(?:the|a|an)?\s*((?:[a-z][a-z-]*\s+){0,3}?)(?:bundle|kit|combo|set)\b/i.exec(text.slice(mi0 + ex.model.length)) : null;
         if (withBundle && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) { kind = "BUNDLE"; bundleWords = withBundle[1]!.trim().split(/\s+/).filter((w) => w && !/^(?:and|the|a|an|of)$/i.test(w)); } else withBundle = null;
       }
       target = { brand: brandHit.brand, model, modelBasis: input.exactProduct?.model ? "MODEL_NUMBER" : ex.modelBasis, kind, accessoryNoun };
@@ -296,9 +301,32 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   }
   // V2.3 structural guard (see Uninterpreted.ts).
   const covered: Array<[number, number]> = [...requirements.filter((r) => r.source === "REQUEST_TEXT").map((r) => r.span),
-    ...[...money.parse.constraints.map((c) => c.span), ...money.parse.ambiguities.map((c) => c.span), ...money.parse.notes.map((c) => c.span)].filter((x): x is [number, number] => !!x), ...(targetSpan ? [targetSpan] : [])];
-  const uninterpreted = uninterpretedWords(text, covered, [target?.brand ?? "", target?.model ?? "", target?.accessoryNoun ?? "", input.exactProduct?.brand ?? "", input.exactProduct?.model ?? "", input.exactProduct?.variant ?? ""]);
+    ...[...money.parse.constraints.map((c) => c.span), ...money.parse.ambiguities.map((c) => c.span), ...money.parse.notes.map((c) => c.span)].filter((x): x is [number, number] => !!x), ...(targetSpan ? [targetSpan] : []), ...(wordAmountSpan ? [wordAmountSpan] : [])];
+  const leftover = uninterpretedWords(text, covered, [target?.brand ?? "", target?.model ?? "", target?.accessoryNoun ?? "", input.exactProduct?.brand ?? "", input.exactProduct?.model ?? "", input.exactProduct?.variant ?? ""]);
   const productTypeWords = target ? bundleWords : [...productType];
+  // V2.6: a leftover word that no requirement pattern, product noun, money or identity parse claimed is context by
+  // default ("thanks", "birthday", "garage"): every way of stating a requirement ("with X", "that has X", "must X", a
+  // modifier of the product noun, "no X") is extracted above and stays blocking until verified. A leftover word that
+  // is negated ("not glossy") still blocks, since dropping it could buy what the user excluded.
+  // A word that is a comma item of its own ("headphones under $200, foldable") is phrased as a requirement and blocks.
+  const ownItem = (u: UninterpretedWord) => {
+    const a0 = Math.max(text.lastIndexOf(",", u.span[0]), text.lastIndexOf(";", u.span[0]), text.lastIndexOf(":", u.span[0]));
+    const seg = text.slice(a0 + 1).split(/[,;.!?:]/)[0]!.trim();
+    return a0 >= 0 && new RegExp(`^(?:(?:and|also|very|plus|it'?s|is)\\s+)?${u.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i").test(seg);
+  };
+  // Also phrased as a requirement, so still blocking: a word after a feature verb ("and has a keypad"), a token with
+  // a digit (a model or spec: "DY-300"), and any leftover in a non-English request (the Korean parse is narrower).
+  const featureVerb = (u: UninterpretedWord) => /\b(?:has|have|having|with|includes?|including|supports?|offers?|features?|comes with|needs?|wants?|requires?|must|should|fits?)\s+(?:\S+\s+){0,3}$/i.test(text.slice(Math.max(0, u.span[0] - 40), u.span[0]));
+  // A word right after another content word with nothing between ("smart lock keypad") may be a compound or a
+  // modifier, so it blocks too; context words follow a function word, a possessive or punctuation.
+  const afterContent = (u: UninterpretedWord) => {
+    const prev = /([A-Za-z][A-Za-z'’-]*)\s+$/.exec(text.slice(Math.max(0, u.span[0] - 30), u.span[0]));
+    return !!prev && !/^(?:a|an|the|my|our|your|his|her|their|its|for|to|of|in|on|at|by|from|and|or|but|so|please|i|i'?d|i'?m|we|we'?re|just|also|really|very|some|any|this|that|these|those|it|is|are|was|be|me|us|thanks|thank|you|who|which|when|while|as|like|would|could|will|can|get|buy|need|want|looking|find|recommend|order|[a-z]+['’]s)$/i.test(prev[1]!);
+  };
+  const uninterpreted = leftover.filter((u) => language !== "en" || /\d/.test(u.text) || featureVerb(u) || ownItem(u) || afterContent(u) || /\b(?:no|not|non|never|without|[a-z]+n['’]t)\s+(?:\S+\s+){0,1}$/i.test(text.slice(Math.max(0, u.span[0] - 24), u.span[0])) || /^-?(?:free|less)$/i.test(text.slice(u.span[1], u.span[1] + 5).trim().split(/\s/)[0] ?? ""));
+  const contextWords = leftover.filter((u) => !uninterpreted.includes(u));
+  for (const u of contextWords) requirements.push({ key: `context:${slugOf(u.text)}`, text: u.text, span: u.span, recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT", evidenceCapability: null });
+  if (contextWords.length) assumptions.push(`Read as context, not as requirements: ${contextWords.map((u) => `"${u.text}"`).join(", ")}. State a requirement explicitly ("with ...", "must ...") to have it checked.`);
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");

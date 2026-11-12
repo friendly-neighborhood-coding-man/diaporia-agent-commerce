@@ -23,7 +23,7 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
   if possible ideally preferably prefer preferred would like love bonus plus nice-to-have optional optionally required mandatory
   essential non-negotiable necessary needed requirement requirements must-have
   today now asap soon quickly fast shipping ship ships shipped delivery deliver delivered arrive arrives free returns return
-  gift present someone friend wife husband mom dad son daughter kid kids child children family home office work me myself
+  i'd i’d i'm i’m i've like thanks thank cheers hi hello hey gift present someone friend wife husband mom dad son daughter kid kids child children family home office work me myself
   use using used new condition sealed unopened standalone bundle bundles bundled no not without but so then also too
   pair pairs set sets pack packs unit units piece pieces single one two three four five six seven eight nine ten
   usd eur gbp jpy krw dollar dollars euro euros won yen pound pounds bucks

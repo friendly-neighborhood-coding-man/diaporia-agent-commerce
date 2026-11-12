@@ -38,8 +38,8 @@ export function modelYear(text: string): string | null {
   }
   return null;
 }
-/** The model string without a trailing model-year token ("Drift 15 2024" → "Drift 15"). */
-export const stripYear = (model: string | null): string | null => model ? (model.replace(/\s*\(?\b20[0-3]\d\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, "").trim() || model) : model;
+/** The model string without a trailing model-year token ("Drift 15 2024" → "Drift 15"; never "RX-2000" → "RX-"). */
+export const stripYear = (model: string | null): string | null => model ? (model.replace(/(?:\s+\(?|\s*\()20[0-3]\d\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, "").trim() || model) : model;
 
 /**
  * Product generation (N-02): "(2nd Gen)", "2nd generation", "Gen 2", "second-gen", "2세대". Value is the number ("2").
@@ -105,7 +105,8 @@ export function parseAttributes(text: string): VariantAttributes {
   const out: VariantAttributes = {};
   const lower = t.toLowerCase();
   for (const [w, c] of Object.entries(COLOR_WORDS)) {
-    const re = /[가-힣]/.test(w) ? new RegExp(escapeRe(w)) : new RegExp(`\\b${escapeRe(w)}\\b`, "i");
+    // V2.6: "블랙박스" (dash cam) is not the colour 블랙: a Korean colour word is followed by a particle, 색 or a non-Hangul char.
+    const re = /[가-힣]/.test(w) ? new RegExp(`${escapeRe(w)}(?![가-힣])|${escapeRe(w)}(?=(?:색상?|컬러|은|는|이|가|을|를|으로|로|의|도|만)(?![가-힣]))`) : new RegExp(`\\b${escapeRe(w)}\\b`, "i");
     if (re.test(lower)) { out.color = GREY(c); break; }
   }
   for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s?(GB|TB)\b(\s*(?:of\s+)?(RAM|memory|unified memory|SSD|storage|HDD|eMMC))?/gi)) {
@@ -201,12 +202,15 @@ const nounPhraseAt = (rest: string[]): "STOP" | "MODEL" | null => {
 };
 
 /** V2.5: "Duo" in "AF-55 Duo" / "AF-55 Duo, 5.5 L"; not "Backpacking", "Mechanical", "Footprint", "Black", "Wireless". */
-function siblingSuffix(w: string, raw: string, next: string[]): boolean {
+function siblingSuffix(w: string, raw: string, next: string[], request: boolean): boolean {
   if (!/^[A-Z][a-z]{1,9}$/.test(w)) return false;
   const lw = w.toLowerCase();
   if (GENERIC.has(lw) || COLOR_WORDS[lw] || UNIT_TOKEN.test(w) || ACCESSORY_NOUN.test(w) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(w)
     || /(?:ing|ed|al|ic|ive|ous|less|proof|able|ible|ful|er|est|ly)$/.test(lw)) return false;
-  if (/[,;:()|]$/.test(raw) || next.length === 0) return true;
+  // At the end of a request it is the name's last word ("Cindra AF-55 Duo"); at the end of a listing title it is
+  // usually the product noun ("Vista 8x42 Binoculars"), so a title takes it only before punctuation or a lowercase word.
+  if (next.length === 0) return request;
+  if (/[,;:()|]$/.test(raw)) return true;
   const n = next[0]!;
   if (/^[,;:()|/–—+&-]/.test(n) || /^[a-z가-힣]/.test(n)) return true;
   // A capitalized word before a product noun is ambiguous ("Duo Air Fryer" vs "Pressure Rice Cooker"): not taken.
@@ -214,7 +218,7 @@ function siblingSuffix(w: string, raw: string, next: string[]): boolean {
 }
 
 /** Named model phrase: words after the brand up to the first generic word, product noun, attribute or punctuation (max 4 words). */
-export function namedModelAfter(text: string, brand: string | null): string | null {
+export function namedModelAfter(text: string, brand: string | null, request = false): string | null {
   const t = text.normalize("NFKC");
   let rest = t;
   if (brand) {
@@ -240,7 +244,7 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
     // Mechanical Keyboard", "Ridge 2 Footprint") is not part of the model.
     // V2.5: a sibling suffix ("AF-55 Duo", "Hush 2 Trio") is part of the model: one capitalized, non-descriptive word
     // that ends the name (end of text, punctuation or a lowercase word after it).
-    if (words.some((x) => /\d/.test(x)) && !/\d/.test(w) && !isModelExtension(lw) && !siblingSuffix(w, raw, parts.slice(i + 1))) break;
+    if (words.some((x) => /\d/.test(x)) && !/\d/.test(w) && !isModelExtension(lw) && !siblingSuffix(w, raw, parts.slice(i + 1), request)) break;
     if (words.length && np === "MODEL") { words.push(w); if (stop || words.length >= 4) break; continue; }
     // V2.3: in a request, an all-lowercase word after a capitalized name ends it ("Nordvik Summit tent" → Summit).
     if (words.length && /^[a-z][a-z-]*$/.test(w) && words.every((x) => /^[A-Z0-9]/.test(x))) break;
@@ -253,7 +257,7 @@ export function namedModelAfter(text: string, brand: string | null): string | nu
 }
 
 const TECH_SUFFIX = /^(?:IH|GaN|PD|ANC|ENC|OLED|QLED|IPS|HDR|HDR10|Wi-?Fi|BT|NFC|USB-?C|LED|LCD|DC|AC|UV|HEPA|IPX?\d|IP\d\d)$/;
-export function extractIdentity(title: string, brand: string | null): ExtractedIdentity {
+export function extractIdentity(title: string, brand: string | null, opts: { request?: boolean } = {}): ExtractedIdentity {
   const t = title.normalize("NFKC").replace(/\s+/g, " ").trim();
   const attributes = parseAttributes(t);
   const titleCondition = /\b(renewed|refurbished|reconditioned|refurb)\b/i.test(t) ? "refurbished" : /\bopen[- ]box\b/i.test(t) ? "open_box" : /\b(used|pre-?owned)\b/i.test(t) ? "used" : null;
@@ -275,7 +279,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
     const src = targetNamesProduct ? target : head;
     const srcBrand = targetNamesProduct ? (tb ?? fitsBrand) : (brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(head) ? brand : null);
     const num = modelNumberToken(src);
-    const named = namedModelAfter(src, srcBrand);
+    const named = namedModelAfter(src, srcBrand, !!opts.request);
     const noun = (nounMatch?.[1] ?? "part").toLowerCase().replace(/\s+/g, " ").replace(/s$/, "");
     const tAttr = parseAttributes(target);
     return { brand, model: stripVersion(num ?? named), modelBasis: num ? "MODEL_NUMBER" : named ? "NAMED_MODEL" : "NONE", kind: "ACCESSORY", accessoryNoun: noun,
@@ -284,7 +288,7 @@ export function extractIdentity(title: string, brand: string | null): ExtractedI
   }
   let kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
   const num = modelNumberToken(t.replace(/\(.*?\)/g, " "));
-  let named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null);
+  let named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null, !!opts.request);
   // V2.3 (V22-07): a technology acronym written after a model number describes it, it is not part of the model
   // ("HR-6 IH rice cooker" is the HR-6; "P20 GaN charger" is the P20). Family extensions (Pro, Max, Gen 2) still are.
   if (named && num) {

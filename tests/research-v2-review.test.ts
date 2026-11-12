@@ -153,10 +153,10 @@ describe("R-09 planner: for the cheapest objective, evidence goes to the cheapes
     const a = product("a", "Brand A Headphones", "Brand", "A1"); const b = product("b", "Brand B Wireless Headphones", "Brand", "B1");
     const offers: Record<string, MerchantOffer[]> = { a: [offer("a", 5000)], b: [offer("b", 20000)] };
     const checked: string[] = [];
-    const router = { policy: "v2", verifyMany: async (p: CatalogProduct) => { checked.push(p.productId); return { verdicts: { wireless: verified("wireless") }, steps: [], searchesSent: 1, blockedByLimit: [] }; } };
+    const router = { policy: "v2", verifyMany: async (p: CatalogProduct, _c: string[], _x: unknown, o: { maxSearches?: number; broad?: boolean } = {}) => { if (o.maxSearches !== 0 && !o.broad) checked.push(p.productId); return { verdicts: { wireless: verified("wireless") }, steps: [], searchesSent: 1, blockedByLimit: [] }; } };
     const r = await runResearchV2(intent, { research: { findOffers: async (id: any) => offers[id.model === "A1" ? "a" : "b"]! } as any, router: router as any,
       searchPage: async () => ({ products: [b, a], nextPageToken: null, providerCalls: 1 }), ctx: { userId: "u", requestId: "r" }, now: () => NOW, limits: { maxEvidenceCandidates: 1 } });
-    expect(checked).toEqual(["a"]);
+    expect(checked).toEqual(["a"]); // V2.6: the brand-wide search and the free pooled pass are not per-candidate checks
     expect(r.decision.recommendation?.productId).toBe("a");
   });
 });

@@ -141,7 +141,7 @@ export const DECORATIVE = /^(?:stylish|sleek|beautiful|pretty|cute|elegant|moder
 const isDecorative = (phrase: string) => phrase.split(/\s+/).filter((w) => !/^(?:and|or|very|really|a|an|the|look(?:s|ing)?|design)$/i.test(w)).every((w) => DECORATIVE.test(w));
 
 /** Words that describe intent, price or quality, never a product property. */
-const MODIFIER_STOP = new Set(`buy purchase order get find me i we want need looking look for please recommend suggest show a an the some any my our new brand-new cheap cheapest cheaper
+const MODIFIER_STOP = new Set(`i'd i’d i'm i’m id like love would could gift birthday present thanks thank hi hello buy purchase order get find me i we want need looking look for please recommend suggest show a an the some any my our new brand-new cheap cheapest cheaper
   inexpensive affordable budget best better good great nice decent top quality reliable popular simple basic standard regular normal real genuine original authentic
   one pair two single lowest price priced total under below around about only just also very really most least it its this that these
   추천 추천해줘 추천해 사줘 사고 구매 주문 찾아줘 찾아 좋은 괜찮은 싼 저렴한 가성비 최저가 가장 제일 새 새것 정품 신품 하나 개 제품 상품 것 되는 있는 없는 이하 이상 정도 짜리 용 대 쓸 쓸만한`.split(/\s+/).filter(Boolean));
@@ -196,7 +196,7 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   for (const [a, b] of ctx) add({ key: `context:${slugOf(text.slice(a, b))}`, text: text.slice(a, b), span: [a, b], recognized: false, capability: null, polarity: "REQUIRED", strength: "NICE", source: "REQUEST_TEXT", note: "CONTEXT" });
   let offset = 0;
   let prevTriggered = false;
-  for (const clause of text.split(/(?<=[;!?])\s*|(?<=:)\s+|(?<=\.)(?!\d)\s*|(?<=,)(?!\d{3}(?!\d))\s*|\s+(?=but\b)|\s+and\s+(?=(?:a|an|the|it|ideally|preferably|must|should|with|without|no)\b)|\s+(?=(?:그리고|하지만)\s)/i)) {
+  for (const clause of text.split(/(?<=[;!?])\s*|(?<=:)\s+|(?<=\.)(?!\d)\s*|(?<=,)(?!\d{3}(?!\d))\s*|\s+(?=but\b)|\s+and\s+(?=(?:a|an|the|it|ideally|preferably|must|should|with|without|no|has|have|supports?|includes?|comes with|offers?|features?)\b)|\s+(?=(?:그리고|하지만)\s)/i)) {
     if (!clause.trim()) continue;
     const at = Math.max(0, text.indexOf(clause, offset)); offset = at + clause.length;
     const strength: RequirementStrength = NICE.test(clause) ? "NICE" : "MUST";
@@ -325,11 +325,12 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
     // V2.3: "with multipoint and a lanyard loop" is split before "and a"; the second part continues the requirement
     // list of the clause before it, so it is a requirement too (never silently dropped).
     const triggered = EN_MUST.some((re) => re.test(clause));
-    if (!triggered && prevTriggered && /^\s*(?:a|an|the)\s+[a-z]/i.test(clause)) {
+    // V2.6: "... that fits a standard deadbolt and has a keypad": a clause opening with a feature verb continues the list.
+    if (!triggered && prevTriggered && /^\s*(?:(?:a|an|the)\s+[a-z]|(?:has|have|supports?|includes?|comes with|offers?|features?)\s+\S)/i.test(clause)) {
       const fake = Object.assign([clause, clause.replace(/[,;.!?]\s*$/, "")], { index: 0, input: clause }) as unknown as RegExpExecArray;
       tryPhrase(fake, "REQUIRED");
     }
-    prevTriggered = triggered || (prevTriggered && /^\s*(?:a|an|the)\s/i.test(clause));
+    prevTriggered = triggered || (prevTriggered && /^\s*(?:a|an|the|has|have|supports?|includes?|comes with|offers?|features?)\s/i.test(clause));
     for (const re of KO_NOT) tryPhrase(re.exec(clause + " "), "EXCLUDED");
     for (const re of KO_MUST) tryPhrase(re.exec(clause + " "), "REQUIRED");
     // 3. Modifiers of the product noun that nothing above interpreted ("IH 압력 밥솥": 압력, "pressure rice cooker":

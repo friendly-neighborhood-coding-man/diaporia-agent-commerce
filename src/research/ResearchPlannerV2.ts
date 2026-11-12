@@ -187,6 +187,17 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
       .sort((a, b) => a.pe.blockersBeforeEvidence.length - b.pe.blockersBeforeEvidence.length
         || (intent.objective === "LOWEST_VERIFIED_TOTAL" ? (a.pe.lowestListingMinor ?? Infinity) - (b.pe.lowestListingMinor ?? Infinity) || b.prior - a.prior
           : b.prior - a.prior || (a.pe.lowestListingMinor ?? Infinity) - (b.pe.lowestListingMinor ?? Infinity)));
+    // V2.6: when the search budget cannot reach every candidate one by one, the first search is brand-wide (the leading
+    // candidates' shared brand), so the result pool covers several models; each candidate is then read against it.
+    if (d.router?.policy === "v2" && !lock && pre.length > 1) {
+      const brand = pre[0]!.p.identity.brand;
+      const fams = new Set(pre.filter((x) => x.p.identity.brand === brand).map((x) => `${x.p.identity.model}`.toLowerCase()));
+      const left = Math.min(d.router.remainingSearches?.(d.ctx) ?? Infinity, L.maxEvidenceSearches);
+      if (brand && fams.size >= 2 && fams.size > left) {
+        const r = await d.router.verifyMany(pre[0]!.p, caps, d.ctx, { sellers, maxSearches: 1, broad: true });
+        trace.evidenceSearches += r.searchesSent; trace.evidenceSteps.push(...r.steps);
+      }
+    }
     let best: { price: number; nice: number } | null = null;
     const verifiedFamilies = new Set<string>();
     let checked = 0;
@@ -210,6 +221,19 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
         if (!best || nice > best.nice || (nice === best.nice && price < best.price)) best = { price, nice };
       }
       if (limitReached) break;
+    }
+    // V2.6: candidates the search budget did not reach are still read against every result this research already
+    // retrieved (no new search). A sibling's search often returns this candidate's manufacturer page too.
+    if (d.router?.policy === "v2") for (const { p } of pre) {
+      if (verdicts.has(p.productId)) continue;
+      const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches: 0 });
+      trace.evidenceSteps.push(...r.steps);
+      // Only a settled outcome is kept: every requirement decided, or one known false. A partial read changes nothing.
+      const vs = Object.values(r.verdicts);
+      if (!(vs.every((x) => x.status !== "UNVERIFIED") || vs.some((x) => x.status === "VERIFIED_FALSE"))) continue;
+      verdicts.set(p.productId, r.verdicts);
+      const open = caps.filter((c) => r.verdicts[c]?.status === "UNVERIFIED");
+      if (open.length) notChecked.set(p.productId, open); else notChecked.delete(p.productId);
     }
   }
   const inputs: CandidateInput[] = pool.map((p) => {
