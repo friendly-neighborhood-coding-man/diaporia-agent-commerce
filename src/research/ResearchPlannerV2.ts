@@ -243,9 +243,24 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
       if (open.length) notChecked.set(p.productId, open); else notChecked.delete(p.productId);
     }
   }
+  // V2.12 (IW-12 b10): with a budget, the offers of the leading candidates are quoted (no destination: tax stays
+  // unknown) so the budget check sees shipping and fees, not only the listing price. Read-only; no checkout is created.
+  const knownCost = new Map<string, Record<string, number>>();
+  const maxBudget = intent.budgetMaxMinor ?? intent.budgetMinor;
+  if (maxBudget !== null && maxBudget !== undefined) {
+    for (const p of pool.slice(0, 8)) {
+      const rec: Record<string, number> = {};
+      for (const o of (offers.get(p.productId) ?? []).filter((x) => x.availability !== "OUT_OF_STOCK" && x.currency === intent.currency).slice(0, 6)) {
+        let q: Awaited<ReturnType<typeof d.research.getQuote>> = null;
+        try { q = await d.research.getQuote(o.offerId, 1, null); } catch { q = null; }
+        if (q && q.currency === intent.currency) rec[o.offerId] = q.itemPriceMinor + (q.shippingMinor ?? 0) + (q.feesMinor ?? 0) - (q.discountMinor ?? 0);
+      }
+      if (Object.keys(rec).length) knownCost.set(p.productId, rec);
+    }
+  }
   const inputs: CandidateInput[] = pool.map((p) => {
     const v = verdicts.get(p.productId) ?? (d.router?.policy === "v2" ? fixtureVerdicts(p, caps) : Object.fromEntries(caps.map((c) => [c, v1Verdict(p, c, null)])));
-    return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, mustCaps), nice: pick(v, intent.niceToHave),
+    return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, mustCaps), nice: pick(v, intent.niceToHave), ...(knownCost.has(p.productId) ? { knownCostMinor: knownCost.get(p.productId)! } : {}),
       listingClaims: [...intent.mustHave, ...propCaps.filter((x) => !x.startsWith("not:"))].filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length, notChecked: notChecked.get(p.productId) ?? (verdicts.has(p.productId) ? [] : caps.filter((c) => !v[c] || v[c]!.status === "UNVERIFIED")), limitReached };
   });
   const exactFailure = namedFallback ? null : exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;

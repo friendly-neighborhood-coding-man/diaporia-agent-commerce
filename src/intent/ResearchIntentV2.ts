@@ -98,6 +98,20 @@ const COMPARE_WORDS = /\b(?:like|similar|alternatives?|instead|vs\.?|versus|comp
  */
 const REQUEST_PART_NOUN = /^(?:batter(?:y|ies)|belts?|pans?|bread pans?|housings?|dive housings?|blades?|bulbs?|tips?|nozzles?|wheels?|tires?|tyres?|chargers?|straps?|cases?|covers?|lids?|pads?|filters?|brush(?:es)?|mounts?|propellers?|props?)$/i;
 const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_NOUN.source}|${ACCESSORY_NOUN.source.replace(/^\\b|\\b$/g, "")}|${REQUEST_PART_NOUN.source.replace(/^\^\(\?:|\)\$$/g, "")}))s?\\s+(?:for|that fits?|compatible with|to fit)\\s+(?:(?:my|the|a|an|our|your)\\s+)?$`, "i");
+/**
+ * V2.12 (IW-12 a09): "<noun phrase> for the <brand> <model>" asks for something that goes with that model, whatever the
+ * noun ("spray skirt for the Tern 1"). The model itself never satisfies it. Words that name a person, a purpose, a
+ * search or an amount ("gift for", "looking for", "$700 for") are not a part.
+ */
+const ANY_ACC_LEAD = /(?:^|[\s,:;!?.])((?:[a-z][a-z-]*\s+){0,2}[a-z][a-z-]*)\s+(?:for|that fits?|compatible with|to fit)\s+(?:(?:my|the|a|an|our|your|his|her|their)\s+)?$/;
+const NOT_PART_LEAD = /^(?:a|an|the|one|some|any|something|anything|stuff|gift|gifts|present|presents|deal|deals|price|prices|budget|money|cash|time|room|space|upgrade|alternative|substitute|successor|replacement|sibling|version|model|option|options|help|advice|ideas?|quote|quotes|shipping|delivery|ready|good|best|great|perfect|ideal|suitable|enough|cheap|cheaper|me|us|it|this|that|these|those|just|only|also|please|thanks|buy|get|order|need|want|find|search|shop|look|pay|paid|spend|spent|went|go|going|similar|same|like|else|is|are|was|be|has|have|had)$/i;
+function anyAccessoryLead(before: string): string | null {
+  const m = ANY_ACC_LEAD.exec(before);
+  if (!m) return null;
+  const ws = m[1]!.split(/\s+/).filter((w) => !/^(?:a|an|the|new|spare|replacement|extra|second|another)$/i.test(w));
+  if (!ws.length || ws.some((w) => NOT_PART_LEAD.test(w) || /(?:ing|ed|ly)$/i.test(w) || GENERIC_WORDS.has(w.toLowerCase()) && !REQUEST_PART_NOUN.test(w))) return null;
+  return ws.join(" ").replace(/s$/, "");
+}
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;
 /** Common words that are capitalized only because they start a sentence: never a brand. */
 /** V2.8: words that describe a product but never name its type ("wireless", "black", "refurbished"). */
@@ -226,6 +240,8 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       }
       // V2.4: "replacement ear tips for my Sonara Hush 2" asks for the part, named before the product it fits.
       const lead = ACC_LEAD.exec(text.slice(0, brandHit.index));
+      const anyLead = !lead && kind === "STANDALONE" ? anyAccessoryLead(text.slice(segStart <= brandHit.index ? segStart : 0, brandHit.index)) : null;
+      if (anyLead) { kind = "ACCESSORY"; accessoryNoun = anyLead; }
       if ((kind === "STANDALONE" || (kind === "ACCESSORY" && accessoryNoun === "part")) && lead) { kind = "ACCESSORY"; accessoryNoun = lead[1]!.toLowerCase().replace(/^(?:replacement|spare)\s+/, "").replace(/\s+/g, " ").replace(/s$/, ""); }
       // V2.4: "the Volteq PS-500 bundle with the 100W solar panel" asks for the bundle itself.
       if (kind === "STANDALONE" && ex.model && /^\s*(?:bundle|kit|combo)\b/i.test(clause.slice(Math.max(0, clause.toLowerCase().indexOf(ex.model.toLowerCase())) + ex.model.length)) && !/\b(?:no|not|without)\s+(?:a\s+)?bundle/i.test(text)) kind = "BUNDLE";

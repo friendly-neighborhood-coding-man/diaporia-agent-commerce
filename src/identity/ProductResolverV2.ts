@@ -56,6 +56,15 @@ function accessoryNounMatches(f: ProductFacts, want: string | null): boolean {
   return nounRe(head).test(f.product.title.normalize("NFKC"));
 }
 
+function partNamedAfterModel(p: CatalogProduct, noun: string): boolean {
+  const title = p.title.normalize("NFKC");
+  const m = p.identity.model;
+  const at = m ? title.toLowerCase().indexOf(m.toLowerCase()) : -1;
+  if (at < 0) return false;
+  const head = noun.trim().split(/\s+/).at(-1)!;
+  const after = title.slice(at + m!.length);
+  return nounRe(head).test(after) && !(after.match(KIND_NOUN) ?? []).some((k) => nounKey(k) !== nounKey(head));
+}
 export type ResolutionV2 =
   | { status: "LOCKED"; productId: string; identity: ProductIdentity; facts: ProductFacts; conditionConfirmed: boolean; duplicates: string[]; assumptions: string[]; excluded: Exclusion[];
       /** V2.10: the part is locked through its base model; it must be shown to fit this full requested model. */
@@ -76,7 +85,7 @@ const NOUN_SYNONYMS: string[][] = [["walkie talkie", "walkie-talkie", "two-way r
  * V2.9: nouns that name what a product IS. When the request names one ("Kestra A5 drone") and the listing's title names
  * another ("Kestra A5 Action Camera"), the listing is not the requested product even if no category is known.
  */
-const KIND_NOUN = /(?<![a-z])(?:headphones?|headsets?|earbuds?|earphones?|speakers?|soundbars?|laptops?|notebooks?|tablets?|smartphones?|phones?|cameras?|camcorders?|drones?|quadcopters?|scooters?|bikes?|bicycles?|monitors?|tvs?|televisions?|projectors?|printers?|routers?|keyboards?|pianos?|turntables?|record players?|mice|mouse|smartwatch(?:es)?|watch(?:es)?|kettles?|blenders?|toasters?|fryers?|cookers?|microwaves?|vacuums?|flossers?|toothbrush(?:es)?|heaters?|fans?|lamps?|purifiers?|humidifiers?|dehumidifiers?|blankets?|chairs?|desks?|tents?|backpacks?|bottles?|batter(?:y|ies)|chargers?|belts?|pans?|housings?|cases?|covers?|cables?|straps?|filters?|tips|binoculars|telescopes?|detectors?|radios?|e-?readers?|ereaders?|mowers?|lawnmowers?|e-?bikes?|scales?|bread (?:makers?|machines?))(?![a-z])/gi;
+const KIND_NOUN = /(?<![a-z])(?:headphones?|headsets?|earbuds?|earphones?|speakers?|soundbars?|laptops?|notebooks?|tablets?|smartphones?|phones?|cameras?|camcorders?|drones?|quadcopters?|scooters?|bikes?|bicycles?|monitors?|tvs?|televisions?|projectors?|printers?|routers?|keyboards?|pianos?|turntables?|record players?|mice|mouse|smartwatch(?:es)?|watch(?:es)?|kettles?|blenders?|toasters?|fryers?|cookers?|microwaves?|vacuums?|flossers?|toothbrush(?:es)?|heaters?|fans?|lamps?|purifiers?|humidifiers?|dehumidifiers?|blankets?|chairs?|desks?|tents?|backpacks?|bottles?|batter(?:y|ies)|chargers?|belts?|pans?|housings?|cases?|covers?|cables?|straps?|filters?|tips|binoculars|telescopes?|detectors?|radios?|e-?readers?|ereaders?|mowers?|lawnmowers?|e-?bikes?|scales?|kayaks?|canoes?|paddle ?boards?|air conditioners?|ovens?|grills?|printers?|bread (?:makers?|machines?))(?![a-z])/gi;
 const nounRe = (n: string) => new RegExp(`(?<![a-z])${n.split(/[\s-]+/).map((w) => w.replace(/(?:es|s)$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s-]*")}e?s?(?![a-z])`, "i");
 /**
  * V2.8: is a listing the product noun the request wrote after the model? YES when its title states the noun (or a
@@ -123,7 +132,7 @@ export function resolveExactV2(intent: ResolveIntent, products: CatalogProduct[]
     if (words.some((_, i) => i > 0 && normalizeKey(words.slice(0, i).join(" ")) === k)) return true;
     return /\d$/.test(k) && /^[a-z]{1,2}$/i.test(want.slice(k.length));
   };
-  const bases = [...new Set(products.map(factsOf).filter((f) => f.kind === "ACCESSORY" && f.product.identity.model && familyKey(f.product.identity.brand, f.product.identity.model) === familyKey(t.brand, f.product.identity.model) && base(f.product.identity.model))
+  const bases = [...new Set(products.map(factsOf).filter((f) => (f.kind === "ACCESSORY" || (f.kind === "STANDALONE" && !!t.accessoryNoun && partNamedAfterModel(f.product, t.accessoryNoun))) && f.product.identity.model && familyKey(f.product.identity.brand, f.product.identity.model) === familyKey(t.brand, f.product.identity.model) && base(f.product.identity.model))
     .map((f) => f.product.identity.model!))].sort((a, b) => normalizeKey(b).length - normalizeKey(a).length);
   for (const m of bases) {
     const r2 = resolveCore({ ...intent, target: { ...t, model: m }, requestTail: [], targetNoun: null }, products, offersOf);
@@ -181,7 +190,9 @@ function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf
       if (miss.length) { excluded.push({ productId: typed[i]!.product.productId, title: typed[i]!.product.title, reason: `different model: the title does not name "${miss.join(" ")}"` }); typed.splice(i, 1); }
     }
     for (const kind of ["STANDALONE", "ACCESSORY", "BUNDLE"] as const) {
-      const group = typed.filter((f) => f.kind === kind);
+      // V2.12: a part listing the title parse took as standalone groups with the parts, not with the product it fits.
+      const kindOf = (f: ProductFacts) => t.kind === "ACCESSORY" && f.kind === "STANDALONE" && !!t.accessoryNoun && partNamedAfterModel(f.product, t.accessoryNoun) ? "ACCESSORY" : f.kind;
+      const group = typed.filter((f) => kindOf(f) === kind);
       const pick = pickVariant(group, (f) => f.product.title, t!.brand, code, reqWords);
       for (const d of pick.drop) { excluded.push({ productId: d.item.product.productId, title: d.item.product.title, reason: d.reason }); typed.splice(typed.indexOf(d.item), 1); }
     }
@@ -190,7 +201,10 @@ function resolveCore(intent: ResolveIntent, products: CatalogProduct[], offersOf
   // The noun names an accessory of the model when only accessory listings state it ("Delvix MD-7 Headphones").
   const nounIsAccessory = !!tn && t.kind === "STANDALONE" && typed.every((f) => f.kind === "ACCESSORY") && typed.some((f) => targetNounMatch(f.product, tn) === "YES");
   const kindOk = typed.filter((f) => {
-    const ok = (f.kind === t.kind || (nounIsAccessory && f.kind === "ACCESSORY")) && (t.kind !== "ACCESSORY" || accessoryNounMatches(f, t.accessoryNoun));
+    // V2.12: a listing the title parse took as standalone is the part when its title names the requested part noun
+    // after the model ("Paddlix Tern 1 Spray Skirt" for "spray skirt for the Tern 1"); the model itself never is.
+    const partTitled = t.kind === "ACCESSORY" && f.kind === "STANDALONE" && !!t.accessoryNoun && partNamedAfterModel(f.product, t.accessoryNoun);
+    const ok = (f.kind === t.kind || partTitled || (nounIsAccessory && f.kind === "ACCESSORY")) && (t.kind !== "ACCESSORY" || partTitled || accessoryNounMatches(f, t.accessoryNoun));
     if (!ok) excluded.push({ productId: f.product.productId, title: f.product.title, reason: f.kind === "STANDALONE" ? `standalone product, not the requested ${t.kind.toLowerCase()}` : `${f.kind.toLowerCase()}${f.accessoryNoun ? ` (${f.accessoryNoun})` : ""}, not the requested ${t.kind === "ACCESSORY" ? t.accessoryNoun ?? "accessory" : "standalone product"}` });
     return ok;
   });

@@ -38,6 +38,11 @@ export interface CandidateInput {
   limitReached: boolean;
   /** Must-haves the listing text itself claims (a weak prior for ordering unverified candidates; never evidence). */
   listingClaims?: number;
+  /**
+   * V2.12: what a merchant quote already shows each offer costs before tax (item + known shipping + known fees), by
+   * offerId. Tax without a destination is unknown, so this is a lower bound of the total, never a verified total.
+   */
+  knownCostMinor?: Record<string, number>;
 }
 export interface RankedCandidate {
   productId: string; title: string; rank: number; eligible: boolean;
@@ -234,8 +239,16 @@ function assess(intent: ResearchIntentV2, c: CandidateInput, lock: { productId: 
   // V2.2 WP-1: the enforceable inclusive maximum ("under $120" allows at most $119.99) and the lower end of a stated range.
   const maxMinor = intent.budgetMaxMinor !== undefined ? intent.budgetMaxMinor : intent.budgetMinor;
   if (lowest && maxMinor !== null) {
+    // V2.12 (IW-12 b10): the budget is checked on what an offer is already known to cost (a quote's item price plus its
+    // shipping and fees), not on the listing price alone; the 10% headroom then covers only the still-unknown tax.
+    const floorOf = (o: MerchantOffer) => Math.max(o.itemPriceMinor, c.knownCostMinor?.[o.offerId] ?? 0);
+    const cheapest = Math.min(...priceOffers.map(floorOf));
+    const quoted = c.knownCostMinor && priceOffers.some((o) => c.knownCostMinor![o.offerId] !== undefined);
     if (lowest.itemPriceMinor > maxMinor) dq.push({ code: "OVER_BUDGET", detail: `lowest eligible listing ${fmt(lowest.itemPriceMinor, intent.currency)} is over the budget ${fmt(maxMinor, intent.currency)}` });
-    else if (lowest.itemPriceMinor > maxMinor * BUDGET_HEADROOM) bl.push({ code: "BUDGET_TIGHT", detail: `listing ${fmt(lowest.itemPriceMinor, intent.currency)} is within 10% of the budget while shipping and tax are unknown` });
+    else if (cheapest > maxMinor) dq.push({ code: "OVER_BUDGET", detail: `every offer already costs more than the budget ${fmt(maxMinor, intent.currency)} before tax (lowest ${fmt(cheapest, intent.currency)} with shipping and fees)` });
+    else if (cheapest > maxMinor * BUDGET_HEADROOM) bl.push({ code: "BUDGET_TIGHT", detail: quoted
+      ? `the lowest known cost ${fmt(cheapest, intent.currency)} (item, shipping and fees) is within 10% of the budget while tax is unknown`
+      : `listing ${fmt(lowest.itemPriceMinor, intent.currency)} is within 10% of the budget while shipping and tax are unknown` });
   }
   if (lowest && intent.budgetLowerMinor != null && lowest.itemPriceMinor < intent.budgetLowerMinor)
     dq.push({ code: "BELOW_STATED_RANGE", detail: `lowest eligible listing ${fmt(lowest.itemPriceMinor, intent.currency)} is below the stated price range (from ${fmt(intent.budgetLowerMinor, intent.currency)})` });

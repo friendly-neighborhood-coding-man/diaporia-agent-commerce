@@ -195,3 +195,32 @@ describe("V2.11 spec wording, part exclusions and conversation", () => {
     expect(intent("65 inch TV with HDMI 2.1 under $1.2k").target).toBeNull();
   });
 });
+
+describe("V2.12 (IW-12 is seen; fictional products only)", () => {
+  it("'<anything> for the <model>' asks for a part; the model itself never satisfies it", () => {
+    expect(intent("spray skirt for the Toska Arc 2 Drop-Stitch").target).toMatchObject({ kind: "ACCESSORY", accessoryNoun: "spray skirt", model: "Arc 2 Drop-Stitch" });
+    expect(intent("gift for my wife: the Corvan Q8").target.kind).toBe("STANDALONE");
+    expect(intent("$700 for the Toska Arc 2?").target.kind).toBe("STANDALONE");
+    const listings = [product("kayak", "Toska Arc 2 Inflatable Kayak", "Toska"), product("skirt", "Toska Arc 2 Spray Skirt", "Toska")];
+    const r: any = resolveExactV2(intent("spray skirt for the Toska Arc 2"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("skirt");
+  });
+  it("a thousands code after a name word is the model number", () => {
+    expect(intent("Mirelle Frost 12K portable AC").target.model).toBe("Frost 12K");
+    expect(extractIdentity("Mirelle Frost 9K Portable Air Conditioner", "Mirelle").model).not.toBe("Frost 12K");
+    expect(extractIdentity("Mirelle Frost 12K Portable Air Conditioner", "Mirelle").model).toBe("Frost 12K");
+  });
+  it("the budget is checked on the quoted item, shipping and fees, not the listing price alone", async () => {
+    const { decide } = await import("../src/decision/DecisionEngine.js");
+    const i = intent("Toska Arc 2 kayak, $700");
+    const p = product("arc2", "Toska Arc 2 Inflatable Kayak", "Toska", "kayaks");
+    const base = { product: p, offers: [{ ...offers("arc2")[0], itemPriceMinor: 62900 }], must: {}, nice: {}, notChecked: [], limitReached: false };
+    const lock = { exactLock: { productId: "arc2" }, exactFailure: null, weights: null, now: Date.now() } as any;
+    expect(decide(i, [base] as any, lock).ranking[0]!.blockers.map((b: any) => b.code)).not.toContain("BUDGET_TIGHT");
+    const quoted = decide(i, [{ ...base, knownCostMinor: { "o-arc2": 68899 } }] as any, lock);
+    expect(quoted.state).not.toBe("RECOMMEND");
+    expect(quoted.ranking[0]!.blockers.map((b: any) => b.code)).toContain("BUDGET_TIGHT");
+    expect(decide(i, [{ ...base, knownCostMinor: { "o-arc2": 71000 } }] as any, lock).ranking[0]!.disqualifiers.map((d: any) => d.code)).toContain("OVER_BUDGET");
+  });
+});

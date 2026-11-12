@@ -270,6 +270,9 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // V2.8: in a request, an upper-case code after the model number ("BM-3 HD", "TC-20 LED") is part of the name the
     // user typed, even when the same word is a generic descriptor elsewhere. Identity then fails closed on it.
     const codeInRequest = request && words.some((x) => /\d/.test(x)) && /^[A-Z][A-Z0-9+]{1,4}$/.test(w) && !UNIT_TOKEN.test(w);
+    // V2.12 (IW-12): a thousands code right after a name word ("Polar 14K", "Polar 10K") is the model number, never a
+    // unit; it is what tells the siblings apart. Resolutions (4K, 8K) are single-digit and stay attributes.
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d{2,3}[kK]$/.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);
