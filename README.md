@@ -15,6 +15,7 @@ Requirements: **Node.js 22.13+** and npm. The initial `npm ci` installs dependen
 ```bash
 git clone https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce.git
 cd diaporia-agent-commerce
+git checkout feature/buy-browser-panel  # submission UI + frozen research engine (PR #15)
 npm ci
 npm run demo:full
 ```
