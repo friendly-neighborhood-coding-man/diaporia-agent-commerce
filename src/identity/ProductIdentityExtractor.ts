@@ -39,7 +39,9 @@ export function modelYear(text: string): string | null {
   return null;
 }
 /** The model string without a trailing model-year token ("Drift 15 2024" → "Drift 15"; never "RX-2000" → "RX-"). */
-export const stripYear = (model: string | null): string | null => model ? (model.replace(/(?:\s+\(?|\s*\()20[0-3]\d\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, "").trim() || model) : model;
+// Post-submission cycle 4 (IW-21 d15): only a token modelYear accepts as a year (2005..2035) is stripped. "Tessel 2000"
+// is a model number, not the year 2000: stripping it made the Tessel 4000's pages count for the Tessel 2000.
+export const stripYear = (model: string | null): string | null => model ? (model.replace(/(?:\s+\(?|\s*\()(20[0-3]\d)\b\)?(?:\s*(?:model|edition|version|년형))?\s*$/i, (m, y: string) => Number(y) >= 2005 && Number(y) <= 2035 ? "" : m).trim() || model) : model;
 
 /**
  * Product generation (N-02): "(2nd Gen)", "2nd generation", "Gen 2", "second-gen", "2세대". Value is the number ("2").
@@ -437,6 +439,7 @@ export function familyKey(brand: string | null, model: string | null): string {
  * True when `text` mentions exactly this model: separator-tolerant, and not followed by a family extension
  * ("Nova 9" does not match "Nova 9 Pro"; "CX-500" does not match "CX-5000").
  */
+const modelYearToken = (t: string) => /^20[0-3]\d$/.test(t) && Number(t) >= 2005;
 export function mentionsExactModel(text: string, model: string, own: { generation?: string | null } = {}): boolean {
   const body = model.replace(/[^A-Za-z0-9]/g, "").split("").map((ch) => escapeRe(ch)).join("[- ]?");
   if (!body) return false;
@@ -450,6 +453,12 @@ export function mentionsExactModel(text: string, model: string, own: { generatio
     if (next && own.generation && modelGeneration(after.slice(0, 24).replace(/^[-\s(]*/, "")) === own.generation && /^[-\s(]*(?:\d{1,2}(?:st|nd|rd|th)|gen|generation|first|second|third|fourth|fifth|sixth|\d{1,2}\s*세대)/i.test(after)) return true;
     // V2.5: "Air" in "AF-55 Duo Air Fryer" starts the product noun, it is not the "Air" model extension.
     if (next && isModelExtension(next) && !ownWords.has(next) && nounPhraseAt(after.split(/\s+/).filter(Boolean)) !== "STOP") continue;
+    // Post-submission cycle 4 (IW-21 d15): a model with no digit of its own followed by a bare number or number code
+    // ("Tessel 4000" for the model "Tessel") names a numbered sibling, unless the number carries a unit ("Aero 20 ft").
+    if (!/\d/.test(model)) {
+      const num = /^[-\s(]*(\d[\d,.]*[A-Za-z]{0,3})(?=$|[^A-Za-z0-9])(\s*[A-Za-z]+)?/.exec(after);
+      if (num && !ownWords.has(num[1]!.toLowerCase()) && !UNIT_TOKEN.test(num[1]!) && !UNIT_TOKEN.test(`${num[1]}${(num[2] ?? "").trim()}`) && !modelYearToken(num[1]!)) continue;
+    }
     // V2.7: an upper-case name code right after the model ("Glide 5 GTX", "Orbit 90 EQ") names a sibling model.
     const rawNext = /^[\s(]*([A-Za-z0-9+]+)/.exec(after)?.[1] ?? "";
     if (rawNext && !ownWords.has(rawNext.toLowerCase()) && /^[A-Z][A-Z0-9+]{1,4}$/.test(rawNext) && !UNIT_TOKEN.test(rawNext) && !DESCRIPTIVE_CODE.test(rawNext) && !TECH_SUFFIX.test(rawNext)) continue;

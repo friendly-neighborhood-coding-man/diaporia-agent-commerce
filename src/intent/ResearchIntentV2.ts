@@ -314,7 +314,11 @@ export function parseResearchIntent(input: PurchaseRequestInput, opts: { noBrand
   // Attributes: the user's own words; Korean colour words included. Pack sizes mark a bundle request.
   const objectSizes = !!target?.model && target.kind === "STANDALONE";
   const attrText0 = target && targetSpan ? text.slice(targetSpan[0]) : text;
-  const attrText = objectSizes ? attrText0.replace(OBJECT_SIZE, " ") : attrText0;
+  // Post-submission cycle 4 (IW-21 d33): a threshold ("at least 50 liters", "50 L or more") is a requirement on a number,
+  // never the exact attribute "capacity = 50 L".
+  const attrText1 = attrText0.replace(/\b(?:at\s+least|at\s+most|no\s+(?:less|more|fewer)\s+than|more\s+than|less\s+than|minimum(?:\s+of)?|maximum(?:\s+of)?|min\.?|max\.?|up\s+to)\s+\d[\d,.]*\s*-?\s*[\p{L}"']+/giu, " ")
+    .replace(/\d[\d,.]*\s*-?\s*[\p{L}"']+\s+or\s+(?:more|larger|bigger|greater|higher|longer|over|above)\b/giu, " ");
+  const attrText = objectSizes ? attrText1.replace(OBJECT_SIZE, " ") : attrText1;
   const attributes: VariantAttributes = { ...parseAttributes(attrText.split(/\s+(?:under|below|budget|less than)\b/i)[0]!) };
   if (input.exactProduct?.variant) attributes.color = input.exactProduct.variant;
   // N-04: a model year or generation written right before the brand ("a 2023 Pagewell Lumen 7", "2nd gen Arden Buds").
@@ -543,7 +547,10 @@ export function parseResearchIntent(input: PurchaseRequestInput, opts: { noBrand
   for (const m of text.matchAll(/(?<![\p{L}])([\p{L}][\p{L}-]*)\s+only\b/giu)) {
     const a = m.index!, b = a + m[0].length;
     if (/^(?:pair|one|unit|units|body|tool|bare|single|set|the|a|an|it|this|that|new|me|us|you|cash|card|pickup|online|weekdays?|weekends?|usd|dollars?)$/i.test(m[1]!)) continue;
-    if (!requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] >= a)) continue;
+    // Post-submission cycle 4 (IW-21 q46): "<word> only" that no requirement accounts for ("Smokebox 20, Wi-Fi only") is
+    // never dropped: it blocks as uninterpreted until settled.
+    const accounted = requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] >= a);
+    if (!accounted && !leftover.some((u) => u.span[0] >= a && u.span[1] <= b)) continue;
     if (!uninterpreted.some((u) => u.span[0] <= a && u.span[1] >= b)) uninterpreted.push({ text: m[0], span: [a, b] });
   }
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);

@@ -129,7 +129,16 @@ const PURPOSE_FOR_RX = /^for\s+(?:(?:the\s+|a\s+)?(?:lowest|cheapest|best|least|
  * an objective, never an activity ("for cycling" is a use the product must be fit for) and never a quantity: a weight,
  * a household size or an altitude ("for my 45 lb son", "for a family of 5", "for use at 3,800 m") is a checked limit.
  */
-export const PURPOSE_FOR = { test: (t: string): boolean => PURPOSE_FOR_RX.test(t) && !/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b/i.test(t.replace(/(?:\$|usd|eur|£|€|₩)\s*\d[\d,.]*/gi, "")) };
+// Post-submission cycle 4 (IW-21 d22/q25): "heavy", "light", "long" and "short" are a use intensity only before a use
+// noun ("for heavy use", "for long trips"); "for heavy snow" or "for light loads" names a condition the product must meet.
+const INTENSITY_FOR = /^for\s+(?:(?:a|an|the|some)\s+)?(?:light|heavy|long|short)\s+([\p{L}-]+)/iu;
+const INTENSITY_USE = /^(?:use|uses|usage|using|duty|work|working|commutes?|commuting|travel|traveling|travelling|trips?|days?|hours?|sessions?|runs?|rides?|drives?|weekends?|stays?|users?|periods?|term)$/i;
+// Cycle 4 (IW-21 w01): one free modifier before a closed list of occasion nouns ("for a backyard party") is still an occasion.
+const OCCASION_FOR = /^for\s+(?:a|an|the|our|my|this|that|next)\s+[\p{L}-]+\s+(?:party|parties|trip|trips|vacation|holiday|gift|present|wedding|birthday|anniversary|graduation|weekend|event)\b/iu;
+export const PURPOSE_FOR = { test: (t: string): boolean => {
+  const im = INTENSITY_FOR.exec(t);
+  if (im && !INTENSITY_USE.test(im[1]!)) return false;
+  return (PURPOSE_FOR_RX.test(t) || OCCASION_FOR.test(t)) && !/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b/i.test(t.replace(/(?:\$|usd|eur|£|€|₩)\s*\d[\d,.]*/gi, "")); } };
 const CHAT_FILLER = /^(?:honestly|ugh+|lol|lmao|mostly|mainly|asap|pls|plz|kinda|sorta|probably|maybe|finally|literally|basically|actually|tbh|ngl|btw|anyway|anyways|whatever|fine|quit|died|broke|broken)$/i;
 export function contextSpans(text: string, targetSpan: [number, number] | null): Array<[number, number]> {
   const out: Array<[number, number]> = [];
