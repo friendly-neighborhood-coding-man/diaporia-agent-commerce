@@ -26,5 +26,5 @@ The recorded YouTube demo is embedded from https://youtu.be/8ILykmc_WNw. It uses
 ## Maintenance
 
 - Source-code changes are **not** inferred to update the marketing claims automatically. Keep proof points aligned to tagged/verified commits.
-- This site contains no credentials, live API calls, trackers, third-party logos or external font downloads.
+- This site contains no credentials, purchasing API calls, first-party analytics, third-party logos or external font downloads. The embedded YouTube demonstration loads third-party resources when viewed.
 - Do not publish proprietary APORIA / DIAPORIA research details or private training data here.
