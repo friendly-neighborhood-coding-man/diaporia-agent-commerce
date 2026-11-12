@@ -32,9 +32,12 @@ jobs:
       - name: Prepare GitHub Pages artifact
         if: github.event_name != 'pull_request'
         run: touch site/.nojekyll
+      - name: Configure Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
       - name: Upload static site
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: site
 
