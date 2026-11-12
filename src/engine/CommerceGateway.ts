@@ -266,6 +266,9 @@ export class CommerceGateway {
     const ts = parseResearchIntent(input);
     const it = this.config.interpreter;
     if (!it || it.mode === "TS_ONLY") return ts;
+    // DIAGNOSTIC (experiment/semantic-boundary-diagnosis): an isolated merge replaces the v1 adapter when supplied
+    // (counterfactual intents, contract-aware arm, typed-adapter arm). Absent = the frozen b917bff behaviour.
+    if (it.merge) { const r = it.merge(ts, input, (i) => parseResearchIntent(i)); if (r) { it.log?.push({ request: input.request, trace: r.trace as never }); return r.intent; } }
     const signals = escalationSignals(ts, input.request);
     const escalate = it.mode === "ALWAYS" || signals.length > 0;
     const raw = escalate ? it.interpret(input.request) : null;

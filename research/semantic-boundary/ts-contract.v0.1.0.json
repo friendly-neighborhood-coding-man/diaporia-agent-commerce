@@ -1,0 +1,311 @@
+{
+ "schema": "diaporia.ts-expression-contract.v0.1.0",
+ "derivedFrom": "b917bff runtime (src/intent/Requirements.ts, src/research/capabilities.ts, src/decision/DecisionEngine.ts, src/evidence/EvidenceV2.ts)",
+ "rule": "A form is listed only if the real TypeScript parser produces its key from the canonical phrase (textForm) or the engine evaluates the key when it is constructed directly (typedOnly), and the evidence matcher returns a verdict on a manufacturer sentence. verify-contract.mts checks every example.",
+ "numbers": "Digits only (\"4\", not \"four\"). A spelled number never reaches a numeric form.",
+ "unitDimensions": [
+  [
+   "ft",
+   "foot",
+   "feet"
+  ],
+  [
+   "in",
+   "inch",
+   "inches"
+  ],
+  [
+   "cm"
+  ],
+  [
+   "mm"
+  ],
+  [
+   "m",
+   "meter",
+   "meters"
+  ],
+  [
+   "a",
+   "amp",
+   "amps"
+  ],
+  [
+   "kw"
+  ],
+  [
+   "v",
+   "volt",
+   "volts"
+  ],
+  [
+   "l",
+   "liter",
+   "liters"
+  ],
+  [
+   "gal",
+   "gallon",
+   "gallons"
+  ],
+  [
+   "lb",
+   "lbs",
+   "pound",
+   "pounds"
+  ],
+  [
+   "kg",
+   "kilogram",
+   "kilograms"
+  ],
+  [
+   "sq-ft",
+   "square feet"
+  ],
+  [
+   "people",
+   "person",
+   "persons"
+  ],
+  [
+   "ah"
+  ]
+ ],
+ "forms": [
+  {
+   "id": "CAPABILITY",
+   "key": "<capability id>",
+   "ids": [
+    "active_noise_cancellation",
+    "wireless",
+    "multipoint",
+    "over_ear",
+    "waterproof",
+    "usb_c_charging",
+    "backlit_keyboard",
+    "programmable",
+    "thermal_carafe",
+    "dishwasher_safe",
+    "lumbar_support",
+    "adjustable_armrests",
+    "4k_resolution",
+    "cordless",
+    "hepa_filter",
+    "battery_<N>h",
+    "keeps_cold_<N>h"
+   ],
+   "textForm": "widget, dishwasher safe",
+   "expectKey": "dishwasher_safe",
+   "evidence": "registered manufacturer states it for the exact product",
+   "probe": {
+    "sentence": "The Acme Tilo 3 has a steel tray, which is dishwasher safe.",
+    "verdict": true
+   }
+  },
+  {
+   "id": "CAPABILITY_ABSENT",
+   "key": "not:<capability id>",
+   "textForm": "widget without wireless",
+   "expectKey": "not:wireless",
+   "evidence": "manufacturer states the absence",
+   "probe": {
+    "sentence": "The Acme Tilo 3 is not wireless.",
+    "verdict": false,
+    "meaning": "capability false = exclusion holds"
+   }
+  },
+  {
+   "id": "PROPOSITION",
+   "key": "unrecognized:<slug of the attribute words>",
+   "textForm": "widget that is rust-proof",
+   "expectKey": "unrecognized:rust-proof",
+   "evidence": "all words in one clause in order (at most 3 words apart, stems for long words); any negation, 'only', 'adapter', 'requires' in that predicate = unverified; performance words (quiet, easy, durable, ...) need two independent expert groups",
+   "caution": "write the attribute words only; never the product noun or the person ('for left-handed users' keeps 'users')",
+   "probe": {
+    "sentence": "The Acme Tilo 3 frame is powder-coated and is rust-proof.",
+    "verdict": true
+   }
+  },
+  {
+   "id": "PROPOSITION_ABSENT",
+   "key": "not:<slug>",
+   "textForm": "widget without a rain hood",
+   "expectKey": "not:rain-hood",
+   "evidence": "manufacturer sentence denies the words",
+   "probe": {
+    "sentence": "The Acme Tilo 3 has no rain hood.",
+    "verdict": false,
+    "meaning": "proposition false = exclusion holds"
+   }
+  },
+  {
+   "id": "AT_LEAST",
+   "key": "unrecognized:at-least-<N>-<unit>[-<noun>]",
+   "textForm": "widget with at least 6 guests",
+   "expectKey": "unrecognized:at-least-6-guests",
+   "evidence": "a stated value of the same unit decides (value >= N); an optional noun must be within 40 characters of the value",
+   "probe": {
+    "sentence": "The Acme Tilo 3 seats up to 8 guests.",
+    "verdict": true
+   }
+  },
+  {
+   "id": "AT_MOST",
+   "key": "unrecognized:at-most-<N>-<unit>",
+   "textForm": "widget under 7 kg",
+   "expectKey": "unrecognized:at-most-7-kg",
+   "evidence": "every stated value of the unit is compared; a second figure for another quantity (a load limit) in the same clause can decide it",
+   "scope": "'under N' becomes inclusive 'at most N'",
+   "probes": [
+    {
+     "sentence": "The Acme Tilo 3 weighs 6 kg.",
+     "verdict": true
+    },
+    {
+     "sentence": "The Acme Tilo 3 holds loads up to 20 lb (9 kg).",
+     "verdict": false,
+     "meaning": "engine gap: the load figure decides the product-weight requirement"
+    }
+   ]
+  },
+  {
+   "id": "AT_MOST_ANCHORED",
+   "typedOnly": true,
+   "key": "unrecognized:at-most-<N>-<unit>-<anchor word>",
+   "constructedKey": "unrecognized:at-most-7-kg-weighs",
+   "evidence": "the anchor word must stand within 40 characters of the value: separates the product's own weight from a load limit",
+   "note": "no request phrase makes the TypeScript parser emit this key ('weighs at most 7 kg' -> at-most-7-kg); only a typed adapter can build it",
+   "probes": [
+    {
+     "sentence": "The Acme Tilo 3 holds loads up to 20 lb (9 kg).",
+     "verdict": null,
+     "meaning": "a load figure is not the product weight"
+    },
+    {
+     "sentence": "It weighs 6 kg.",
+     "verdict": true
+    }
+   ]
+  },
+  {
+   "id": "AT_LEAST_ANCHORED",
+   "typedOnly": true,
+   "key": "unrecognized:at-least-<N>-<unit>-<anchor word>",
+   "constructedKey": "unrecognized:at-least-40-lb-gravel",
+   "note": "the parser emits the anchor only when the noun directly follows the unit; 'lifts at least 40 lb of gravel' splits into at-least-40-lb + lifts + gravel",
+   "probe": {
+    "sentence": "The Acme Tilo 3 lifts up to 50 lb of gravel.",
+    "verdict": true
+   }
+  },
+  {
+   "id": "WITHIN_LIMIT",
+   "key": "unrecognized:for-[a-]<N>-<unit>[-<noun>]",
+   "textForm": "widget for a 40 lb dog",
+   "expectKey": "unrecognized:for-a-40-lb-dog",
+   "evidence": "only a bounded statement ('up to N', 'N to M', 'maximum N') of the same dimension decides; unit must be in unitDimensions",
+   "probe": {
+    "sentence": "The Acme Tilo 3 holds dogs up to 60 lb (27 kg).",
+    "verdict": true
+   }
+  },
+  {
+   "id": "FAMILY_OF",
+   "key": "unrecognized:for-a-family-of-<N>",
+   "textForm": "widget for a family of 4",
+   "expectKey": "unrecognized:for-a-family-of-4",
+   "evidence": "WITHIN people",
+   "probe": {
+    "sentence": "The Acme Tilo 3 serves 4 to 5 people.",
+    "verdict": true
+   }
+  },
+  {
+   "id": "PERSON_COUNT",
+   "key": "unrecognized:<N>-person",
+   "textForm": "widget for 2 people",
+   "expectKey": "unrecognized:2-person",
+   "probe": {
+    "sentence": "The Acme Tilo 3 fits two people.",
+    "verdict": true
+   }
+  },
+  {
+   "id": "CONTEXT",
+   "key": "context:<slug>",
+   "strength": "NICE",
+   "textForm": "widget for my nephew",
+   "expectKey": "context:for-my-nephew",
+   "note": "the parser makes 'for my <person>' context; 'for the <place>' stays a MUST proposition ('for the garden' -> unrecognized:for-the-garden). No text form loosens a place."
+  },
+  {
+   "id": "ACCESSORY_FOR_HOST",
+   "key": "identity kind ACCESSORY + automatic unrecognized:fits-model-<host>",
+   "textForm": "griddle plate for the Velka VK-5",
+   "expectTarget": "Velka/VK-5/ACCESSORY",
+   "hazard": "'<Brand> <Part Noun> for the <Brand> <Host>' locks the HOST as a STANDALONE product (observed: prepared the host). Write '<part noun> for the <Brand> <Host>'.",
+   "evidence": "fit verb followed by the exact host model; a list after a colon, or a sentence with 'only', is not credited (engine gap)"
+  },
+  {
+   "id": "EXACT_PRODUCT",
+   "key": "identity target brand/model",
+   "textForm": "Velka VK-5 electric grill",
+   "expectTarget": "Velka/VK-5/STANDALONE",
+   "note": "brand in the Latin script the catalog uses; a Hangul brand ('벨카') does not resolve"
+  },
+  {
+   "id": "BUNDLE",
+   "key": "identity kind BUNDLE",
+   "textForm": "Brannor Emberlo 24 Stove with Kettle Bundle",
+   "expectTarget": "Brannor/Emberlo 24 Stove/BUNDLE"
+  },
+  {
+   "id": "BUDGET_RANGE",
+   "key": "intent fields budgetLowerMinor and budgetMaxMinor (no requirement key)",
+   "textForm": "Acme Tilo 3, at least $300 and at most $400",
+   "expectBudget": [
+    30000,
+    40000
+   ],
+   "note": "money is outside the interpreter contract: only the parser sets it; 'between $300 and $400' is misread, an amount in words is never applied (policy)"
+  }
+ ],
+ "unsupported": [
+  {
+   "id": "LOWER_BOUND_TEMPERATURE",
+   "example": "rated down to -20 °C",
+   "why": "no 'down to' / minimum-rating direction; WITHIN accepts only upper bounds and ranges"
+  },
+  {
+   "id": "DIMENSION_ROLE",
+   "example": "at least 28 inches across (diameter)",
+   "why": "the engine needs the literal word 'across'; 'diameter', 'bowl' are not its synonyms; dropping the word weakens the dimension"
+  },
+  {
+   "id": "SYNONYM",
+   "example": "'insect screen' vs 'bug screen'; 'reversible' vs 'has a reverse switch'",
+   "why": "propositions match words literally; no alternative list"
+  },
+  {
+   "id": "SIBLING_EXCLUSION_DISCOVERY",
+   "example": "<category>, not the <sibling> kind",
+   "why": "an evidence must-not needs a page that states the absence; there is no title/variant exclusion for discovery"
+  },
+  {
+   "id": "SIBLING_EXCLUSION_EXACT",
+   "example": "<model>, not the <sibling tail>",
+   "why": "no text form; satisfied only by the exact lock itself (a typed adapter can drop the must-not when the lock is exact)"
+  },
+  {
+   "id": "ONLY_OR_NEGATED_PREDICATE",
+   "example": "<fuel> burning only",
+   "why": "fail-closed: the manufacturer sentence 'burns <fuel> only; it does not run on <other>' carries 'only' and a negation"
+  },
+  {
+   "id": "EXACT_EQUALITY_LOAD",
+   "example": "about 300 lb together (op '=')",
+   "why": "'=' on a load is not a threshold; kept verbatim, fail-closed"
+  }
+ ]
+}
