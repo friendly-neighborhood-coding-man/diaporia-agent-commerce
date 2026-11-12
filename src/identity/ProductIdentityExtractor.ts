@@ -289,7 +289,9 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // V2.13 (IW-13 i24/i27, Swath 40V): a number with a unit right after a name that has no number yet ("Mikra 30L",
     // "Swath 40V") is the model number that tells the siblings apart, never only a spec. Storage, pack and size units
     // stay attributes.
-    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?(?:l|ml|v|w|kw|wh|mah|qt|cm|mm)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
+    // V2.16 (IW-16 failure 4): any unit letter does the same ("Gale 6G", "Tarn 4P"); only storage, pack and count
+    // units stay attributes.
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?[a-z]{1,3}$/i.test(w) && !/^\d+(?:\.\d+)?(?:gb|tb|mb|pk|ct|pcs?|oz|in|ft|lbs?|hrs?|h|x)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);
@@ -303,6 +305,7 @@ const NOT_A_NAME = /^(?:hi|hello|hey|thanks|thank|please|i|i'?m|i’m|i'?d|i’d
 
 const DESCRIPTIVE_CODE = /^(?:HD|FHD|UHD|QHD|RGB|TWS|USB|LED|LCD|OLED|ANC|ENC|NFC|BT|DC|AC|UV|HEPA|IPS|HDR|PD)$/;
 const TECH_SUFFIX = /^(?:IH|GaN|PD|ANC|ENC|OLED|QLED|IPS|HDR|HDR10|Wi-?Fi|BT|NFC|USB-?C|LED|LCD|DC|AC|UV|HEPA|IPX?\d|IP\d\d)$/;
+const AIR_NOUN = /^\s+(?:compressors?|purifiers?|fryers?|pumps?|mattress(?:es)?|hoses?|conditioners?|filters?|beds?|cleaners?|cooler|coolers|circulators?|movers?|inflators?|tools?|guns?|tanks?)\b/i;
 export function extractIdentity(title: string, brand: string | null, opts: { request?: boolean } = {}): ExtractedIdentity {
   const t = title.normalize("NFKC").replace(/\s+/g, " ").trim();
   const attributes = parseAttributes(t);
@@ -336,7 +339,8 @@ export function extractIdentity(title: string, brand: string | null, opts: { req
       fitsBrand: targetNamesProduct && fitsBrand && (!brand || fitsBrand.toLowerCase() !== brand.toLowerCase()) ? fitsBrand : null };
   }
   let kind: ProductKind = BUNDLE_RE.test(t) || (attributes.pack !== undefined && attributes.pack !== "1") ? "BUNDLE" : "STANDALONE";
-  const num = modelNumberToken(t.replace(/\(.*?\)/g, " "));
+  // V2.16 (IW-16 failure 5): a dimension string ("245x245x260mm") is a size in the title, never the model number.
+  const num = modelNumberToken(t.replace(/\(.*?\)/g, " ").replace(/(?<![A-Za-z0-9])\d+(?:\.\d+)?\s*[x×]\s*\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)+\s*(?:mm|cm|m|in|inch|ft)?(?![A-Za-z0-9])/gi, " "));
   let named = namedModelAfter(t, brand && new RegExp(`\\b${escapeRe(brand)}\\b`, "i").test(t) ? brand : null, !!opts.request);
   // V2.3 (V22-07): a technology acronym written after a model number describes it, it is not part of the model
   // ("HR-6 IH rice cooker" is the HR-6; "P20 GaN charger" is the P20). Family extensions (Pro, Max, Gen 2) still are.
@@ -355,11 +359,15 @@ export function extractIdentity(title: string, brand: string | null, opts: { req
   // Gen 2). Name words after the number ("Fuse 200A MIG", "Orbit 90 EQ") are the title's tail: whether they name a
   // variant is decided by comparing sibling titles (VariantTail), the same rule a request's tail gets, so a
   // descriptor that every sibling carries ("MIG") never makes the base listing a different model.
-  if (!opts.request && model && basis === "NAMED_MODEL") {
+  if (!opts.request && model && basis !== "NONE") {
     const ws = model.split(/\s+/); const k = ws.findIndex((w) => /\d/.test(w));
     if (k >= 0 && k < ws.length - 1) {
       let end = k + 1;
-      while (end < ws.length && (isModelExtension(ws[end]!.toLowerCase()) || /\d/.test(ws[end]!))) end++;
+      // V2.16: only a family extension or a bare number continues it; a code with letters ("3D") is tail.
+      // V2.16 (IW-16 i03): "Air" before the noun it modifies ("Air Compressor", "Air Purifier") is the product type,
+      // not the "Air" family extension.
+      const airNoun = (e: number) => /^air$/i.test(ws[e]!) && AIR_NOUN.test(t.slice(t.indexOf(ws.slice(0, e + 1).join(" ")) + ws.slice(0, e + 1).join(" ").length));
+      while (end < ws.length && (isModelExtension(ws[end]!.toLowerCase()) || /^\d+$/.test(ws[end]!)) && !airNoun(end)) end++;
       if (end < ws.length) model = ws.slice(0, end).join(" ");
     }
   }

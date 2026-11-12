@@ -33,7 +33,7 @@ export const CAPABILITIES: CapabilitySpec[] = [
   { id: "backlit_keyboard", phrase: "backlit keyboard", request: /backlit|keyboard backlight|백라이트/i, statement: /\bbacklit keyboard\b|\bkeyboard backlight(?:ing)?\b/i },
   { id: "programmable", phrase: "programmable timer", request: /\bprogrammable\b|예약\s*기능/i, statement: /\bprogrammable\b/i },
   { id: "thermal_carafe", phrase: "thermal carafe", request: /thermal carafe|보온\s*(?:포트|카라페|서버)/i, statement: /\bthermal carafe\b/i },
-  { id: "dishwasher_safe", phrase: "dishwasher safe", request: /dishwasher|식기\s*세척기/i, statement: /\bdishwasher(?:[- ]safe)?\b/i, absent: /\bhand[- ]wash only\b/i },
+  { id: "dishwasher_safe", phrase: "dishwasher safe", request: /dishwasher[- ]?(?:safe|proof)|(?:safe|ok|fine)\s+(?:in|for)\s+(?:the\s+)?dishwasher|in\s+the\s+dishwasher|식기\s*세척기\s*(?:에\s*)?(?:사용\s*)?(?:가능|세척\s*가능|넣어도|OK|겸용)/i, /* V2.16 (IW-16 d13): a dishwasher is a product; only "dishwasher safe" is the feature */ statement: /\bdishwasher(?:[- ]safe)?\b/i, absent: /\bhand[- ]wash only\b/i },
   { id: "lumbar_support", phrase: "lumbar support", request: /lumbar|요추|허리\s*지지/i, statement: /\blumbar(?: support)?\b/i },
   { id: "adjustable_armrests", phrase: "adjustable armrests", request: /arm\s?rests?|팔걸이/i, statement: /\badjustable arm\s?rests?\b|\b\dd arm\s?rests?\b/i, absent: /\bfixed arm\s?rests\b/i },
   { id: "4k_resolution", phrase: "4K resolution", request: /\b4k\b|\buhd\b|2160p|4k\s*해상도/i, statement: /\b4k\b|\buhd\b|3840\s?x\s?2160|2160p/i, absent: /\b(?:1080p|full hd|fhd)\b(?![^.;]*\b4k\b)/i },

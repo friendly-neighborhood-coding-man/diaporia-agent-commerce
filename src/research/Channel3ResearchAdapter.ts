@@ -134,6 +134,9 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
       const key = `${familyKey(p.identity.brand, p.identity.model)}|${runOf.get(p) ?? ""}|${p.identity.variant ?? ""}|${p.identity.condition}`;
       const first = byKey.get(key);
       if (!first) { byKey.set(key, p); out.push(p); continue; }
+      // V2.16 (IW-16 failure 3): listings whose titles carry different number tokens ("Gale 6G" / "Gale 11G") are never
+      // one product, whatever the parser made of their models. Merging needs one title's number tokens to contain the other's.
+      if (!numberTokensCompatible(first.title, p.title)) { byKey.set(`${key}|${p.productId}`, p); out.push(p); continue; }
       const a = this.products.get(first.productId)!; const b = this.products.get(p.productId)!;
       const urls = new Set(a.offers.map((o) => `${o.merchantDomain}|${o.listingUrl}`));
       for (const o of b.offers) if (!urls.has(`${o.merchantDomain}|${o.listingUrl}`)) a.offers.push({ ...o, productId: first.productId, offerId: `${first.productId}:${a.offers.length}` });
@@ -302,4 +305,15 @@ export class Channel3ResearchAdapter implements CommerceResearchAdapter {
   async getQuote(): Promise<MerchantQuote | null> { return null; }
 
   toJSON() { return { name: this.name, key: "[REDACTED]" }; }
+}
+
+/** V2.16: the number-bearing words of a title ("6G", "11G", "245x245x260mm"), normalized. */
+function numberTokens(title: string): Set<string> {
+  return new Set(title.toLowerCase().replace(/[^\p{L}\p{N}.:/x-]+/gu, " ").split(/\s+/).filter((w) => /\d/.test(w)).map((w) => w.replace(/[-.]/g, "")));
+}
+/** Two listings may be one product only when one title's number tokens are all in the other title. */
+export function numberTokensCompatible(a: string, b: string): boolean {
+  const x = numberTokens(a), y = numberTokens(b);
+  const sub = (p: Set<string>, q: Set<string>) => [...p].every((t) => q.has(t));
+  return sub(x, y) || sub(y, x);
 }

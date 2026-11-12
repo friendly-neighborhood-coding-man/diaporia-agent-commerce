@@ -105,6 +105,7 @@ const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_N
  */
 const ANY_ACC_LEAD = /(?:^|[\s,:;!?.])((?:[a-z][a-z-]*\s+){0,2}[a-z][a-z-]*)\s+(?:for|that fits?|compatible with|to fit)\s+(?:(?:my|the|a|an|our|your|his|her|their)\s+)?$/;
 const NOT_PART_LEAD = /^(?:a|an|the|one|some|any|something|anything|stuff|gift|gifts|present|presents|deal|deals|price|prices|budget|money|cash|time|room|space|upgrade|alternative|substitute|successor|replacement|sibling|version|model|option|options|help|advice|ideas?|quote|quotes|shipping|delivery|ready|good|best|great|perfect|ideal|suitable|enough|cheap|cheaper|me|us|it|this|that|these|those|just|only|also|please|thanks|buy|get|order|need|want|find|search|shop|look|pay|paid|spend|spent|went|go|going|similar|same|like|else|is|are|was|be|has|have|had)$/i;
+const PURPOSE_LEAD = /^(?:check|checks|info|information|review|reviews|specs?|details?|comparison|compare|question|questions|support|warranty|manual|price|cost|offer|offers|discount|coupon|sale|order|purchase|checkout|payment|recommendation|recommendations|suggestion|suggestions|research|search|me|myself|him|her|them|kid|kids|son|daughter|wife|husband|mom|dad|friend|work|home|travel|camping)$/i;
 function anyAccessoryLead(before: string): string | null {
   const m = ANY_ACC_LEAD.exec(before);
   if (!m) return null;
@@ -115,7 +116,11 @@ function anyAccessoryLead(before: string): string | null {
   const nounHead = REQUEST_PART_NOUN.test(head) || new RegExp(`^(?:${PART_NOUN.source})$`, "i").test(head) || ACCESSORY_NOUN.test(head) || (/^[a-z]{3,}s$/i.test(head) && !/(?:ss|us|is|ous)$/i.test(head))
     // V2.15 (IW-15 a14): any other plain word that is not a verb form or a descriptor is the noun ("welding wire").
     || (!/(?:ing|ed|ly)$/i.test(head) && !GENERIC_DESCRIPTOR.test(head) && !GENERIC_WORDS.has(head.toLowerCase()) && !NOT_PART_LEAD.test(head));
-  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)) || GENERIC_WORDS.has(w.toLowerCase()) && !REQUEST_PART_NOUN.test(w) && (i === ws.length - 1 || !nounHead))) return null;
+  // V2.16 (IW-16 a25, fail-closed): any other noun phrase before "for the <model>" is something for that model
+  // ("isolation valve set"); only a verb form at the head, or a word that names a person, a purpose, a search or an
+  // amount, keeps it from being a part request.
+  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || PURPOSE_LEAD.test(w) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)))) return null;
+  void GENERIC_WORDS;
   return ws.join(" ").replace(/s$/, "");
 }
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;

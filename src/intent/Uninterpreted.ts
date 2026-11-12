@@ -24,7 +24,7 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
   essential non-negotiable necessary needed requirement requirements must-have
   today now asap soon quickly fast shipping ship ships shipped delivery deliver delivered arrive arrives free returns return
   i'd i’d i'm i’m i've like thanks thank cheers hi hello hey gift present someone friend wife husband mom dad son daughter kid kids child children family home office work me myself
-  use using used new condition sealed unopened standalone bundle bundles bundled no not without but so then also too
+  use using used new condition unopened standalone bundle bundles bundled no not without but so then also too
   pair pairs set sets pack packs unit units piece pieces single one two three four five six seven eight nine ten
   usd eur gbp jpy krw dollar dollars euro euros won yen pound pounds bucks
   life keep keeps drinks drink safe adjustable built-in builtin setting lowest highest
@@ -96,6 +96,9 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
     if (/^\d+(?:st|nd|rd|th)$/.test(w) || /^\d+(?:인분|인용|구|세대)$/.test(w) || DECORATIVE.test(w)) continue;
     if (STOP.has(w) || STOP.has(bare) || ident.has(w) || ident.has(bare) || (GENERIC_WORDS.has(w) && !MATERIAL_WORD.test(w)) || COLOR_WORDS[w] || COLOR_WORDS[bare]) continue;
     if (Object.keys(parseAttributes(raw)).length || /^\d+(?:\.\d+)?[a-z]{1,4}$/i.test(w) && Object.keys(parseAttributes(raw.replace(/(\d)([a-z])/i, "$1 $2"))).length) continue;
+    // V2.16 (IW-16 d03): "sealed" is the condition only next to a condition word ("factory sealed", "new sealed",
+    // "sealed box"); otherwise it describes the product ("saltwater sealed") and is checked.
+    if (w === "sealed" && (/(?:factory|new|unopened|still|brand-new|in)\s*[,]?\s*$/i.test(text.slice(0, a)) || /^\s*(?:box|boxed|package|packaging|pack|in\s+(?:box|package))\b/i.test(text.slice(b)))) continue;
     if (/^(?:refurb(?:ished)?|renewed|reconditioned|used|pre-?owned|second-hand|open-box|리퍼|중고|미개봉|새것)$/i.test(w)) continue;
     if (w.length < 2 && !/[가-힣]/.test(w)) continue;
     // V2.11 (IW-11 fix order item 7): conversation around the request ("tbh", "my roommate keeps borrowing", "Hi … team,
