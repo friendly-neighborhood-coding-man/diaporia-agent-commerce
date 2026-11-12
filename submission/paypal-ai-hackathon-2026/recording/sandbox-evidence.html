@@ -1,0 +1,78 @@
+<!doctype html><html><head><meta charset=utf-8><style>
+body{font-family:Inter,system-ui,sans-serif;background:#f6f7f9;color:#1d2430;margin:0;font-size:15px;line-height:1.45}
+.banner{background:#1f4fb8;color:#fff;padding:14px 22px;font-weight:600;font-size:16px}
+.banner small{display:block;font-weight:400;opacity:.9;font-size:13.5px;margin-top:3px}
+.wrap{padding:8px 22px 30px} h2{font-size:19px;margin:14px 0 6px} table{border-collapse:collapse;font-size:13px;background:#fff}
+td,th{border:1px solid #d6dae1;padding:5px 7px;vertical-align:top;text-align:left} th{background:#eef1f5} code{background:#eef1f5;padding:0 3px;border-radius:3px;font-size:12.5px}
+p,li{font-size:14px} ul{margin:4px 0;padding-left:20px}
+</style></head><body><div class=banner>PayPal Sandbox evidence (recorded 2026-11-09, earlier build 421693f) &mdash; test API calls, no real money
+<small>Verbatim excerpt of docs/TEST_REPORT.md in the submitted repository. Not re-run for this video. The capture is PENDING / PENDING_REVIEW: COMPLETED was never observed.</small></div>
+<div class=wrap><h2>LIVE PayPal Sandbox E2E — run 2 (2026-11-09), owner-authorized, ONE new order</h2>
+<p><strong>Evidence class: LIVE PayPal Sandbox. No real money moved.</strong></p>
+<ul>
+<li>Build <code>421693f</code>. MCP host: Claude Code CLI talking to <code>http://127.0.0.1:8790/mcp</code>. Payments ran in <code>PAYPAL_SANDBOX</code> mode.</li>
+<li>Merchant: the fictional demo merchant alpha-audio.example. This was not a retail purchase.</li>
+<li>Run 1's order <code>9DL148415W2504835</code> was not captured or retried, and its unused run-1 mandate was revoked before run 2.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Time (UTC)</th>
+<th>Observed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>research → compare → prepare via Claude Code, no mandate</td>
+<td>10:08:50</td>
+<td><code>cs_7d85cbb3…</code> APPROVAL_REQUIRED, 5939 USD. Intended payee = configured Merchant ID. No order yet</td>
+</tr>
+<tr>
+<td>Owner page with a fresh $60.00 single-use limit</td>
+<td>10:09:21</td>
+<td>Mandate reserved 5939. <strong>One</strong> order created: <code>99X21669LS4807358</code></td>
+</tr>
+<tr>
+<td>Buyer approval (owner, Sandbox Personal account), then return to localhost</td>
+<td>10:10:27</td>
+<td>GET order returned APPROVED with matching amount, currency and <code>custom_id</code>, so the checkout moved to APPROVED</td>
+</tr>
+<tr>
+<td>Pre-capture recipient check</td>
+<td>10:10:28</td>
+<td>Merchant identity re-check MATCH, using a fresh MOCK attestation bound to this checkout. PayPal reported <code>payee.merchant_id</code> = configured ID (<strong>PAYMENT_PROVIDER</strong> provenance). No email reported, so <code>RECIPIENT_EMAIL_NOT_REPORTED</code> was recorded</td>
+</tr>
+<tr>
+<td>Capture (one request, one <code>PayPal-Request-Id</code>)</td>
+<td>10:10:28–29</td>
+<td>Capture <code>92U85747JU359434A</code>, status <strong>PENDING</strong>, reason <strong>PENDING_REVIEW</strong>. Checkout moved to CAPTURE_PENDING</td>
+</tr>
+<tr>
+<td>Read-only PayPal GET of the order and the capture</td>
+<td>~10:12</td>
+<td>Order <strong>COMPLETED</strong> (PayPal's order status after capture), amount 59.39 USD, payee merchant id matches, <strong>exactly 1 capture</strong>. Capture: PENDING / PENDING_REVIEW, 59.39 USD, final_capture true</td>
+</tr>
+<tr>
+<td>Server reconcile (provider reads only, no new capture)</td>
+<td>~10:13</td>
+<td>Still CAPTURE_PENDING. Recipient verified (PAYMENT_PROVIDER). Uncertainty: "Provider has not confirmed final settlement"</td>
+</tr>
+<tr>
+<td>Status + receipt via Claude Code</td>
+<td>~10:14</td>
+<td>CAPTURE_PENDING, 5939 USD, capture <code>92U85747JU359434A</code> PENDING. <code>paymentResult</code> null. merchantOrder NOT_VERIFIED. The audit chain ends with CAPTURE_REQUESTED → CAPTURE_PENDING → RECONCILED → CAPTURE_PENDING</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Result:</strong></p>
+<ul>
+<li><strong>Payment captured but not settled.</strong> PayPal holds the Sandbox capture in <code>PENDING_REVIEW</code>. DIAPORIA correctly reports <code>CAPTURE_PENDING</code>, not COMPLETED, and the mandate reservation is held, not consumed, until PayPal settles.</li>
+<li><strong>Verified live:</strong> amount and currency, order ownership (<code>custom_id</code>), buyer approval, the recipient merchant id (authoritative PayPal data), exactly one capture, no replacement order, and a pending capture distinguished from a completed one.</li>
+<li><strong>Not verified live:</strong> a COMPLETED capture. Merchant fulfillment does not apply, because the merchant is a fictional demo merchant.</li>
+</ul>
+<p>Notes:</p>
+<ul>
+<li>PayPal reports the order as <code>COMPLETED</code> once a capture exists, even while that capture is <code>PENDING</code>. DIAPORIA keys on the capture status.</li>
+<li>The pre-capture attestation id differs from the one bound at prepare by design: each re-check requests a fresh attestation bound to the same checkout, payee and legal entity.</li>
+</ul></div></body></html>

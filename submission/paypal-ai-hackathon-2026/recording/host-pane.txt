@@ -1,0 +1,49 @@
+
+
+● The shopping panel is open and DIAPORIA is researching now. The search is for
+  wireless headphones under $150 with multipoint and a lanyard loop, ranked by
+  lowest total price.
+
+  - Status: researching. I don't have candidates or prices yet.
+  - Ask me for a status check when you want one, and I'll summarize the top results
+    from the panel.
+  - Payment approval is a separate step that only you can do on the owner page.
+
+✻ Brewed for 11s · done 10:57 AM
+
+❯ The panel says it is paid. What exactly is complete?
+
+  Called diaporia
+
+● Only a payment capture is complete, and it's a mock one. This isn't a finished
+  purchase.
+
+  - What happened: The checkout for the Halden A8 shows a payment captured at
+    $138.35. That covers $129.00 for the item, $0 shipping and $9.35 tax, from
+    bravo-electronics.example. Capture ID: MOCKCAPE2960A1C8EA0.
+  - It's a mock payment. The payment provider is MOCK_PAYPAL. No PayPal API was
+    called and no money moved. The merchant is a fictional demo merchant and the
+    research data is fixture data, so nothing will ship.
+  - What isn't complete: The merchant order is not confirmed. DIAPORIA's own
+    statement says: "No merchant order confirmation was received and no fulfillment
+    or shipment is verified, so this is not a completed merchant purchase."
+
+  The audit timeline shows the steps were done on the owner side, not by me. The
+  Halden A8 was selected at 10:57:50, a spending mandate was created at 10:58:47,
+  and the mock buyer approval came at 10:58:52. An earlier mandate at 10:58:31 was
+  rejected and revoked unused.
+
+  - Price result: The Halden A8 is the only candidate with all three must-haves
+    verified. The manufacturer page lists wireless, multipoint and a lanyard loop.
+  - Lowest eligible total: The cheapest verified offer was bravo-electronics.example
+    at $138.35. That beat delta-deals.example at $139.76, even though delta's
+    listing price was lower.
+  - Ineligible offer: alpha-audi0.example listed it at $99.00, but it was excluded
+    because the payee didn't match the merchant's legal entity.
+
+✻ Cooked for 12s · done 10:59 AM
+
+────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

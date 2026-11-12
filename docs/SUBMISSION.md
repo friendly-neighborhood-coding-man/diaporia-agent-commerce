@@ -1,5 +1,7 @@
 # DIAPORIA Agent Commerce: submission notes
 
+> **Hackathon submission build (2026-11-12):** PR #15 at `be03b52` = frozen research engine `4bc7dcc` (PR #14) + the DIAPORIA Buy panel. 1045 tests pass, CI green. Video, Devpost text, verification report and checklist: [submission/paypal-ai-hackathon-2026/](../submission/paypal-ai-hackathon-2026/). The Devpost description there supersedes the shorter one below.
+
 This page is the reviewer's entry point. It says what DIAPORIA does, how to reproduce it, what is proven, what is simulated and what is still open. Numbers marked *seen* come from evaluation sets the builder has already looked at. They are regression evidence, not independent evidence.
 
 ## Project description (Devpost)
@@ -22,7 +24,7 @@ AI assistants can already find products. The risky part is everything after that
 git clone <repo> && cd diaporia-agent-commerce
 npm ci                 # Node.js 22.13+
 npm run demo:full      # unattended end-to-end demo, offline, MOCK; writes demo-output/<run>/trace.json + transcript.md + trace.sha256
-npm test               # 977 automated tests (offline)
+npm test               # 1045 automated tests on the submission build (offline)
 npm run typecheck
 ```
 
@@ -103,7 +105,7 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 
 - [x] One-command reproducible demo with a verified trace (`npm run demo:full`)
 - [x] README quick start and an honest status table
-- [x] Automated tests pass (1036) and the typecheck is clean
+- [x] Automated tests pass (1036 on `4bc7dcc`; 1045 on the submission build `be03b52`) and the typecheck is clean
 - [x] Secret scan clean (`npm run scan:secrets`)
 - [x] Fresh independent IW-5 scored once on e397ef9 (26/39, 1 bypass in 46; result recorded unchanged above)
 - [x] Fresh independent IW-6 scored once on 5e37f7f (24/45, 2 unsafe, 2 bypasses in 55; result recorded unchanged above)
@@ -122,5 +124,5 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 - [x] Fresh independent IW-19 scored once on 21fd52b (117/188, 12 unsafe, 12 bypasses in 235, legitimate checkouts 49/122; result recorded unchanged above)
 - [x] Fresh independent IW-20 scored once on 6989ba4 (102/161, 6 unsafe, 6 bypasses in 177, legitimate checkouts 56/118; after V2.19.2 now seen: 104/161, 0 unsafe, 0/177)
 - [ ] Fresh independent IW-21 for V2.19.2 (not run)
-- [ ] CI status on the final HEAD (to be recorded at the final checkpoint)
-- [ ] Demo video (record `npm run demo:full` and the owner pages; MOCK labels visible)
+- [x] CI green on `4bc7dcc` and on the submission build `be03b52` (test Node 22, test Node 24, gitleaks)
+- [x] Demo video recorded on `be03b52` (2:52.7, Buy panel beside Claude Code, MOCK labelled); YouTube upload by the owner (see submission/paypal-ai-hackathon-2026/submission-checklist.md)

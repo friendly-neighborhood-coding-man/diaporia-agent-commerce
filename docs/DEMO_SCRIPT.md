@@ -1,5 +1,7 @@
 # Three-minute demo script
 
+> The recorded submission video follows [submission/paypal-ai-hackathon-2026/demo-script.md](../submission/paypal-ai-hackathon-2026/demo-script.md) (Buy panel beside Claude Code). This page is the earlier terminal-based script, kept as an alternative.
+
 Each segment says which evidence class is on screen. Never describe simulated commerce as a real purchase. Full judge guide: [HACKATHON_DEMO.md](HACKATHON_DEMO.md).
 
 ## 0:00–0:20 · The problem (talk over the README)

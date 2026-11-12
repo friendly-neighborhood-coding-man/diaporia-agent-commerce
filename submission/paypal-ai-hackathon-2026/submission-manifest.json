@@ -1,0 +1,106 @@
+{
+  "project": "DIAPORIA Buy — Secure AI Purchasing for Every Assistant",
+  "hackathon": "PayPal AI Hackathon (Devpost)",
+  "deadline": "2026-11-12T20:00:00Z (12:00 PT; 2026-11-13 05:00 KST)",
+  "repository": "https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce",
+  "license": "MIT",
+  "source": {
+    "frozen_research_engine": {
+      "pr": 14,
+      "branch": "feature/research-v2.1-reliability",
+      "commit": "4bc7dcca29c3fbeb1fea791866e561521d6f8264"
+    },
+    "buy_panel_before_integration": {
+      "pr": 15,
+      "commit": "1b713aeddaf2707c57ca32abff203e6f49e1e6c0"
+    },
+    "submission_build": {
+      "pr": 15,
+      "branch": "feature/buy-browser-panel",
+      "commit": "be03b52c7587c8311a51f8d3748395260e9c4e6b",
+      "tree": "ee59c8d63b846ad3b1f64c405ad6b5d5c54301ed",
+      "method": "git merge --no-ff 4bc7dcc into feature/buy-browser-panel; no conflicts; no engine file changed"
+    },
+    "docs_commit": "the commit that adds this manifest (documentation and recording tooling only)"
+  },
+  "validation_on_submission_build": {
+    "node": "v22.23.4",
+    "typecheck": "pass",
+    "build": "pass",
+    "secret_scan": "330 files, no findings",
+    "tests": {
+      "files": 66,
+      "passed": 1045,
+      "failed": 0
+    },
+    "demo_full": "ALL_EXPECTATIONS_MET 18/18, trace sha256 19a5f39377add7aa88b6bb65cd40107e16a10765e839b4511bc97678095b0018",
+    "ci": {
+      "test (22)": "success",
+      "test (24)": "success",
+      "gitleaks": "success"
+    }
+  },
+  "video": {
+    "file": "demo-final.mp4",
+    "location": "project files: diaporia-buy-submission/demo-final.mp4 (not in git)",
+    "sha256": "81b6f6056133d33b6038f7b9897fde5b5d617eb41bc547cc4583ea84c6088892",
+    "duration_s": 172.663,
+    "resolution": "1920x1080",
+    "codec": "H.264 High 30fps + silent AAC",
+    "build_shown": "be03b52c7587c8311a51f8d3748395260e9c4e6b",
+    "live_segment_s": 153.66,
+    "live_segment_cuts": 0,
+    "raw_take": {
+      "file": "diaporia-buy-submission/recording-evidence/raw-take4-unedited.mp4",
+      "sha256": "f695a8a9c940fce52c2c8e4a526a94ba922fe274bfaeb3aa3b408ed74d6eeb7d"
+    },
+    "host": "Claude Code CLI 2.1.322, interactive, clean HOME, MCP over Streamable HTTP to 127.0.0.1:8790",
+    "simulated": [
+      "offline demo catalog and evidence world",
+      "fictional merchants",
+      "MOCK PayPal (no API call, no money)",
+      "scripted demo owner with DEV-ONLY owner key",
+      "prompts typed by the recording script",
+      "2.5 s simulated provider latency per call"
+    ],
+    "recorded_evidence_shown": "docs/TEST_REPORT.md PayPal Sandbox run 2 (2026-11-09, build 421693f): order 99X21669LS4807358, capture 92U85747JU359434A PENDING/PENDING_REVIEW"
+  },
+  "recording_files_sha256": {
+    "README.md": "f8d8c6ec974a8c8c56de25a44cf57e9b66da0c3cfad2221ba0f57978c4a582ac",
+    "build.py": "371fa578723b21d8ae2b85a849682711f80fc35c9cb5813ed7e355ba51badc3b",
+    "captions.ass": "3bf5fc76ee76c144a1234dbd6755cc116121d452f98d3b77dcdd2e6754085962",
+    "cards.cjs": "caf865b3aa9149ea9280e72aee1d7ea99936f8d9618a0cd326d430e8f14d3121",
+    "close.html": "45cc479252779d9201e8382bd87e535f7b0ce67d32832b771feaf893e8b8ab55",
+    "events.json": "58178c756e5cff22a581a83653b9c18b4e28bc7a19c7ec3545f776afe53f2c85",
+    "host-pane.txt": "2845ebde465c050ef5714a699855a75c11d35f7d9a9a23834194421ed806613c",
+    "hostenv.sh": "b0c1ecd9b50386d75a53f9d10a206b63062e650b39e748c14bb667bee0969a14",
+    "receipt.txt": "c7cf96295957a39de9b74a631ef245a1d3a231a29cc3001c46fa20fa118ee23a",
+    "record.cjs": "1365a4804c908e85f993d3e9c36567c22f5587880f17435b77e526b2d08592b4",
+    "reset.sh": "47663f9653d485687490a9c7111d4462163383dbb1d34890b44a9088471b7071",
+    "runhost.sh": "774039f3bfd2beeec7260e28b27cb1b74c8357866c22a0156a395950e39a407a",
+    "sandbox-evidence.html": "6fcedb06493ce94364e76f43a04ce212ecafde1a4f4597152eec5a527c2991ad",
+    "server.mts": "0120736b8e839f3945bb663fff7e2ae0b8a8cc44ca2307b2b3cac75186b81759",
+    "sysprompt.txt": "f978ef0711184a55a46b498fc75771cbc7dc5c7ec630ed542bc76be5b9be2038",
+    "title.html": "1b172b5fd7baf5406b8ec01737635b67a329bd06983789fc7e9a9ae43805dd13",
+    "waiting.html": "99b5c66842f1cab487f1e6c68bdd1469ac94509dbb40b63458b8dffdd956502d"
+  },
+  "evidence_references": [
+    "docs/TEST_REPORT.md",
+    "docs/INTEROP.md",
+    "docs/BUY_PANEL.md",
+    "docs/SUBMISSION.md",
+    "docs/PAYMENT_LIFECYCLE.md",
+    "submission/paypal-ai-hackathon-2026/verification-report.md"
+  ],
+  "not_claimed": [
+    "PayPal Agent Ready",
+    "PayPal Store Sync",
+    "Sandbox capture COMPLETED",
+    "merchant order or fulfilment",
+    "Claude Desktop in the video",
+    "Codex Desktop",
+    "MCP Apps hosts",
+    "fresh evaluation of the frozen build"
+  ],
+  "status": "PARTIALLY_READY until the owner uploads the video to YouTube and submits on Devpost"
+}
