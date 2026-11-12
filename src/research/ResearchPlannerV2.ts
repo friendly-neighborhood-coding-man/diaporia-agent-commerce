@@ -7,6 +7,7 @@ import type { EvidenceRouter, RouterResult, RouterStep } from "../evidence/Evide
 import { judgeV2, type CapabilityVerdict, type EvidenceItem } from "../evidence/EvidenceV2.js";
 import { hostOf } from "../evidence/SourceRegistry.js";
 import { clauseStatement, evidenceCapabilityOf, fitKey } from "./capabilities.js";
+import { applyObligationKernel } from "../verification/ObligationKernel.js";
 
 /** True when any clause of a listing text claims the capability (planner prior only). */
 function clauseStatementAny(text: string, cap: string): boolean | null {
@@ -47,6 +48,8 @@ export interface PlannerDeps {
   limits?: Partial<PlannerLimits>;
   /** V2.14: true when the offer's merchant is known to be ineligible (registry not ACTIVE, payee revoked). */
   merchantIneligible?: (offer: MerchantOffer) => Promise<boolean>;
+  /** Obligation kernel: the request text as written (identity words, numbers). */
+  requestText?: string | null;
 }
 export interface PlannerTrace {
   queries: Array<{ query: string; page: number; results: number; purpose: "PRIMARY" | "FALLBACK" | "NEXT_PAGE" | "VARIANT_DETAIL" }>;
@@ -65,10 +68,14 @@ export interface PlannerResult {
   trace: PlannerTrace;
   /** V2.4: a NAMED request whose variant was open was researched as discovery among the named model's listings. */
   namedFallback?: boolean;
+  /** Post-submission cycle 1: the intent reading actually researched (differs from the input only for a brand guess). */
+  intent?: ResearchIntentV2;
 }
 
 export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps): Promise<PlannerResult> {
-  let intent = intentIn;
+  // Post-submission cycle 1: a lowercase brand guess is researched first as the plain discovery reading; it becomes the
+  // exact reading only if the primary query returns a listing of that brand.
+  let intent = intentIn.brandGuess ? intentIn.brandGuess.fallback : intentIn;
   const L = { ...DEFAULT_PLANNER_LIMITS, ...(d.limits ?? {}) };
   const supported = CHANNEL3_CURRENCIES.has(intent.currency);
   const trace: PlannerTrace = { queries: [], catalogCalls: 0, evidenceSearches: 0, evidenceSteps: [], stops: [],
@@ -77,7 +84,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   const products = new Map<string, CatalogProduct>();
   const offers = new Map<string, MerchantOffer[]>();
   const excludedMerchantOffers: string[] = [];
-  const exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
+  let exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
 
   const baseQuery = (query: string): ProductSearchQuery => ({ text: query, query, category: intent.category, brand: exact ? intent.target!.brand : null, model: exact ? intent.target!.model : null,
     currency: supported ? intent.currency : null, country: null,
@@ -126,6 +133,15 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   // N-07: no query could be formed in the provider's language: no catalog call (nothing to search for).
   if (!intent.queries.primary.trim()) trace.stops.push("no search query could be formed in the provider's language; the request must name the product");
   else await runQueryGuarded(intent.queries.primary, "PRIMARY");
+  if (intentIn.brandGuess) {
+    const g = intentIn.brandGuess.brand.toLowerCase();
+    if ([...products.values()].some((p) => (p.identity.brand ?? "").toLowerCase() === g)) {
+      intent = { ...intentIn, brandGuess: undefined };
+      exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
+      trace.stops.push(`the catalog lists the brand "${intentIn.brandGuess.brand}": the lowercase request is read as that brand's product`);
+      if (exact && !familyFound()) await optional(() => runQuery(intent.queries.primary, "PRIMARY"), "the exact-product query");
+    }
+  }
   if (!exact && intent.queries.fallback && passing() < 5) await runQueryGuarded(intent.queries.fallback, "FALLBACK");
 
   let resolution: ResolutionV2 | null = null;
@@ -211,7 +227,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
       const fams = new Set(pre.filter((x) => x.p.identity.brand === brand).map((x) => `${x.p.identity.model}`.toLowerCase()));
       const left = Math.min(d.router.remainingSearches?.(d.ctx) ?? Infinity, L.maxEvidenceSearches);
       if (brand && fams.size >= 2 && fams.size > left) {
-        const r = await d.router.verifyMany(pre[0]!.p, caps, d.ctx, { sellers, maxSearches: 1, broad: true });
+        const r = await d.router.verifyMany(pre[0]!.p, caps, d.ctx, { sellers, maxSearches: 1, broad: true, listed: [...products.values()] });
         trace.evidenceSearches += r.searchesSent; trace.evidenceSteps.push(...r.steps);
       }
     }
@@ -228,7 +244,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
       if (trace.evidenceSearches >= L.maxEvidenceSearches) { notChecked.set(p.productId, caps); limitReached = true; trace.stops.push("evidence search limit reached"); continue; }
       if (!free) checked++;
       verifiedFamilies.add(fam);
-      const v = await verifyFor(d, p, caps, sellers, Math.min(L.maxEvidenceSearchesPerCandidate, L.maxEvidenceSearches - trace.evidenceSearches), trace);
+      const v = await verifyFor(d, p, caps, sellers, Math.min(L.maxEvidenceSearchesPerCandidate, L.maxEvidenceSearches - trace.evidenceSearches), trace, [...products.values()]);
       verdicts.set(p.productId, v.verdicts);
       if (v.blocked.length) { limitReached = true; notChecked.set(p.productId, v.blocked); trace.stops.push("usage limit reached during evidence; remaining requirements stay unverified"); }
       const allMust = intent.mustHave.every((m) => v.verdicts[m]?.status === "VERIFIED_TRUE") && propsHold(v.verdicts);
@@ -243,7 +259,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
     // retrieved (no new search). A sibling's search often returns this candidate's manufacturer page too.
     if (d.router?.policy === "v2") for (const { p } of pre) {
       if (verdicts.has(p.productId)) continue;
-      const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches: 0 });
+      const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches: 0, listed: [...products.values()] });
       trace.evidenceSteps.push(...r.steps);
       // Only a settled outcome is kept: every requirement decided, or one known false. A partial read changes nothing.
       const vs = Object.values(r.verdicts);
@@ -275,7 +291,10 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   });
   const exactFailure = namedFallback ? null : exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
   const decision = decide(intent, inputs, { exactLock: lock, exactFailure, weights: d.weights ?? null, now: d.now() });
-  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace, namedFallback };
+  // Architecture experiment: typed obligations checked after the decision; can only demote RECOMMEND (ObligationKernel.ts).
+  const klog = await applyObligationKernel({ lookupAllowed: trace.evidenceSearches < L.maxEvidenceSearches, intent, requestIntent: intentIn, requestText: d.requestText ?? null, products: [...products.values()], offers, decision, verdicts, excluded: resolution && "excluded" in resolution ? resolution.excluded.map((e) => ({ productId: e.productId, reason: e.reason })) : [] }, { router: d.router, ctx: d.ctx });
+  trace.evidenceSearches += klog.pageLookups;
+  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace, namedFallback, intent };
 }
 
 /** V1 capability status (any non-listing claim decides; listing claims never do). */
@@ -307,10 +326,10 @@ function fixtureVerdicts(p: CatalogProduct, caps: string[]): Record<string, Capa
   }));
 }
 
-async function verifyFor(d: PlannerDeps, p: CatalogProduct, caps: string[], sellers: string[], maxSearches: number, trace: PlannerTrace) {
+async function verifyFor(d: PlannerDeps, p: CatalogProduct, caps: string[], sellers: string[], maxSearches: number, trace: PlannerTrace, listed: CatalogProduct[] = []) {
   if (!d.router) return { verdicts: fixtureVerdicts(p, caps), blocked: [] as string[] };
   if (d.router.policy === "v2") {
-    const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches });
+    const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches, listed });
     trace.evidenceSearches += r.searchesSent; trace.evidenceSteps.push(...r.steps);
     return { verdicts: r.verdicts, blocked: r.blockedByLimit };
   }
