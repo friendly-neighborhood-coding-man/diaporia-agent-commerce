@@ -65,10 +65,14 @@ export interface PlannerResult {
   trace: PlannerTrace;
   /** V2.4: a NAMED request whose variant was open was researched as discovery among the named model's listings. */
   namedFallback?: boolean;
+  /** Post-submission cycle 1: the intent reading actually researched (differs from the input only for a brand guess). */
+  intent?: ResearchIntentV2;
 }
 
 export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps): Promise<PlannerResult> {
-  let intent = intentIn;
+  // Post-submission cycle 1: a lowercase brand guess is researched first as the plain discovery reading; it becomes the
+  // exact reading only if the primary query returns a listing of that brand.
+  let intent = intentIn.brandGuess ? intentIn.brandGuess.fallback : intentIn;
   const L = { ...DEFAULT_PLANNER_LIMITS, ...(d.limits ?? {}) };
   const supported = CHANNEL3_CURRENCIES.has(intent.currency);
   const trace: PlannerTrace = { queries: [], catalogCalls: 0, evidenceSearches: 0, evidenceSteps: [], stops: [],
@@ -77,7 +81,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   const products = new Map<string, CatalogProduct>();
   const offers = new Map<string, MerchantOffer[]>();
   const excludedMerchantOffers: string[] = [];
-  const exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
+  let exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
 
   const baseQuery = (query: string): ProductSearchQuery => ({ text: query, query, category: intent.category, brand: exact ? intent.target!.brand : null, model: exact ? intent.target!.model : null,
     currency: supported ? intent.currency : null, country: null,
@@ -126,6 +130,15 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   // N-07: no query could be formed in the provider's language: no catalog call (nothing to search for).
   if (!intent.queries.primary.trim()) trace.stops.push("no search query could be formed in the provider's language; the request must name the product");
   else await runQueryGuarded(intent.queries.primary, "PRIMARY");
+  if (intentIn.brandGuess) {
+    const g = intentIn.brandGuess.brand.toLowerCase();
+    if ([...products.values()].some((p) => (p.identity.brand ?? "").toLowerCase() === g)) {
+      intent = { ...intentIn, brandGuess: undefined };
+      exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
+      trace.stops.push(`the catalog lists the brand "${intentIn.brandGuess.brand}": the lowercase request is read as that brand's product`);
+      if (exact && !familyFound()) await optional(() => runQuery(intent.queries.primary, "PRIMARY"), "the exact-product query");
+    }
+  }
   if (!exact && intent.queries.fallback && passing() < 5) await runQueryGuarded(intent.queries.fallback, "FALLBACK");
 
   let resolution: ResolutionV2 | null = null;
@@ -275,7 +288,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   });
   const exactFailure = namedFallback ? null : exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
   const decision = decide(intent, inputs, { exactLock: lock, exactFailure, weights: d.weights ?? null, now: d.now() });
-  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace, namedFallback };
+  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace, namedFallback, intent };
 }
 
 /** V1 capability status (any non-listing claim decides; listing claims never do). */

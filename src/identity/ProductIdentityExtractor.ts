@@ -238,9 +238,40 @@ function siblingSuffix(w: string, raw: string, next: string[], request: boolean)
   return false;
 }
 
+/**
+ * Post-submission cycle 1 (F5): one canonical spelling for a quantity written inside a model name. "150 ft", "150-foot",
+ * "150 feet" and "150ft" are the same model token; so are "10 A" / "10-amp" / "10A", "54 centimeter" / "54cm", "40 inch" /
+ * '40"' / "40in", "40 gallon" / "40gal", "7-kilowatt" / "7kW", "1/2 HP" / "1/2HP". Request and title then produce the same
+ * family key, and the unit is never dropped from the model. Spaced single-letter units are joined only when written in
+ * capitals ("10 A", never "10 a"), and a spaced "in" never is (it is the preposition). Count nouns and grains stay as written.
+ */
+const UNIT_CANON: Array<[RegExp, string]> = [
+  [/^(?:ft|foot|feet)$/i, "ft"], [/^(?:in|inch|inches|"|”|″)$/i, "in"], [/^(?:cm|centimet(?:er|re)s?)$/i, "cm"], [/^(?:mm|millimet(?:er|re)s?)$/i, "mm"],
+  [/^(?:a|amps?|amperes?)$/i, "A"], [/^(?:kw|kilowatts?)$/i, "kW"], [/^(?:w|watts?)$/i, "W"], [/^(?:l|lit(?:er|re)s?)$/i, "L"],
+  [/^(?:gal|gallons?)$/i, "gal"], [/^(?:hp|horsepower)$/i, "HP"], [/^(?:v|volts?)$/i, "V"],
+];
+const UNIT_WORD = /(\d+(?:\.\d+)?(?:\/\d+)?)(?:(?:\s*-\s*|\s+)(feet|foot|ft|inch(?:es)?|centimet(?:er|re)s?|millimet(?:er|re)s?|cm|mm|amps?|amperes?|kilowatts?|kw|watts?|lit(?:er|re)s?|gallons?|gal|horsepower|hp|volts?|A|W|V|L)(?![\p{L}\p{N}])|\s*("|”|″))/giu;
+export function canonicalUnits(text: string): string {
+  return text.replace(UNIT_WORD, (all, num: string, unit: string | undefined, mark: string | undefined) => {
+    const u = unit ?? mark!;
+    // A spaced single letter is a unit only in capitals ("10 A"); "10 a" stays as written.
+    if (unit && u.length === 1 && u !== u.toUpperCase()) return all;
+    const hit = UNIT_CANON.find(([re]) => re.test(u));
+    return hit ? `${num}${hit[1]}` : all;
+  });
+}
+/** A regex source that matches any spelling of a canonical unit model token ("150ft" -> 150 ft / 150-foot / 150 feet ...). */
+export function unitTokenPattern(token: string): string | null {
+  const m = /^(\d+(?:\.\d+)?(?:\/\d+)?)(ft|in|cm|mm|A|kW|W|L|gal|HP|V)$/i.exec(token);
+  if (!m) return null;
+  const alt: Record<string, string> = { ft: "ft|foot|feet", in: 'in|inch|inches|"|”|″', cm: "cm|centimet(?:er|re)s?", mm: "mm|millimet(?:er|re)s?", a: "a|amps?|amperes?",
+    kw: "kw|kilowatts?", w: "w|watts?", l: "l|lit(?:er|re)s?", gal: "gal|gallons?", hp: "hp|horsepower", v: "v|volts?" };
+  return `${m[1]!.replace(/[./]/g, (c) => "\\" + c)}\\s*-?\\s*(?:${alt[m[2]!.toLowerCase()]})`;
+}
+
 /** Named model phrase: words after the brand up to the first generic word, product noun, attribute or punctuation (max 4 words). */
 export function namedModelAfter(text: string, brand: string | null, request = false): string | null {
-  const t = text.normalize("NFKC");
+  const t = canonicalUnits(text.normalize("NFKC"));
   let rest = t;
   if (brand) {
     const m = new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(brand)}(?:'s)?(?=[^A-Za-z0-9]|$)`, "i").exec(t);
@@ -291,7 +322,7 @@ export function namedModelAfter(text: string, brand: string | null, request = fa
     // stay attributes.
     // V2.16 (IW-16 failure 4): any unit letter does the same ("Gale 6G", "Tarn 4P"); only storage, pack and count
     // units stay attributes.
-    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?[a-z]{1,3}$/i.test(w) && !/^\d+(?:\.\d+)?(?:gb|tb|mb|pk|ct|pcs?|oz|ft|hrs?|h|x)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
+    if (words.length && !words.some((x) => /\d/.test(x)) && /^\d+(?:\.\d+)?[a-z]{1,3}$/i.test(w) && !/^\d+(?:\.\d+)?(?:gb|tb|mb|pk|ct|pcs?|oz|hrs?|h|x)$/i.test(w)) { words.push(w); if (stop || words.length >= 4) break; continue; }
     if (!w || (!codeInRequest && (GENERIC.has(lw) || GENERIC.has(lw.replace(/'s$/, "")))) || UNIT_TOKEN.test(w) || /^\d+(?:\.\d+)?-?(?:cup|oz|inch|in|gb|tb|l|ml)$/i.test(w)
       || COLOR_WORDS[lw] || /[가-힣]/.test(w)) break;
     words.push(w);
@@ -307,8 +338,10 @@ const DESCRIPTIVE_CODE = /^(?:HD|FHD|UHD|QHD|RGB|TWS|USB|LED|LCD|OLED|ANC|ENC|NF
 const TECH_SUFFIX = /^(?:IH|GaN|PD|ANC|ENC|OLED|QLED|IPS|HDR|HDR10|Wi-?Fi|BT|NFC|USB-?C|LED|LCD|DC|AC|UV|HEPA|IPX?\d|IP\d\d)$/;
 const AIR_NOUN = /^\s+(?:compressors?|purifiers?|fryers?|pumps?|mattress(?:es)?|hoses?|conditioners?|filters?|beds?|cleaners?|cooler|coolers|circulators?|movers?|inflators?|tools?|guns?|tanks?)\b/i;
 export function extractIdentity(title: string, brand: string | null, opts: { request?: boolean } = {}): ExtractedIdentity {
-  const t = title.normalize("NFKC").replace(/\s+/g, " ").trim();
-  const attributes = parseAttributes(t);
+  const t0 = title.normalize("NFKC").replace(/\s+/g, " ").trim();
+  // Attributes are read from the title as written (screen sizes, capacities); only the model parse uses canonical units.
+  const attributes = parseAttributes(t0);
+  const t = canonicalUnits(t0);
   const titleCondition = /\b(renewed|refurbished|reconditioned|refurb)\b/i.test(t) ? "refurbished" : /\bopen[- ]box\b/i.test(t) ? "open_box" : /\b(used|pre-?owned)\b/i.test(t) ? "used" : null;
   // Accessory: "<accessory noun> ... for <product>" or "Replacement ...". The model is the TARGET product's model.
   const forIdx = t.search(/\b(?:for|compatible with|fits)\b/i);

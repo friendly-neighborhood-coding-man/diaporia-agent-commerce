@@ -63,6 +63,11 @@ function partNamedAfterModel(p: CatalogProduct, noun: string): boolean {
   if (at < 0) return false;
   const head = noun.trim().split(/\s+/).at(-1)!;
   const after = title.slice(at + m!.length);
+  // Post-submission cycle 1 (F3): the part noun must be the head of the noun phrase after the model, never a modifier
+  // inside the host's own product noun: "Hose Reel" after the model is a reel (the host), not a "leader hose".
+  const phrase = after.split(/[,;(|–—]|\s-\s|\s+(?:with|for|and|in|by|includes?)\s/i)[0]!;
+  const lastWord = (phrase.match(/[A-Za-z][A-Za-z-]*/g) ?? []).at(-1) ?? "";
+  if (!nounRe(head).test(lastWord)) return false;
   return nounRe(head).test(after) && !(after.match(KIND_NOUN) ?? []).some((k) => nounKey(k) !== nounKey(head));
 }
 export type ResolutionV2 =
