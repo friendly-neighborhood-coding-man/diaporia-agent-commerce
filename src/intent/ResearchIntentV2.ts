@@ -22,6 +22,13 @@ export interface ResearchIntentV2 {
    * the `fallback` reading (no brand), so a category phrase ("roof box 450l") is never locked as a brand.
    */
   brandGuess?: { brand: string; fallback: ResearchIntentV2 };
+  /**
+   * EXPERIMENT (experiment/typed-semantic-v02): a Latin spelling an interpreter proposed for a brand the request wrote in
+   * another script. Never set by the TypeScript parser. The planner keeps this reading only when the primary query's
+   * results list a catalog brand equal to `brand` (normalized, no fuzzy match), none of the `alternatives`, and not the
+   * `original` spelling itself; otherwise it discards those results and researches the `fallback` reading.
+   */
+  brandProposal?: { brand: string; original: string; alternatives: string[]; fallback: ResearchIntentV2 };
   mode: IntentMode;
   language: "en" | "ko";
   currency: Currency;
