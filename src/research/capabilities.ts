@@ -194,7 +194,9 @@ export function numericProposition(id: string): NumericProposition | null {
 function numericStatement(clause: string, p: NumericProposition): boolean | null {
   const c = clause.normalize("NFKC");
   // V2.7: a word unit is matched in its plural ("13 inches", "40 lumens").
-  const unitRe = p.unit ? (/^watts?$|^w$/.test(p.unit) ? "(?:w|watts?)" : /^[a-z]{3,}$/.test(p.unit) ? `${escRe(p.unit.replace(/e?s$/, ""))}(?:e?s)?` : escRe(p.unit)) : "";
+  const unitRe0 = p.unit ? (/^watts?$|^w$/.test(p.unit) ? "(?:w|watts?)" : /^percent$/.test(p.unit) ? "(?:%|percent|per ?cent)" : /^[a-z]{3,}$/.test(p.unit) ? `${escRe(p.unit.replace(/e?s$/, ""))}(?:e?s)?` : escRe(p.unit)) : "";
+  // V2.11: a rating qualifier between the number and the unit ("3,200 ANSI lumens", "500 W peak") is the same unit.
+  const unitRe = unitRe0 ? `(?:(?:ANSI|ISO|LED|rated|nominal|continuous|usable|effective)\\s+)?${unitRe0}` : "";
   const tok = (w: string) => /^[a-z]{4,}$/i.test(w) ? `${escRe(w.replace(/(?:es|s)$/i, ""))}(?:s|es|ed|ing)?` : escRe(w);
   // The other words ("USB-C power delivery") must be stated next to the number, before or after it ("USB-C with 90 W
   // power delivery", "90W USB-C charging"): within 40 characters on either side.

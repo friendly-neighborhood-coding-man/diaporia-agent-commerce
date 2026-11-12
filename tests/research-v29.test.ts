@@ -161,7 +161,7 @@ describe("V2.11 category names, spec lines and part pages", () => {
     expect(requestCategory("e-bike")?.id).toBe("electric-bikes");
     expect(requestCategory("robotic lawnmower")?.id).toBe("robot-lawn-mowers");
     expect(requestCategory("ebook reader")?.id).toBe("e-readers");
-    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).toEqual(["unrecognized:at-least-40-km"]);
+    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).toEqual(["unrecognized:at-least-40-km-range"]);
   });
   it("'Built-in pump: no' denies the pump", async () => {
     const { clauseStatement } = await import("../src/research/capabilities.js");
@@ -171,5 +171,27 @@ describe("V2.11 category names, spec lines and part pages", () => {
   it("a page about a part of the model says nothing about the product itself", () => {
     const bike = product("c3", "Pellan C3 Electric Bike", "Pellan", "electric-bikes");
     expect(statementFrom({ title: "Pellan C3 Spare Battery", snippet: "The Pellan C3 Spare Battery fits the Pellan C3 Electric Bike, which is cordless." }, bike, "cordless")).toBeNull();
+  });
+});
+
+describe("V2.11 spec wording, part exclusions and conversation", () => {
+  it("a capacity verb with a number is a minimum with its noun; a rating qualifier keeps the unit", async () => {
+    const { clauseStatement } = await import("../src/research/capabilities.js");
+    expect(intent("Abrin robot mower that handles 35% slopes").unresolvedMust).toContain("unrecognized:at-least-35-percent-slopes");
+    expect(clauseStatement("It handles slopes up to 30%.", "unrecognized:at-least-35-percent-slopes")).toBe(false);
+    expect(intent("dehumidifier that removes 20 L a day").unresolvedMust).toEqual(["unrecognized:at-least-20-l-day"]);
+    expect(clauseStatement("Capacity: 25 L/day.", "unrecognized:at-least-20-l-day")).toBe(true);
+    expect(clauseStatement("It is rated at 2,400 ANSI lumens.", "unrecognized:at-least-2000-lumens")).toBe(true);
+    expect(intent("robot mower for a lawn of 800 m²").unresolvedMust).toContain("unrecognized:at-least-800-m2-lawn");
+  });
+  it("'<exact product>, without the cover' asks for the product alone", () => {
+    const i = intent("Contoso Hearth 12 Dual Fuel, without the cover");
+    expect(i.unresolvedMust).toEqual([]);
+    expect(i.excludeBundles).toBe(true);
+  });
+  it("conversation around the request is not a requirement, and the brand's clause holds the model", () => {
+    expect(intent("lol my roommate keeps borrowing my Mirelle T5, so I need my own Mirelle T5").uninterpreted).toEqual([]);
+    expect(intent("tbh I'd be happy with the Quillon K7 Max, my old one died").target.model).toBe("K7 Max");
+    expect(intent("65 inch TV with HDMI 2.1 under $1.2k").target).toBeNull();
   });
 });

@@ -202,7 +202,11 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     // before it ("Hi! …:", "I'm getting into astronomy …:") is never the product.
     const segStart = Math.max(...[". ", "! ", "? ", ": ", "; ", "!", "?"].map((m) => { const k = text.lastIndexOf(m, brandHit.index); return k >= 0 ? k + m.length : 0; }));
     const from = Math.max(from0, segStart <= brandHit.index ? segStart : 0);
-    const clause = text.slice(from).split(/,\s*(?:but|and|only|if|under|budget|ideally|must|with)\b|[.!?](?:\s|$)|\s+(?:but|only if|under|below|less than|budget|with(?:out)?|money)\b|\s+\d[\d,]*\s*(?:달러|만\s*원|원)/i)[0]!;
+    const CLAUSE_END = /,\s*(?:but|and|only|if|under|budget|ideally|must|with)\b|[.!?](?:\s|$)|\s+(?:but|only if|under|below|less than|budget|with(?:out)?|money)\b|\s+\d[\d,]*\s*(?:달러|만\s*원|원)/i;
+    // V2.11: the product phrase is the clause that holds the brand ("tbh I'd be happy with the Layrix K2 Max": the
+    // words before "with" are conversation, never the model).
+    let clause = text.slice(from).split(CLAUSE_END)[0]!;
+    if (from + clause.length <= brandHit.index && /\bwith\s+(?:the|a|an|my|our)\s+$/i.test(text.slice(0, brandHit.index))) clause = text.slice(brandHit.index).split(CLAUSE_END)[0]!;
     const ex = extractIdentity(clause.replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand, { request: true });
     let model = input.exactProduct?.model ?? ex.model;
     // V2.9: a part noun the parse kept at the end of the model ("Spinlo T3 Belt") is the part asked for, not a name.
@@ -266,7 +270,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     if (!attributes.generation && g) attributes.generation = g[1] ? String(Number(g[1])) : g[3] ? String(Number(g[3])) : ({ first: "1", second: "2", third: "3", fourth: "4", fifth: "5", sixth: "6" } as Record<string, string>)[g[2]!.toLowerCase()]!;
   }
   // A capacity of the TARGET product the accessory fits ("carafe for the Brewmaster 12-cup") is an attribute of the accessory.
-  const excludeBundles = /\bstandalone\b|\bno bundles?\b|\bwithout (?:a )?bundle\b|\bnot (?:a )?bundle\b|번들 제외|단품/i.test(text);
+  let excludeBundles = /\bstandalone\b|\bno bundles?\b|\bwithout (?:a )?bundle\b|\bnot (?:a )?bundle\b|번들 제외|단품/i.test(text);
 
   // Condition: explicit words only. Default NEW (stated as an assumption).
   let condition: Condition = "new"; let conditionStated = false;
@@ -282,8 +286,15 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   const requirements = extractRequirements(money.parse.masked, targetSpan, [target?.brand ?? "", target?.model ?? ""].filter(Boolean), { mustHave: input.mustHave ?? [], niceToHave: input.niceToHave ?? [] }, { objectSizes });
   const must = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "MUST").map((r) => r.capability!));
   const nice = new Set<string>(requirements.filter((r) => r.recognized && r.polarity === "REQUIRED" && r.strength === "NICE").map((r) => r.capability!).filter((c) => !must.has(c)));
-  const unresolvedMust = requirements.filter((r) => r.strength === "MUST" && (!r.recognized || r.polarity === "EXCLUDED")).map((r) => r.key);
-  for (const r of requirements.filter((x) => x.strength === "MUST" && (!x.recognized || x.polarity === "EXCLUDED")))
+  // V2.11 (IW-11 a07): "Fornacci-style <exact product>, without the cover": an excluded accessory or part noun after an
+  // exact standalone product asks for the product alone (no bundle with that part), not for a product that lacks a
+  // feature. The resolver already locks only the standalone listing; bundles are excluded too.
+  const partOnly = (r: StatedRequirement) => !!target && target.kind === "STANDALONE" && r.polarity === "EXCLUDED" && !r.recognized
+    && (REQUEST_PART_NOUN.test(r.key.replace(/^not:/, "").replace(/-/g, " ")) || new RegExp(`^(?:${ACCESSORY_NOUN.source.replace(/^\\b\(|\)\\b$/g, "")})s?$`, "i").test(r.key.replace(/^not:/, "").replace(/-/g, " ")));
+  for (const r of requirements) if (partOnly(r)) { excludeBundles = true; assumptions.push(`"${r.text}" is read as: the product alone, without that part or a bundle that includes it.`); }
+  const openReq = requirements.filter((x) => x.strength === "MUST" && (!x.recognized || x.polarity === "EXCLUDED") && !partOnly(x));
+  const unresolvedMust = openReq.map((r) => r.key);
+  for (const r of openReq)
     assumptions.push(`Requirement "${r.text}" (${r.polarity === "EXCLUDED" ? "must NOT have" : "must have"}) cannot be verified automatically; it stays open until evidence or the owner settles it.`);
 
   const cat = requestCategory(target && targetSpan ? text : text);

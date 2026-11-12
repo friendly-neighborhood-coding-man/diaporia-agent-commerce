@@ -38,6 +38,9 @@ const STOP = new Set(`a an the of to for with and or in on at by from into onto 
   좋은 괜찮은 싼 저렴한 가성비 최저가 가장 제일 새 새것 정품 신품 하나 개 제품 상품 것 이하 이상 정도 짜리 용 대 쓸 쓸만한 있는 없는 되는 해줘 주세요
   그리고 하지만 또는 및 꼭 반드시 무조건 가능하면 이면 으로 로 에 에서 를 을 이 가 은 는 의 도 만 와 과 랑 하고 예산 가격 원 달러 만원`.split(/\s+/).filter(Boolean));
 
+const CONVERSATIONAL = /^(?:lol|lmao|tbh|honestly|ngl|btw|fyi|imo|basically|actually|literally|anyway|anyways|okay|ok|yeah|yep|hmm|um|uh|roommate|roommates|flatmate|neighbor|neighbour|coworker|colleague|partner|boyfriend|girlfriend|borrow|borrows|borrowing|borrowed|own|mine|keeps|keep|happy|glad|fine|died|dead|broke|broken|old|team|quick|question|questions|wondering|curious|night|weekend|morning|evening|finally|already|still|again|since|because|cause|cuz|before|after|pile|piles)$/i;
+const KO_CONVERSATIONAL = /^(?:안녕하세요|안녕|감사합니다|고맙습니다|수고하세요|혹시|그냥|요즘|이번|다음|올해|(?:장마|장마철|여름|겨울|봄|가을|연말|명절|추석|설|설날|휴가|이사)(?:철)?(?:이라서요|이라서|이라|이니까|이어서|에는|엔|에|이라고|이에요|이네요|이고)?|주실|수|있나요|있을까요|될까요|부탁드려요|부탁드립니다|부탁해요)$/u;
+
 export interface UninterpretedWord { text: string; span: [number, number] }
 
 /**
@@ -77,6 +80,9 @@ export function uninterpretedWords(text: string, covered: Array<[number, number]
     if (Object.keys(parseAttributes(raw)).length || /^\d+(?:\.\d+)?[a-z]{1,4}$/i.test(w) && Object.keys(parseAttributes(raw.replace(/(\d)([a-z])/i, "$1 $2"))).length) continue;
     if (/^(?:refurb(?:ished)?|renewed|reconditioned|used|pre-?owned|second-hand|open-box|리퍼|중고|미개봉|새것)$/i.test(w)) continue;
     if (w.length < 2 && !/[가-힣]/.test(w)) continue;
+    // V2.11 (IW-11 fix order item 7): conversation around the request ("tbh", "my roommate keeps borrowing", "Hi … team,
+    // quick question", "안녕하세요", "장마철이라서요") says why or how the person asks, never what the product must be.
+    if (CONVERSATIONAL.test(w) || CONVERSATIONAL.test(bare) || KO_CONVERSATIONAL.test(w)) continue;
     out.push({ text: raw, span: [a, b] });
   }
   return out;

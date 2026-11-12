@@ -116,6 +116,8 @@ const CAP_PART = /baskets?|lids?|jars?|bowls?|trays?|carafes?|parts|pots?|blades
 /** V2.5: spans of context (lead-in before a colon, purpose phrases, relative clauses about a person). */
 /** V2.10: verbs after which "up to N" is a rating the product must reach (a minimum). */
 const CAPACITY_VERB = /\b(?:supports?|supporting|holds?|holding|carr(?:y|ies)|carrying|covers?|covering|seats?|seating|fits?|fitting|handles?|handling|takes?|accommodates?|lifts?|loads?|rated(?: for)?|capacity(?: of)?|runs?|lasts?|reaches|reach|charges?|stores?|serves?|cleans?|cools?|heats?|prints?|records?|mows?|tows?|pulls?|plays?|goes|go|travels?|ranges?|range of|brews?|makes?|cooks?|connects?|pairs?|users?|people|persons?|riders?)\s+(?:\w+\s+){0,2}$/i;
+/** V2.11: a capacity verb right before a threshold ("removes at least 16 L a day") belongs to the threshold. */
+const THRESHOLD_VERB = /^(?:supports?|holds?|carr(?:y|ies)|covers?|handles?|takes?|lifts?|runs?|lasts?|reaches|removes?|extracts?|dehumidifies|climbs?|bakes?|cooks?|mows?|prints?|serves?|stores?|charges?)$/i;
 /** V2.10: words after which "up to N" is a maximum ("weighs up to 2 kg", "noise up to 40 dB"). */
 const MAX_CONTEXT = /\b(?:weighs?|weighing|weight|measures?|noise|loud|loudness|costs?|thick|thickness|tall|height|wide|width|deep|depth|long|length|sized?|draws?|uses?|consumes?)\s+(?:\w+\s+){0,2}$/i;
 
@@ -303,7 +305,7 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
         if (CAPACITY_VERB.test(before)) dir = "at-least";
         else if (!MAX_CONTEXT.test(before)) dir = "up-to";
       }
-      const unit = t[3]!.trim().replace(/\s+(?:a|per|each|on|in|at|its|of|the|day)$/i, "");
+      const unit = t[3]!.trim().replace(/\s*(?:\s(?:a|per|each)\s|\/)\s*(day|hour|week|month)$/i, " $1").replace(/\s+(?:a|per|each|on|in|at|its|of|the)$/i, "").replace(/%/g, "percent");
       const phrase = `${dir === "at-most" ? "at most" : dir === "at-least" ? "at least" : "up to"} ${t[2]!.replace(/,/g, "")} ${unit}`;
       const abs = at + t.index!;
       if (inTarget(abs)) continue;
@@ -316,6 +318,23 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
       const phrase = `${dir === "at-most" ? "at most" : "at least"} ${t[1]!.replace(/,/g, "")} ${t[2]!.trim()}`;
       const abs = at + t.index!;
       if (inTarget(abs)) continue;
+      add({ key: `unrecognized:${slugOf(phrase)}`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+    }
+    // V2.11 (IW-11 fix order item 5): a capacity verb with a number ("handles 45% slopes", "removes 16 L a day",
+    // "covers 1,000 m² lawns") states a rating the product must reach: a minimum, with the measured noun kept.
+    for (const t of clause.matchAll(/\b(handles?|removes?|extracts?|dehumidifies|climbs?|covers?|supports?|holds?|carr(?:y|ies)|lifts?|bakes?|cooks?|mows?|serves?)\s+(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(%|[a-z][a-z0-9²³]*)(?:(?:\s+(?:a|per|each)\s+|\s*\/\s*)(day|hour|week))?(?:\s+(?!(?:and|or|but|with|for|under|that|which|of)\b)([a-z]+))?/gi)) {
+      const abs = at + t.index!;
+      if (inTarget(abs) || recognizedSpans.some(([s, e]) => s <= t.index! + t[0].length && e >= t.index!) || out.some((r) => r.span[0] <= abs && abs < r.span[1])) continue;
+      const unit = t[3] === "%" ? "percent" : t[3]!.toLowerCase();
+      if (!/^(?:percent|l|liters?|litres?|kg|lbs?|m2|m²|sq|km|mi|miles?|cups?|qt|oz|lb|people|persons?|riders?|users?|loaves|slices?)$/.test(unit)) continue;
+      const phrase = ["at least", t[2]!.replace(/,/g, ""), unit.replace("m²", "m2"), t[4] ?? "", t[5] ?? ""].filter(Boolean).join(" ");
+      add({ key: `unrecognized:${slugOf(phrase)}`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
+    }
+    // "for a lawn of 1,000 m²", "for a room up to 40 m²": the area the product must cover (a minimum).
+    for (const t of clause.matchAll(/\bfor\s+(?:a|an|my|our|the)?\s*(lawns?|gardens?|yards?|rooms?|spaces?|areas?|basements?|homes?)\s+(?:of|up to|around|about)\s+(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(m2|sq\s?ft|sqft|square (?:meters|metres|feet))/gi)) {
+      const abs = at + t.index!;
+      if (inTarget(abs) || out.some((r) => r.span[0] <= abs && abs < r.span[1])) continue;
+      const phrase = `at least ${t[2]!.replace(/,/g, "")} ${t[3]!.replace(/\s+/g, "").toLowerCase()} ${t[1]!.toLowerCase()}`;
       add({ key: `unrecognized:${slugOf(phrase)}`, text: t[0], span: [abs, abs + t[0].length], recognized: false, capability: null, polarity: "REQUIRED", strength, source: "REQUEST_TEXT" });
     }
     // V2.5: an ingress rating ("IPX7", "IP68") is a stated property, verified by the same rating on the page.
@@ -383,10 +402,26 @@ export function extractRequirements(text: string, targetSpan: [number, number] |
   }
   // V2.10: "a range of at least 100 km": the noun before a threshold ("range of", "capacity of") names the measured
   // quantity; the threshold requirement right after it states it, so the dangling noun is not a requirement of its own.
+  // V2.11: the measured noun is kept as the threshold's words ("at least 100 km" + "range"), so a page number counts
+  // only next to that noun; a capacity verb before it ("removes", "handles") is part of the threshold too.
   for (const r of [...out]) {
-    if (r.source !== "REQUEST_TEXT" || r.recognized || !/\s(?:of|for)$/i.test(r.text.trim())) continue;
+    const tx = r.text.trim();
+    const dangling = /\s(?:of|for)$/i.test(tx);
+    if (r.source !== "REQUEST_TEXT" || r.recognized || !(dangling || THRESHOLD_VERB.test(tx))) continue;
     const next = out.find((q) => q !== r && q.source === "REQUEST_TEXT" && /^unrecognized:(?:at-(?:least|most)|up-to)-/.test(q.key) && q.span[0] >= r.span[1] && /^\s*$/.test(text.slice(r.span[1], q.span[0])));
-    if (next) { next.span = [r.span[0], next.span[1]]; out.splice(out.indexOf(r), 1); }
+    if (!next) continue;
+    const noun = dangling ? tx.split(/\s+/).filter((w) => !/^(?:of|for|a|an|the|top|max|maximum|minimum|total|its|with|that|has|have)$/i.test(w)) : [];
+    next.span = [r.span[0], next.span[1]];
+    if (noun.length) next.key = `${next.key}-${slugOf(noun.join(" "))}`;
+    out.splice(out.indexOf(r), 1);
+  }
+  // V2.11: a free-text phrase that only restates a threshold ("removes 16 L a day" beside "at least 16 L day") is the
+  // threshold itself, not a second requirement.
+  for (const r of [...out]) {
+    if (r.source !== "REQUEST_TEXT" || r.recognized || /^unrecognized:(?:at-(?:least|most)|up-to)-/.test(r.key) || !/^(?:unrecognized|not):/.test(r.key)) continue;
+    const num = /(\d[\d,.]*)/.exec(r.text)?.[1]?.replace(/,/g, "");
+    if (!num) continue;
+    if (out.some((q) => q !== r && /^unrecognized:(?:at-(?:least|most)|up-to)-/.test(q.key) && q.key.includes(`-${num}-`) && q.span[0] < r.span[1] && r.span[0] < q.span[1])) out.splice(out.indexOf(r), 1);
   }
   // V2.4: "that is good with pet hair" is one performance claim ("good with pet hair"), not "is good" plus "pet hair".
   for (const r of [...out]) {
