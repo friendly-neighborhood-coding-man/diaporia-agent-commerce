@@ -346,7 +346,12 @@ export function fitStatement(clause: string, id: string): boolean | null {
   const c = clause.normalize("NFKC");
   let out: boolean | null = null;
   for (const m of c.matchAll(FIT_VERB)) {
-    const rest = c.slice(m.index! + m[0].length).split(/[.;:!?()]|,\s*(?:which|whose|but|so|while)\b|\s+(?:which|whose|because|but|except|unlike|not)\b/i)[0]!;
+    // Post-submission cycle 6b: "fits every Spindra lathe: the Spindra 12, Spindra 16 and Spindra 16 VS" lists the hosts
+    // after a colon; the list is read, and each item must still name the exact host.
+    let raw = c.slice(m.index! + m[0].length);
+    const colon = /^[^.;:!?()]{0,40}:\s*/.exec(raw);
+    if (colon) raw = raw.slice(colon[0].length);
+    const rest = raw.split(/[.;:!?()]|,\s*(?:which|whose|but|so|while)\b|\s+(?:which|whose|because|but|except|unlike|not)\b/i)[0]!;
     const items = rest.split(/\s*,\s*(?:and\s+|or\s+)?|\s+(?:and|or|&)\s+|\s*\/\s*/);
     if (items.some((it) => fitItem(it, want))) { if (m[1]) return false; out = true; }
   }
@@ -357,7 +362,7 @@ export function fitStatement(clause: string, id: string): boolean | null {
  * negation, exclusion or "sold separately" ("It is not for the top of stairs.", "A lid is not included.") never
  * verifies it. The specific matchers below still turn a clear denial into FALSE; anything else becomes unverified.
  */
-const ANY_NEGATION = /\b(?:not|no|never|none|neither|nor|without|except|excluding|excluded|isn['’]t|aren['’]t|doesn['’]t|don['’]t|didn['’]t|won['’]t|wasn['’]t|weren['’]t|cannot|can['’]t|unable|incompatible|unsuitable|unsafe|unsafely|unfit|lacks?|lacking|only|needs?|requires?|required|needed|adapter|avoid|warning|caution|dangerous|hazard)\b|sold\s+separately|purchased?\s+separately|available\s+separately|\bnot\s+included\b|않|없|불가|미지원|미포함|별매|별도\s*구매/i;
+const ANY_NEGATION = /\b(?:not|no|never|none|neither|nor|without|except|excluding|excluded|isn['’]t|aren['’]t|doesn['’]t|don['’]t|didn['’]t|won['’]t|wasn['’]t|weren['’]t|cannot|can['’]t|unable|incompatible|unsuitable|unsafe|unsafely|unfit|lacks?|lacking|only|needs?|requires?|required|needed|adapter|avoid|warning|caution|dangerous|hazard)\b|sold\s+separately|purchased?\s+separately|available\s+separately|\bnot\s+included\b|않|없|불가|미지원|미포함|별매|별도\s*구매|안\s*(?:함|됨|돼|되)|아니[오요]/i;
 export function clauseStatement(clause: string, id: string): boolean | null {
   const v = clauseStatementInner(clause, id);
   // Known capabilities have their own scoped negation rules ("not as strong as" is not a denial); free-text

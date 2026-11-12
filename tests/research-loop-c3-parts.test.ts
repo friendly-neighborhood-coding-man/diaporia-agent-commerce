@@ -61,7 +61,8 @@ describe("cycle 3 (after the first seen rerun): the fit of a family-titled part 
     expect(fitStatement("The hook attaches to the Moravel Spire 12A only.", fitKey("Spire 6A"))).toBeNull();
   });
   it("'for the <host with a number>' in a part request is the host, not a quantity must-have", () => {
-    expect(intent("comfort seat pad for the Fennick Rover 1-Seat").unresolvedMust).toEqual([]);
+    // Cycle 6 (I6): the only must-have is the fit to the whole host, never a quantity read from its number.
+    expect(intent("comfort seat pad for the Fennick Rover 1-Seat").unresolvedMust).toEqual(["unrecognized:fits-model-rover-1-seat"]);
     expect(intent("Fennick Rover 2-Seat for my 38 lb daughter").unresolvedMust).toContain("unrecognized:for-my-38-lb-daughter");
   });
 });

@@ -302,7 +302,9 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
   const titleAboutOther = !!titleOther || (!!model && !namesThis(hit.title) && !!product.identity.brand && hit.title.toLowerCase().includes(product.identity.brand.toLowerCase()));
   const hitNamesOther = titleAboutOther || namesOtherProduct(text, product) || namesUnknownEntity(hit.snippet, product, asked) || otherYearInHit || (!!vc && mentionsOtherVariant(text, product.title, vc));
   // Reported or second-hand speech disqualifies its whole sentence ("Via rtings.com: it supports ...").
-  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b)|,\s+(?:and|but|while|whereas)\s+(?=(?:the|a|an|its|this|that)\s+[A-Z])/i));
+  // Post-submission cycle 6c, invariant I8: a spec line "<label>: <value>" is read whole when the value is short (at most
+  // four words): "온도 조절: 없음" is a denial, never the bare label "온도 조절".
+  const clauses = hit.snippet.split(/(?<=[.!?])\s+/).filter((sentence) => !REPORTED.test(sentence)).flatMap((sentence) => sentence.split(/;\s*|\s+—\s+|:\s+(?!(?:yes|no|none|n\/a|not\s+(?:included|available|supported))\b|(?:[^\s.;:!?]+\s*){1,4}[.!?]?\s*$)|,\s+(?:and|but|while|whereas)\s+(?=(?:the|a|an|its|this|that)\s+[A-Z])/i));
   // V2.19 (IW-19 failure 1): a page that both states and denies a requirement denies it. Every clause is read, and a
   // denial wins over an earlier match ("Above Ground Pool Pump ... it is not for in-ground pools").
   let firstTrue: { value: boolean; quote: string } | null = null;

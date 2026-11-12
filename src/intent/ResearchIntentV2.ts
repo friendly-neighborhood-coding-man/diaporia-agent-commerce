@@ -1,7 +1,7 @@
 import type { Condition, IntentMode } from "../domain/types.js";
 import { parseDecimalToMinor, type Currency } from "../domain/money.js";
 import { ACCESSORY_NOUN, COLOR_WORDS, canonicalUnits, unitTokenPattern, GENERIC_WORDS, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
-import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
+import { capabilityPhrase, fitKey, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { capitalizedProductWord, modelCode, requestNameWord, tailAfter } from "../identity/VariantTail.js";
 import { OBJECT_SIZE, extractRequirements, slugOf, type StatedRequirement } from "./Requirements.js";
@@ -308,7 +308,10 @@ export function parseResearchIntent(input: PurchaseRequestInput, opts: { noBrand
   }
   // V2.4: a request that names one product by brand and model ("Brisk RV-8 Pro", "Talus Ridge 2 tent", "I want the
   // Lumora LP-1 projector") asks for that product, with or without a buy verb, unless it compares or substitutes.
-  const named = !!target && /^[A-Za-z][A-Za-z&'’-]+$/.test(target.brand ?? "") && !requestCapabilities(target.brand ?? "").length && !COMPARE_WORDS.test(text.replace(/\b(?:at least|at most|no more than|more than|less than)\b/gi, " "));
+  // Post-submission cycle 6, invariant I7: words inside the named product are never request grammar ("Spindra 16 VS"
+  // is a model, not "versus"): the compare test reads the text with the target span removed.
+  const outsideTarget = targetSpan ? text.slice(0, targetSpan[0]) + " " + text.slice(targetSpan[1]) : text;
+  const named = !!target && /^[A-Za-z][A-Za-z&'’-]+$/.test(target.brand ?? "") && !requestCapabilities(target.brand ?? "").length && !COMPARE_WORDS.test(outsideTarget.replace(/\b(?:at least|at most|no more than|more than|less than)\b/gi, " "));
   const structuredExact = !!(input.exactProduct?.model || input.exactProduct?.sku);
   const exact = structuredExact || (!!target && (!!buy || named));
   const lockBasis = structuredExact ? "STRUCTURED" as const : target && buy ? "BUY" as const : exact ? "NAMED" as const : null;
@@ -568,6 +571,14 @@ export function parseResearchIntent(input: PurchaseRequestInput, opts: { noBrand
       if (content.length && !uninterpreted.some((u) => u.span[0] <= a && u.span[1] >= a) && !requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] > a))
         uninterpreted.push({ text: lead[1]!, span: [a, a + lead[1]!.length] });
     }
+  }
+  // Post-submission cycle 6, invariant I6: a part requested for a named host ("spare bowl for the Kneadwell 30", "chuck to
+  // fit my Spindra 16 VS") must be shown to fit that whole host, whichever path locks the part and in discovery too. A
+  // part title that carries the host's name is identity, never fit evidence.
+  if (target?.kind === "ACCESSORY" && target.model && targetSpan && language === "en"
+    && /\b(?:for|to fit|that fits?|fits|compatible with)\s+(?:(?:my|the|a|an|our|your)\s+)?$/i.test(text.slice(0, targetSpan[0]))) {
+    const key = fitKey(target.model);
+    if (!unresolvedMust.includes(key)) unresolvedMust.push(key);
   }
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");

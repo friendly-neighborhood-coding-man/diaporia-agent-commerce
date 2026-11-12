@@ -159,7 +159,7 @@ export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps):
   // The model checks then apply to the base model the part is listed under; the fit requirement carries the full name.
   if (resolution?.status === "LOCKED" && resolution.fitModel && intent.target) {
     const base = resolution.identity.model;
-    intent = { ...intent, requestedModel: base, target: { ...intent.target, model: base }, requestTail: [], targetNoun: null, unresolvedMust: [...(intent.unresolvedMust ?? []), fitKey(resolution.fitModel)] };
+    intent = { ...intent, requestedModel: base, target: { ...intent.target, model: base }, requestTail: [], targetNoun: null, unresolvedMust: [...new Set([...(intent.unresolvedMust ?? []), fitKey(resolution.fitModel)])] };
   }
   // Candidates the decision will consider.
   let pool: CatalogProduct[];

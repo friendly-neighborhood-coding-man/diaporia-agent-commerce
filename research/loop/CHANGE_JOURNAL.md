@@ -189,3 +189,28 @@ Plus IW-23 (Haiku arms on 94e13ca, other thread).
 Out of sample, the loop **improves legitimate completion and slightly worsens safety** relative to the frozen engine. That fails the mission's constraint ("without increasing unsafe recommendations"). Each cycle's zero-unsafe on the seen sets was in-sample, and it did not transfer. The invariant restatement in cycle 5 did not change this on fresh cases.
 
 **What this says about the method (narrow).** Repairs made with seen-set feedback reliably fix the seen cases and their exact mechanism, but each new set exposes new routes in the same families. The loop does not yet produce a candidate that dominates the frozen engine on safety, so the post-submission candidate should not replace 4bc7dcc. No ordinary-debugging control was run, so no comparison with ordinary debugging is possible.
+
+## 2026-11-12 17:12Z: loop PAUSED by Eric during cycle 6 (work in progress preserved, not validated)
+
+Eric paused the TypeScript rule-expansion loop and moved the investigation to an architecture-level analysis of why
+local repairs have not generalized across IW-21, IW-22 and IW-24. Cycle 6 is neither finished nor claimed.
+
+State preserved in the pause commit (code is WIP and unvalidated):
+- Predictions committed before any code: cycle 6 (507a605), 6b/6c addendum (a413d11), in PREDICTIONS_CYCLES.md.
+- 6a code: I6 (a part requested "for/to fit/compatible with" a named host carries fitKey(host) as a must-have) in
+  ResearchIntentV2.ts, dedupe of the fit key in ResearchPlannerV2.ts; I7 (compare words are tested outside the target
+  span, so "Spindra 16 VS" is not "versus").
+- 6b code: fit lists after a colon are read (capabilities.ts fitStatement).
+- 6c code: spec lines "<label>: <value>" with a short value are not split (EvidenceV2.ts); "안 함/안 됨/아니오" are negations.
+- Tests: tests/research-loop-c6-fit.test.ts (new); c3 test updated to expect the fit key. 1094/1095 pass; the one
+  failure is the dev-split accuracy gate (0.882 < 0.9) because d06 ("replacement ear pads for Contoso CX-500", whose only
+  fit statement is its listing title) now INVESTIGATEs, as the frozen engine does. The threshold was not lowered.
+
+Observed before the pause (probes, not a scored run): IW-24 a30 RECOMMEND -> HOLD on 6a; a18 locks the chuck but
+INVESTIGATEs on 6a (6b's colon-list reading was written to address it; not re-run). Korean d25 probe: "온도 조절: 없음" no
+longer yields a positive clause; "온도 조절: 지원 안 함" no longer verifies. The 6a seen-set run was stopped after IW-17 by
+the pause; no seen-set or fresh result exists for cycle 6. Prediction hit/miss for P6.1–P6.7 is therefore not scored.
+
+Note for the architecture thread: both loop-introduced IW-24 unsafe cases came from one representation loss (the fit
+relation "for the <host>" survived in the frozen engine only by accident, as an unrecognized quantity phrase, and cycle 3
+removed that accident without a typed replacement). That is a data point for "rules interact through untyped strings".
