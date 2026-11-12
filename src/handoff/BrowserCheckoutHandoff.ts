@@ -212,6 +212,9 @@ export class BrowserCheckoutHandoff {
     catch (e) { if (e instanceof NotFoundError) throw new CommerceError("NOT_FOUND", "Purchase session not found"); throw e; }
     if (ps.expiresAt <= this.now()) throw new CommerceError("SESSION_EXPIRED", "Purchase session expired; research again.");
     if (!ps.comparison || !ps.lockedIdentity) throw new CommerceError("INVALID_STATE", "Compare offers for an exact product first.");
+    // V2.1: the research decision binds every payment-preparing path, not only prepare_checkout.
+    this.gateway.assertServiceIsolated(ps.purchaseSessionId, userId, "prepare_browser_checkout");
+    const readiness = this.gateway.assertPurchaseReady(ps, userId, "prepare_browser_checkout");
     if (!isCurrency(input.currency) || input.currency !== ps.intent.currency) throw new CommerceError("INVALID_INPUT", `Currency must be the session currency ${ps.intent.currency}`);
     const offer = [...ps.comparison.eligible, ...ps.comparison.ineligible].find((o) => o.offerId === input.offerId);
     if (!offer) throw new CommerceError("NOT_FOUND", "Offer is not part of this session's comparison.");
@@ -261,7 +264,9 @@ export class BrowserCheckoutHandoff {
 
     const snapshot = snapshotFromRaw(out.cart, h.currency, this.now());
     const caps: ConstraintResult["maximumSources"] = [{ source: "CLIENT_REQUEST", maximumMinor: input.maximumApprovedTotalMinor }];
-    if (ps.intent.budgetMinor !== null) caps.push({ source: "RESEARCH_BUDGET", maximumMinor: ps.intent.budgetMinor });
+    // V2.2 WP-1: the same effective budget as prepare_checkout (the stated maximum, or the owner-confirmed budget).
+    const researchMax = readiness.effectiveBudgetMinor ?? ps.intent.budgetMinor;
+    if (researchMax !== null) caps.push({ source: "RESEARCH_BUDGET", maximumMinor: researchMax });
     const mandate = this.gateway.policy.findApplicable(userId, ps.lockedIdentity);
     if (mandate && mandate.authorizationStatus === "ACTIVE" && mandate.currency === h.currency) caps.push({ source: "OWNER_MANDATE", maximumMinor: mandate.maximumTotalMinor });
     const constraints = evaluateConstraints(snapshot, { identity: ps.lockedIdentity, quantity: input.quantity, currency: h.currency, merchantHost: new URL(recipe.origin).host }, caps);

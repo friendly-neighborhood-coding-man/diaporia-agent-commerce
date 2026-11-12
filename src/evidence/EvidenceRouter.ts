@@ -5,9 +5,9 @@ import type { Store } from "../store/Database.js";
 import { CAPABILITY_KEYWORDS, CAPABILITY_NEGATED, CAPABILITY_PHRASE } from "./capabilityText.js";
 import { UsageLimitError, type UsageLedger, type UsageProvenance } from "../metering/UsageLedger.js";
 import type { EvidenceSearchRequest, EvidenceSearchResponse } from "./providers.js";
-import { SourceRegistry, hostOf } from "./SourceRegistry.js";
+import { SourceRegistry, hostOf, type DomainValidity } from "./SourceRegistry.js";
 import { classifyItem, evidenceKindOf, judgeV2, statementFrom, type CapabilityVerdict, type EvidenceItem } from "./EvidenceV2.js";
-import { capabilityPhrase } from "../research/capabilities.js";
+import { capabilityPhrase, capabilityQueryPhrase } from "../research/capabilities.js";
 
 /** Independent web search (e.g. Tavily). */
 export interface IndependentSearchProvider {
@@ -42,7 +42,7 @@ export interface PageInspectionProvider {
 export type Sufficiency = "SUFFICIENT_TRUE" | "SUFFICIENT_FALSE" | "CONTRADICTED" | "INSUFFICIENT";
 export interface RouterStep {
   provider: "STORE" | "TAVILY" | "KERNEL";
-  action: "REUSED_EXISTING_EVIDENCE" | "SKIPPED_SUFFICIENT" | "CALLED" | "REUSED_CACHED_QUERY" | "REUSED_CACHED_PAGE" | "BLOCKED_BY_LIMIT" | "FAILED" | "EXCLUDED_NON_INDEPENDENT_SOURCE" | "REFUSED_BY_URL_POLICY";
+  action: "REUSED_EXISTING_EVIDENCE" | "REUSED_SESSION_RESULTS" | "SKIPPED_SUFFICIENT" | "CALLED" | "REUSED_CACHED_QUERY" | "REUSED_CACHED_PAGE" | "BLOCKED_BY_LIMIT" | "FAILED" | "EXCLUDED_NON_INDEPENDENT_SOURCE" | "REFUSED_BY_URL_POLICY";
   capability: string; detail: string;
   /** Cost provenance of the provider behind this step (MOCK, BYOK_LIVE or MANAGED_LIVE). Absent for STORE steps. */
   provenance?: UsageProvenance;
@@ -79,9 +79,9 @@ function fingerprint(text: string): string {
 export class EvidenceRouter {
   constructor(private readonly store: Store, private readonly ledger: UsageLedger, private readonly search: IndependentSearchProvider | null,
     private readonly inspector: PageInspectionProvider | null,
-    private readonly opts: { billable: boolean; now?: () => number; policy?: "v1" | "v2"; sources?: { expertReviewDomains?: string[]; forumDomains?: string[]; retailerDomains?: string[]; officialDomains?: Record<string, string[]> } } = { billable: false }) {
+    private readonly opts: { billable: boolean; now?: () => number; policy?: "v1" | "v2"; sources?: { expertReviewDomains?: string[]; forumDomains?: string[]; retailerDomains?: string[]; officialDomains?: Record<string, string[]>; domainValidity?: Record<string, DomainValidity>; asOf?: string; maxAgeDays?: number } } = { billable: false }) {
     this.policy = opts.policy ?? "v1";
-    this.registry = new SourceRegistry(opts.sources ?? {});
+    this.registry = new SourceRegistry({ ...(opts.sources ?? {}), now: opts.now ?? Date.now });
     store.db.exec(`CREATE TABLE IF NOT EXISTS evidence_items (id TEXT PRIMARY KEY, product_key TEXT NOT NULL, capability TEXT NOT NULL, value INTEGER NOT NULL,
         kind TEXT NOT NULL, host TEXT NOT NULL, url TEXT NOT NULL, provider TEXT NOT NULL, provenance TEXT NOT NULL, quote TEXT NOT NULL, observed_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS evidence_by_product ON evidence_items(product_key, capability);
@@ -92,28 +92,38 @@ export class EvidenceRouter {
   readonly policy: "v1" | "v2";
   readonly registry: SourceRegistry;
   private now() { return (this.opts.now ?? Date.now)(); }
+  /** V2.6: independent searches still allowed for this request (null: no per-request call cap). */
+  remainingSearches(ctx: { userId: string; requestId: string }): number | null { return this.search ? this.ledger.remainingCalls(ctx.requestId, ctx.userId, "TAVILY") : 0; }
+  /**
+   * V2.6: every search result of one research request, so a page that a search for one candidate returned (a sibling's
+   * manufacturer page, a review covering two models) is also read for the other candidates, at no extra cost.
+   * Attribution is unchanged: statementFrom only counts a statement about that exact product.
+   */
+  private readonly hitPool = new Map<string, Array<{ hit: EvidenceSearchResponse["hits"][number]; requestId: string | null }>>();
 
   /**
    * Research V2: verifies several capabilities of one product with ONE combined search (cached), classifies every
    * source, applies the V2 sufficiency rule (EvidenceV2.ts) and returns traceable evidence for each capability.
    * `sellers` = domains that sell any candidate in this session (always retailer-class). Fails closed on limits.
    */
-  async verifyMany(product: CatalogProduct, capabilities: string[], ctx: { userId: string; requestId: string }, o: { sellers?: string[]; maxSearches?: number } = {}): Promise<VerifyManyResult> {
+  async verifyMany(product: CatalogProduct, capabilities: string[], ctx: { userId: string; requestId: string }, o: { sellers?: string[]; maxSearches?: number; broad?: boolean } = {}): Promise<VerifyManyResult> {
     const steps: RouterStep[] = [];
     const sellers = o.sellers ?? [];
     const brand = product.identity.brand || null;
-    const productKey = `v2|${product.identity.brand}|${normalizeModel(product.identity.model || product.title)}|${product.identity.variant ?? ""}`.toLowerCase();
+    // V2.9: a listing's own variant words ("F2 Cordless" beside the F2) are part of the key: stored evidence never
+    // passes between siblings of one model.
+    const productKey = `v2|${product.identity.brand}|${normalizeModel(product.identity.model || product.title)}|${product.identity.variant ?? ""}${product.research?.variantRun?.length ? `|${product.research.variantRun.join(" ")}` : ""}`.toLowerCase();
     const items: Record<string, EvidenceItem[]> = Object.fromEntries(capabilities.map((c) => [c, [] as EvidenceItem[]]));
     const nowIso = new Date(this.now()).toISOString();
     // Stored evidence is reclassified with the CURRENT registry on read (a registry change takes effect immediately).
     for (const cap of capabilities) for (const r of this.store.db.prepare("SELECT * FROM evidence_items WHERE product_key=? AND capability=? AND observed_at>?").all(productKey, cap, this.now() - EVIDENCE_TTL_MS) as Array<Record<string, string | number>>) {
       const [quote, publishedDate, requestId] = String(r.quote).split("\u0000");
-      items[cap]!.push(classifyItem({ url: String(r.url), domain: String(r.host), sourceClass: this.registry.classify(String(r.url), brand, sellers), value: Number(r.value) === 1, quote: quote ?? "",
+      items[cap]!.push(classifyItem({ url: String(r.url), domain: String(r.host), sourceClass: this.registry.classify(String(r.url), brand, sellers, publishedDate || null), value: Number(r.value) === 1, quote: quote ?? "",
         publishedDate: publishedDate || null, provider: String(r.provider), requestId: requestId || null, observedAt: new Date(Number(r.observed_at)).toISOString() }, this.now()));
     }
-    // Manufacturer/independent claims already on the product (fixtures) count under the same rule.
+    // Claims already on the product (fixtures, catalog data) count only if the registry confirms their declared source (V2.1).
     for (const c of product.capabilities) if (items[c.capability] && c.source.kind !== "CATALOG_LISTING")
-      items[c.capability]!.push(classifyItem({ url: c.source.url, domain: hostOf(c.source.url), sourceClass: c.source.kind === "MANUFACTURER" ? "MANUFACTURER" : c.source.kind === "INDEPENDENT_REVIEW" ? "EXPERT_REVIEW" : "UNKNOWN",
+      items[c.capability]!.push(classifyItem({ url: c.source.url, domain: hostOf(c.source.url), sourceClass: this.registry.confirmDeclared(c.source.kind, c.source.url, brand, null),
         value: c.value, quote: c.source.title, publishedDate: null, provider: "CATALOG_FIXTURE", requestId: null, observedAt: c.source.retrievedAt }, this.now()));
     const verdicts = (): Record<string, CapabilityVerdict> => Object.fromEntries(capabilities.map((c) => [c, judgeV2(c, items[c]!)]));
     let v = verdicts();
@@ -122,12 +132,29 @@ export class EvidenceRouter {
     const blocked: string[] = [];
     let sent = 0;
     const maxSearches = o.maxSearches ?? 2;
+    const pool = this.hitPool.get(ctx.requestId) ?? [];
+    if (!this.hitPool.has(ctx.requestId)) { this.hitPool.set(ctx.requestId, pool); if (this.hitPool.size > 64) this.hitPool.delete(this.hitPool.keys().next().value!); }
+    const absorb = (hits: EvidenceSearchResponse["hits"], requestId: string | null, caps: string[]) => {
+      let gained = false;
+      for (const h of hits) for (const cap of caps) {
+        const st = statementFrom(h, product, cap);
+        if (!st || items[cap]!.some((x) => x.url === h.url)) continue;
+        const it = classifyItem({ url: h.url, domain: hostOf(h.url), sourceClass: this.registry.classify(h.url, brand, sellers, h.publishedDate), value: st.value, quote: st.quote, publishedDate: h.publishedDate,
+          provider: this.search!.name, requestId, observedAt: nowIso }, this.now());
+        items[cap]!.push(it); gained = true;
+        const id = createHash("sha256").update(`${productKey}|${cap}|${h.url}`).digest("hex").slice(0, 24);
+        this.store.db.prepare("INSERT OR IGNORE INTO evidence_items(id,product_key,capability,value,kind,host,url,provider,provenance,quote,observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+          .run(id, productKey, cap, st.value ? 1 : 0, evidenceKindOf(it.sourceClass), it.domain, h.url, this.search!.name, this.search!.provenance, `${st.quote}\u0000${h.publishedDate ?? ""}\u0000${requestId ?? ""}`, this.now());
+      }
+      return gained;
+    };
     for (let round = 0; this.search && pending().length && round < maxSearches; round++) {
       // One combined query for up to three pending capabilities, the model quoted for precision; sellers excluded.
       const caps = pending().slice(0, 3);
-      const subject = product.identity.model ? `"${[product.identity.brand, product.identity.model].filter(Boolean).join(" ")}"` : `"${product.identity.brand}" ${product.title.replace(new RegExp(product.identity.brand, "i"), "").slice(0, 60)}`;
-      const query = `${subject} ${caps.map(capabilityPhrase).join(" ")} specs review`.replace(/\s+/g, " ").trim();
-      const req: EvidenceSearchRequest = { query, maxResults: 10, exactMatch: !!product.identity.model, excludeDomains: [...new Set(sellers)].slice(0, 150), depth: "basic" };
+      // V2.6 broad query: the brand only, so one search returns the manufacturer pages of several of its models.
+      const subject = o.broad && product.identity.brand ? `"${product.identity.brand}"` : product.identity.model ? `"${[product.identity.brand, product.identity.model].filter(Boolean).join(" ")}"` : `"${product.identity.brand}" ${product.title.replace(new RegExp(product.identity.brand, "i"), "").slice(0, 60)}`;
+      const query = `${subject} ${caps.map(capabilityQueryPhrase).join(" ")} specs review`.replace(/\s+/g, " ").trim();
+      const req: EvidenceSearchRequest = { query, maxResults: 10, exactMatch: !!product.identity.model || !!o.broad, excludeDomains: [...new Set(sellers)].slice(0, 150), depth: "basic" };
       const queryKey = createHash("sha256").update(`${this.search.name}|v2|${JSON.stringify(req).toLowerCase()}`).digest("hex");
       let resp: EvidenceSearchResponse;
       const cached = this.store.db.prepare("SELECT hits_json, observed_at FROM evidence_query_cache WHERE query_key=?").get(queryKey) as { hits_json: string; observed_at: number } | undefined;
@@ -141,20 +168,18 @@ export class EvidenceRouter {
         this.store.db.prepare("INSERT OR REPLACE INTO evidence_query_cache(query_key,provider,hits_json,observed_at) VALUES (?,?,?,?)").run(queryKey, this.search.name, JSON.stringify(resp), this.now());
         steps.push({ provider: "TAVILY", action: "CALLED", capability: caps.join(","), detail: `${query} → ${resp.hits.length} results${resp.requestId ? ` (request ${resp.requestId})` : ""}`, provenance: this.search.provenance });
       }
-      let gained = false;
-      for (const h of resp.hits) for (const cap of caps) {
-        const st = statementFrom(h, product, cap);
-        if (!st || items[cap]!.some((x) => x.url === h.url)) continue;
-        const it = classifyItem({ url: h.url, domain: hostOf(h.url), sourceClass: this.registry.classify(h.url, brand, sellers), value: st.value, quote: st.quote, publishedDate: h.publishedDate,
-          provider: this.search.name, requestId: resp.requestId, observedAt: nowIso }, this.now());
-        items[cap]!.push(it); gained = true;
-        const id = createHash("sha256").update(`${productKey}|${cap}|${h.url}`).digest("hex").slice(0, 24);
-        this.store.db.prepare("INSERT OR IGNORE INTO evidence_items(id,product_key,capability,value,kind,host,url,provider,provenance,quote,observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-          .run(id, productKey, cap, st.value ? 1 : 0, evidenceKindOf(it.sourceClass), it.domain, h.url, this.search.name, this.search.provenance, `${st.quote}\u0000${h.publishedDate ?? ""}\u0000${resp.requestId ?? ""}`, this.now());
-      }
+      for (const h of resp.hits) if (!pool.some((x) => x.hit.url === h.url)) pool.push({ hit: h, requestId: resp.requestId });
+      const gained = absorb(resp.hits, resp.requestId, caps);
       v = verdicts();
       // Stopping rule: another combined query only when this one taught us something and capabilities remain beyond the first three.
       if (!gained || pending().every((c) => caps.includes(c))) break;
+    }
+    if (this.search && pending().length && pool.length) {
+      const before = pending().length;
+      // Read after this product's own searches, so the pool never changes what is searched for.
+      for (const { hit, requestId } of pool) absorb([hit], requestId, pending());
+      v = verdicts();
+      steps.push({ provider: "STORE", action: "REUSED_SESSION_RESULTS", capability: capabilities.join(","), detail: `${pool.length} results already retrieved in this research; ${before - pending().length} requirement(s) settled from them` });
     }
     if (!this.search && pending().length) steps.push({ provider: "TAVILY", action: "FAILED", capability: pending().join(","), detail: "no independent search provider configured" });
     return { verdicts: v, steps, searchesSent: sent, blockedByLimit: blocked };
@@ -187,7 +212,7 @@ export class EvidenceRouter {
 
   async verify(product: CatalogProduct, capability: string, ctx: { userId: string; requestId: string }): Promise<RouterResult> {
     const steps: RouterStep[] = [];
-    const productKey = `${product.identity.brand}|${normalizeModel(product.identity.model)}`.toLowerCase();
+    const productKey = `${product.identity.brand}|${normalizeModel(product.identity.model)}${product.research?.variantRun?.length ? `|${product.research.variantRun.join(" ")}` : ""}`.toLowerCase();
     const modelToken = product.identity.model;
     let claims = [...product.capabilities.filter((c) => c.capability === capability), ...this.stored(productKey, capability)];
     if (claims.length > product.capabilities.filter((c) => c.capability === capability).length) steps.push({ provider: "STORE", action: "REUSED_EXISTING_EVIDENCE", capability, detail: "previously verified independent evidence (fresh)" });

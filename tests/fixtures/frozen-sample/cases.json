@@ -1,0 +1,41 @@
+[
+ {
+  "id": "s01",
+  "split": "frozen-sample",
+  "tags": [
+   "exact"
+  ],
+  "lang": "en",
+  "request": "Buy Contoso CX-500 Black",
+  "expect": {
+   "state": [
+    "RECOMMEND"
+   ],
+   "lock": "cx500-black",
+   "top": [
+    "cx500-black"
+   ],
+   "rel": {
+    "cx500-black": 3
+   },
+   "forbidden": [
+    "cx500-white"
+   ]
+  }
+ },
+ {
+  "id": "s02",
+  "split": "frozen-sample",
+  "tags": [
+   "discovery"
+  ],
+  "lang": "en",
+  "request": "Over-ear headphones under $60",
+  "expect": {
+   "state": [
+    "INVESTIGATE",
+    "HOLD"
+   ]
+  }
+ }
+]

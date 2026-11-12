@@ -87,12 +87,16 @@ describe("R-04 budget parser: quantities are not money", () => {
     ["waterproof running shoes within 2 weeks shipping under $120", 12000],
     ["headphones under $300.", 30000],
     ["headphones up to $200", 20000],
-    ["monitor under 400", 40000],
+    ["monitor under 400 USD", 40000], // V21-01: a bare "under 400" with no currency is unresolved, see the next test
     ["laptop under $1,300 in black", 130000],
   ])("%s → %i", (request, minor) => { expect(parseResearchIntent({ request }).budgetMinor).toBe(minor); });
   it("keeps the battery requirement that the old parser consumed as a budget", () => {
     expect(parseResearchIntent({ request: "wireless headphones with battery up to 30 hours, under $300" }).mustHave).toContain("battery_30h");
     expect(parseResearchIntent({ request: "headphones with up to 40 hours, max 2 days shipping" }).budgetMinor).toBeNull();
+  });
+  it("V21-01: a bare amount with no currency is not assumed to be USD; it is unresolved", () => {
+    expect(parseResearchIntent({ request: "monitor under 400" })).toMatchObject({ budgetMinor: null, budgetUnresolved: expect.stringContaining("no currency") });
+    expect(parseResearchIntent({ request: "monitor under 400", currency: "USD" })).toMatchObject({ budgetMinor: 40000, budgetUnresolved: null });
   });
 });
 
@@ -149,10 +153,10 @@ describe("R-09 planner: for the cheapest objective, evidence goes to the cheapes
     const a = product("a", "Brand A Headphones", "Brand", "A1"); const b = product("b", "Brand B Wireless Headphones", "Brand", "B1");
     const offers: Record<string, MerchantOffer[]> = { a: [offer("a", 5000)], b: [offer("b", 20000)] };
     const checked: string[] = [];
-    const router = { policy: "v2", verifyMany: async (p: CatalogProduct) => { checked.push(p.productId); return { verdicts: { wireless: verified("wireless") }, steps: [], searchesSent: 1, blockedByLimit: [] }; } };
+    const router = { policy: "v2", verifyMany: async (p: CatalogProduct, _c: string[], _x: unknown, o: { maxSearches?: number; broad?: boolean } = {}) => { if (o.maxSearches !== 0 && !o.broad) checked.push(p.productId); return { verdicts: { wireless: verified("wireless") }, steps: [], searchesSent: 1, blockedByLimit: [] }; } };
     const r = await runResearchV2(intent, { research: { findOffers: async (id: any) => offers[id.model === "A1" ? "a" : "b"]! } as any, router: router as any,
       searchPage: async () => ({ products: [b, a], nextPageToken: null, providerCalls: 1 }), ctx: { userId: "u", requestId: "r" }, now: () => NOW, limits: { maxEvidenceCandidates: 1 } });
-    expect(checked).toEqual(["a"]);
+    expect(checked).toEqual(["a"]); // V2.6: the brand-wide search and the free pooled pass are not per-candidate checks
     expect(r.decision.recommendation?.productId).toBe("a");
   });
 });

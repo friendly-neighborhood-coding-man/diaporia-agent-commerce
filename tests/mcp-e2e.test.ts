@@ -13,7 +13,7 @@ describe("MCP protocol discovery and schemas", () => {
     expect(client.getServerVersion()?.name).toBe("diaporia-agent-commerce");
     const { tools } = await client.listTools();
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(Object.keys(byName).sort()).toEqual(["compare_purchase_offers", "get_checkout_status", "get_purchase_receipt", "get_usage_summary", "prepare_checkout", "research_purchase"]);
+    expect(Object.keys(byName).sort()).toEqual(["compare_purchase_offers", "get_checkout_status", "get_purchase_receipt", "get_usage_summary", "prepare_checkout", "research_purchase", "resolve_research_hold"]);
     for (const t of tools) { expect(t.inputSchema.type).toBe("object"); expect(t.outputSchema?.type).toBe("object"); }
     expect(byName.research_purchase!.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     expect(byName.get_checkout_status!.annotations?.readOnlyHint).toBe(true);

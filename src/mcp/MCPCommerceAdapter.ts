@@ -9,7 +9,8 @@ export const SERVER_INFO = { name: "diaporia-agent-commerce", version: "0.8.0" }
 
 const identitySchema = z.object({
   brand: z.string().min(1).max(60),
-  model: z.string().min(1).max(60),
+  // N-06: "" for a product that has no model name or number; such an identity must carry its sku (provider key).
+  model: z.string().max(60),
   variant: z.string().max(40).nullable().default(null),
   condition: z.enum(["new", "refurbished", "used", "open_box"]).default("new"),
   sku: z.string().max(60).nullable().default(null),
@@ -90,6 +91,7 @@ export function serverInstructions(principal: Principal, opts: McpOptions): stri
   if (can(SCOPES.RESEARCH)) parts.push("research_purchase and compare_purchase_offers never move money.");
   if (opts.exposePaymentTools && can(SCOPES.PREPARE)) {
     parts.push("prepare_checkout creates a checkout but captures nothing; payment needs a user-created spending mandate and the buyer's own approval on PayPal.");
+    parts.push("If compare_purchase_offers reports unresolved research requirements, ask the user. resolve_research_hold only creates a proposal and returns ownerConfirmationUrl; give that link to the user, who confirms it on the owner page. You cannot confirm it, and nothing is resolved until they do.");
   } else {
     parts.push("This connection cannot create checkouts or payments.");
   }
@@ -162,6 +164,25 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
       annotations: { title: "Prepare a checkout (no capture)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
       _meta: { "diaporia/effect": "STATE_MUTATING_PAYMENT_PREPARATION", "diaporia/capturesFunds": false },
     }, async (args) => run(SCOPES.PREPARE, () => gateway.prepareCheckout(principal.userId, args, `MCP_TOKEN:${principal.tokenFingerprint}`))());
+
+    // V21-04: an agent can only PROPOSE. The proposal is confirmed by the human owner on /research-holds/<id> (owner key,
+    // cookie, CSRF), never through MCP. Hard violations are never resolvable; a resolution is appended, never replaces.
+    server.registerTool("resolve_research_hold", {
+      title: "Propose a resolution of an open research requirement (the owner confirms it)",
+      description: "Creates a PROPOSAL to resolve one open item that blocks payment preparation: CONFIRM_BUDGET (the budget is unresolved or in another currency; propose a budget in the session currency) DROP_REQUIREMENT (propose that the owner waives a stated requirement, e.g. must:wireless, that research could not verify) or ATTEST_REQUIREMENT (propose that the owner attests, from their own firsthand knowledge, that the product meets it; recorded as OWNER_ATTESTED, never as verified evidence). This call resolves NOTHING. It returns ownerConfirmationUrl: give it to the user, who reviews and confirms the exact change on the owner page with their own owner credentials. userStatement is shown to the owner labelled as your text. Moves no money and grants no spending authority; compare offers again after the owner confirms.",
+      inputSchema: {
+        purchaseSessionId: idString("ps"),
+        kind: z.enum(["CONFIRM_BUDGET", "DROP_REQUIREMENT", "ATTEST_REQUIREMENT"]),
+        requirement: z.string().min(3).max(80).optional().describe("For DROP_REQUIREMENT or ATTEST_REQUIREMENT: the requirement key reported by compare_purchase_offers, e.g. must:wireless"),
+        budgetMinor: z.number().int().positive().max(100_000_000).optional().describe("For CONFIRM_BUDGET: the proposed budget in the session currency, integer minor units"),
+        currency: z.enum(["USD", "EUR", "GBP", "JPY", "KRW"]),
+        userStatement: z.string().min(3).max(500).describe("Your explanation for the owner (shown as the assistant's text, never as the owner's words)"),
+      },
+      outputSchema: z.looseObject({ purchaseSessionId: z.string(), state: z.string(), proposalId: z.string(), status: z.literal("PENDING_OWNER_CONFIRMATION"), ownerConfirmationUrl: z.string(), expiresAt: z.string(),
+        readiness: z.looseObject({ ready: z.boolean(), open: z.array(z.string()) }), paymentEffect: z.literal("NONE") }),
+      annotations: { title: "Propose a research-hold resolution", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT", "diaporia/capturesFunds": false, "diaporia/requiresOwnerConfirmation": true },
+    }, async (args) => run(SCOPES.PREPARE, () => gateway.resolveResearchHold(principal.userId, args, `MCP_TOKEN:${principal.tokenFingerprint}`))());
   }
 
   if (can(SCOPES.READ)) server.registerTool("get_checkout_status", {

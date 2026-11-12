@@ -44,8 +44,10 @@ export interface CatalogProduct {
 }
 export interface CatalogResearchInfo {
   kind: "STANDALONE" | "BUNDLE" | "ACCESSORY";
+  /** V2.3: a third-party accessory's target brand (the product it fits); its family uses this brand. */
+  fitsBrand?: string | null;
   modelBasis: "MODEL_NUMBER" | "NAMED_MODEL" | "NONE";
-  attributes: Partial<Record<"color" | "memory" | "storage" | "capacity" | "size" | "pack", string>>;
+  attributes: Partial<Record<"color" | "memory" | "storage" | "capacity" | "size" | "pack" | "year" | "generation", string>>;
   /** Attribute axes whose value conflicts between the provider's structured variant data and the title. */
   conflictingAxes: string[];
   categoryTitle: string | null;
@@ -53,6 +55,8 @@ export interface CatalogResearchInfo {
   provenance: { provider: string; providerProductId: string; observedAt: string; query: string | null; page: number | null; mode: string | null };
   /** Other provider listings merged into this product because their identity is identical. */
   alsoListedAs: string[];
+  /** V2.9: variant words after the model code that tell this listing apart from a listed sibling of the same model ("4K"). */
+  variantRun?: string[];
   /** Provider variant options that point to OTHER products (never substituted). */
   siblingVariants: Array<{ axis: string; label: string; providerProductId: string | null }>;
 }

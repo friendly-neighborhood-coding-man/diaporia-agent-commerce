@@ -11,7 +11,13 @@
  *  - no redirects (redirect: "manual"; any 3xx stops the run and still counts as a call);
  *  - run-total call caps and run-total credit caps per provider (expected credits are checked BEFORE the call);
  *  - Tavily basic depth only, never auto_parameters (which may switch to 2-credit advanced);
- *  - stop on auth/credit/plan errors, and on a 429/5xx that survives one retry.
+ *  - stop on auth/credit/plan errors, and on a 429/5xx that survives one retry;
+ *  - (V2.1) uncertain or unexpected cost stops the run: a provider reporting MORE credits than the contract says, or a
+ *    successful Tavily response without usage.credits (include_usage is always sent);
+ *  - (V2.1) unsupported locale stops the run before the call: a Channel3 config.currency / config.country outside the
+ *    documented sets (no KRW, no KR);
+ *  - (V2.1) an unexpected successful response shape stops the run (Channel3 search without products[], Tavily without results[]);
+ *  - (V2.1) accounting per arm: `label` is "<arm>/<request>", and byArm() reports calls and credits for each arm.
  * Logs contain provider, path, status, credits and provider request id only: never headers, keys or bodies.
  */
 export const SERVICE_LIVE_CAPS = Object.freeze({ CHANNEL3: 1, TAVILY: 2, KERNEL: 1 });
@@ -20,6 +26,15 @@ export const SERVICE_LIVE_RETRY = Object.freeze({ attempts: 1, baseDelayMs: 0, m
 export const APPROVED_PROVIDER_HOSTS = Object.freeze({ CHANNEL3: "api.trychannel3.com", TAVILY: "api.tavily.com" });
 /** Documented prices after each provider's 1,000 free monthly credits (docs/research/PROVIDER_CONTRACTS.md). */
 export const DOCUMENTED_USD_PER_CREDIT = Object.freeze({ CHANNEL3: 0.007, TAVILY: 0.008 });
+
+/** Documented Channel3 locales (docs/research/PROVIDER_CONTRACTS.md, read 2026-11-10). */
+export const CHANNEL3_DOCUMENTED = Object.freeze({
+  currencies: ["USD", "CAD", "AUD", "GBP", "EUR", "SEK", "CZK", "RON", "CHF", "PLN"],
+  countries: ["US", "GB", "EU", "AU", "CA", "IE", "DE", "AT", "FR", "BE", "IT", "ES", "NL", "SE", "FI", "PT", "CZ", "GR", "RO", "CH", "PL"],
+});
+/** Date the provider contracts were last read from the official docs. The live script refuses if this is older than 14 days. */
+export const PROVIDER_CONTRACTS_READ_AT = "2026-11-10";
+export const CONTRACTS_MAX_AGE_DAYS = 14;
 
 export type LiveProvider = keyof typeof APPROVED_PROVIDER_HOSTS;
 export interface LiveGuardLimits { calls: Record<LiveProvider, number>; credits: Record<LiveProvider, number> }
@@ -47,6 +62,12 @@ function bodyJson(init?: RequestInit): Record<string, unknown> | null {
 /** Credits a call will cost per the documented contract; throws for a call the plan does not allow. */
 export function expectedCredits(provider: LiveProvider, url: URL, init?: RequestInit): number {
   if (provider === "CHANNEL3") {
+    const cfg = (bodyJson(init)?.config ?? {}) as { currency?: unknown; country?: unknown };
+    if (cfg.currency !== undefined && !CHANNEL3_DOCUMENTED.currencies.includes(String(cfg.currency))) throw new LiveStop(`Channel3 currency ${String(cfg.currency)} is not documented`);
+    if (cfg.country !== undefined && !CHANNEL3_DOCUMENTED.countries.includes(String(cfg.country))) throw new LiveStop(`Channel3 country ${String(cfg.country)} is not documented`);
+    const q = url.searchParams;
+    if (q.has("currency") && !CHANNEL3_DOCUMENTED.currencies.includes(q.get("currency")!)) throw new LiveStop(`Channel3 currency ${q.get("currency")} is not documented`);
+    if (q.has("country") && !CHANNEL3_DOCUMENTED.countries.includes(q.get("country")!)) throw new LiveStop(`Channel3 country ${q.get("country")} is not documented`);
     if (url.pathname === "/v1/search" || url.pathname === "/v1/lookup") return 1;
     if (url.pathname.startsWith("/v1/products/")) return 0;
     throw new LiveStop(`Channel3 path not in plan: ${url.pathname}`);
@@ -90,8 +111,8 @@ export class LiveCallGuard {
       if (++this.#failStreak[provider] >= 2) this.#stop(`${provider} network error after retry`);
       throw e;
     }
-    let reported: number | null = null; let rid: string | null = null;
-    try { const j = await res.clone().json() as { usage?: { credits?: unknown }; request_id?: unknown }; if (typeof j?.usage?.credits === "number") reported = j.usage.credits; if (typeof j?.request_id === "string") rid = j.request_id; } catch { /* non-JSON */ }
+    let reported: number | null = null; let rid: string | null = null; let json: any = undefined;
+    try { json = await res.clone().json(); if (typeof json?.usage?.credits === "number") reported = json.usage.credits; if (typeof json?.request_id === "string") rid = json.request_id; } catch { /* non-JSON */ }
     // Charge the larger of reported and expected for successful calls; failed calls are charged as expected (conservative).
     const charged = Math.max(reported ?? 0, expected);
     this.credits[provider] += charged;
@@ -99,11 +120,29 @@ export class LiveCallGuard {
     this.records.push({ label: this.label, provider, path: url.pathname, status: res.status, expectedCredits: expected, reportedCredits: reported, chargedCredits: charged,
       providerRequestId: rid, ms: Math.round(this.clock() - t0), note: redirect ? "redirect refused" : null });
     if (redirect) this.#stop(`${provider} answered with a redirect (HTTP ${res.status}); redirects are not followed`);
+    if (reported !== null && reported > expected) this.#stop(`${provider} reported ${reported} credits for a call the contract prices at ${expected}: unexpected billing`);
+    if (res.ok) {
+      if (provider === "TAVILY" && reported === null) this.#stop("Tavily response has no usage.credits: cost uncertain");
+      const shapeOk = provider === "TAVILY" ? Array.isArray(json?.results)
+        : url.pathname === "/v1/search" ? Array.isArray(json?.products) : url.pathname === "/v1/lookup" ? !!json?.product && typeof json.product === "object" : !!json && typeof json === "object";
+      if (!shapeOk) this.#stop(`${provider} ${url.pathname} returned an unexpected response shape`);
+    }
     if (STOP_STATUSES.has(res.status)) this.stopped ??= `${provider} HTTP ${res.status}`;
     if (res.status === 429 || res.status >= 500) { if (++this.#failStreak[provider] >= 2) this.stopped ??= `${provider} HTTP ${res.status} after retry`; }
     else this.#failStreak[provider] = 0;
     return res;
   };
+
+  /** Calls and charged credits per arm (label prefix before "/"), so arms are reported separately. */
+  byArm(): Record<string, { calls: Record<LiveProvider, number>; credits: Record<LiveProvider, number> }> {
+    const out: Record<string, { calls: Record<LiveProvider, number>; credits: Record<LiveProvider, number> }> = {};
+    for (const r of this.records) {
+      const arm = r.label.split("/")[0] ?? "-";
+      const a = out[arm] ??= { calls: { CHANNEL3: 0, TAVILY: 0 }, credits: { CHANNEL3: 0, TAVILY: 0 } };
+      a.calls[r.provider]++; a.credits[r.provider] += r.chargedCredits;
+    }
+    return out;
+  }
 
   /** Upper-bound cost if no free credits remain (documented prices). */
   costUsdUpperBound(): number {

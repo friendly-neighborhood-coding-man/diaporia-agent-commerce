@@ -6,7 +6,7 @@ import { resolveExactV2, type ResolutionV2 } from "../identity/ProductResolverV2
 import type { EvidenceRouter, RouterResult, RouterStep } from "../evidence/EvidenceRouter.js";
 import { judgeV2, type CapabilityVerdict, type EvidenceItem } from "../evidence/EvidenceV2.js";
 import { hostOf } from "../evidence/SourceRegistry.js";
-import { clauseStatement } from "./capabilities.js";
+import { clauseStatement, evidenceCapabilityOf, fitKey } from "./capabilities.js";
 
 /** True when any clause of a listing text claims the capability (planner prior only). */
 function clauseStatementAny(text: string, cap: string): boolean | null {
@@ -45,6 +45,8 @@ export interface PlannerDeps {
   now: () => number;
   weights?: RankingWeights | null;
   limits?: Partial<PlannerLimits>;
+  /** V2.14: true when the offer's merchant is known to be ineligible (registry not ACTIVE, payee revoked). */
+  merchantIneligible?: (offer: MerchantOffer) => Promise<boolean>;
 }
 export interface PlannerTrace {
   queries: Array<{ query: string; page: number; results: number; purpose: "PRIMARY" | "FALLBACK" | "NEXT_PAGE" | "VARIANT_DETAIL" }>;
@@ -61,9 +63,12 @@ export interface PlannerResult {
   legacyRouting: Map<string, RouterResult[]>;
   decision: Decision;
   trace: PlannerTrace;
+  /** V2.4: a NAMED request whose variant was open was researched as discovery among the named model's listings. */
+  namedFallback?: boolean;
 }
 
-export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): Promise<PlannerResult> {
+export async function runResearchV2(intentIn: ResearchIntentV2, d: PlannerDeps): Promise<PlannerResult> {
+  let intent = intentIn;
   const L = { ...DEFAULT_PLANNER_LIMITS, ...(d.limits ?? {}) };
   const supported = CHANNEL3_CURRENCIES.has(intent.currency);
   const trace: PlannerTrace = { queries: [], catalogCalls: 0, evidenceSearches: 0, evidenceSteps: [], stops: [],
@@ -71,15 +76,23 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   if (!supported) trace.stops.push(`Catalog cannot price in ${intent.currency}; listings come back in other currencies and cannot be compared with the budget.`);
   const products = new Map<string, CatalogProduct>();
   const offers = new Map<string, MerchantOffer[]>();
+  const excludedMerchantOffers: string[] = [];
   const exact = intent.mode === "EXACT_PRODUCT_PURCHASE" && !!intent.target;
 
   const baseQuery = (query: string): ProductSearchQuery => ({ text: query, query, category: intent.category, brand: exact ? intent.target!.brand : null, model: exact ? intent.target!.model : null,
     currency: supported ? intent.currency : null, country: null,
     // Price filter in discovery only (an exact request must find the product to explain an over-budget price).
-    maxPriceMinor: !exact && supported && intent.budgetMinor !== null ? intent.budgetMinor : null,
+    maxPriceMinor: !exact && supported && (intent.budgetMaxMinor ?? intent.budgetMinor) !== null ? (intent.budgetMaxMinor ?? intent.budgetMinor) : null,
     conditions: intent.condition === "used" ? ["used"] : intent.condition === "new" ? ["new"] : undefined, limit: 20 });
   const fetchOffers = async (ps: CatalogProduct[]) => {
-    for (const p of ps) if (!offers.has(p.productId)) offers.set(p.productId, (await d.research.findOffers(p.identity)).filter((o) => o.productId === p.productId));
+    for (const p of ps) if (!offers.has(p.productId)) {
+      const own = (await d.research.findOffers(p.identity)).filter((o) => o.productId === p.productId);
+      // V2.14 (IW-14 b15): an offer from a merchant known to be ineligible (suspended or closed registration, revoked
+      // payee) is never price evidence: it never counts for the budget, the lowest price or a recommendation.
+      const keep: MerchantOffer[] = [];
+      for (const o of own) { let bad = false; if (d.merchantIneligible) { try { bad = await d.merchantIneligible(o); } catch { bad = false; } } if (!bad) keep.push(o); else excludedMerchantOffers.push(o.offerId); }
+      offers.set(p.productId, keep);
+    }
   };
   const runQuery = async (query: string, purpose: "PRIMARY" | "FALLBACK"): Promise<void> => {
     let token: string | null = null;
@@ -110,7 +123,9 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
   const runQueryGuarded = async (query: string, purpose: "PRIMARY" | "FALLBACK") => {
     if (first) { first = false; await runQuery(query, purpose); } else await optional(() => runQuery(query, purpose), `the ${purpose.toLowerCase()} query`);
   };
-  await runQueryGuarded(intent.queries.primary, "PRIMARY");
+  // N-07: no query could be formed in the provider's language: no catalog call (nothing to search for).
+  if (!intent.queries.primary.trim()) trace.stops.push("no search query could be formed in the provider's language; the request must name the product");
+  else await runQueryGuarded(intent.queries.primary, "PRIMARY");
   if (!exact && intent.queries.fallback && passing() < 5) await runQueryGuarded(intent.queries.fallback, "FALLBACK");
 
   let resolution: ResolutionV2 | null = null;
@@ -127,9 +142,22 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
     }
   }
 
+  // V2.10: a part locked through its base model must be shown to fit the full requested model (a MUST requirement).
+  // The model checks then apply to the base model the part is listed under; the fit requirement carries the full name.
+  if (resolution?.status === "LOCKED" && resolution.fitModel && intent.target) {
+    const base = resolution.identity.model;
+    intent = { ...intent, requestedModel: base, target: { ...intent.target, model: base }, requestTail: [], targetNoun: null, unresolvedMust: [...(intent.unresolvedMust ?? []), fitKey(resolution.fitModel)] };
+  }
   // Candidates the decision will consider.
   let pool: CatalogProduct[];
-  if (exact) pool = resolution?.status === "LOCKED" ? [products.get(resolution.productId)!] : [];
+  // V2.4: a request that only names the product (no buy verb) and leaves its variant open ("Fabrikam Aero 14 laptop"
+  // when 16 GB and 32 GB exist) is researched as discovery among that model's listings; the model rule still excludes
+  // every other model, bundle and accessory.
+  const namedFallback = exact && resolution?.status === "AMBIGUOUS" && intent.lockBasis === "NAMED" && !resolution.productTypeAmbiguous;
+  if (exact && !namedFallback) pool = resolution?.status === "LOCKED" ? [lockedAs(products.get(resolution.productId)!, resolution.identity.model)] : [];
+  // V2.5: under the fallback only the listings the resolver matched to the named identity are candidates (never a
+  // sibling model the resolver excluded).
+  else if (namedFallback && resolution?.status === "AMBIGUOUS") { const ok = new Set(resolution.options.map((o) => o.productId)); pool = [...products.values()].filter((p) => ok.has(p.productId)); }
   else pool = [...products.values()];
   const lock = resolution?.status === "LOCKED" ? { productId: resolution.productId } : null;
   // Exact-lock duplicates carry their offers on the locked product (Channel3 adapter merges them already).
@@ -137,7 +165,11 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
 
   const verdicts = new Map<string, Record<string, CapabilityVerdict>>();
   const notChecked = new Map<string, string[]>();
-  const caps = [...intent.mustHave, ...intent.niceToHave];
+  // V2.2 WP-4: stated requirements outside the vocabulary are verified as generic propositions too (evidenceCapabilityOf).
+  const propCaps = [...new Set((intent.unresolvedMust ?? []).map(evidenceCapabilityOf))].filter((x) => !intent.mustHave.includes(x));
+  const mustCaps = [...intent.mustHave, ...propCaps];
+  const caps = [...mustCaps, ...intent.niceToHave.filter((n) => !mustCaps.includes(n))];
+  const propsHold = (vv: Record<string, CapabilityVerdict>) => (intent.unresolvedMust ?? []).every((k) => vv[evidenceCapabilityOf(k)]?.status === (k.startsWith("not:") ? "VERIFIED_FALSE" : "VERIFIED_TRUE"));
   const sellers = [...new Set([...offers.values()].flat().map((o) => o.merchantDomain).concat([...offers.values()].flat().map((o) => (o.listingUrl ? hostOf(o.listingUrl) : "")).filter(Boolean)))];
   let limitReached = false;
   const legacyRouting = new Map<string, RouterResult[]>();
@@ -165,12 +197,24 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
     // Spending order (review R-09): free hard checks first; for the lowest-price objective, cheapest first (so a cheaper
     // eligible candidate is never left unchecked behind a pricier one); otherwise a catalog-text PRIOR (how many
     // must-haves the listing itself claims; used only to decide where to spend, never as evidence), then price.
-    const prior = (p: CatalogProduct) => intent.mustHave.filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length;
+    // V2.3: unfamiliar MUST propositions count toward the prior too ("Wi-Fi 7" in a router's title): ordering only.
+    const prior = (p: CatalogProduct) => [...intent.mustHave, ...propCaps.filter((x) => !x.startsWith("not:"))].filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length;
     const pre = pool.map((p) => ({ p, pe: preEligible(intent, { product: p, offers: offers.get(p.productId) ?? [] }, lock), prior: prior(p) }))
       .filter((x) => x.pe.eligible)
       .sort((a, b) => a.pe.blockersBeforeEvidence.length - b.pe.blockersBeforeEvidence.length
         || (intent.objective === "LOWEST_VERIFIED_TOTAL" ? (a.pe.lowestListingMinor ?? Infinity) - (b.pe.lowestListingMinor ?? Infinity) || b.prior - a.prior
           : b.prior - a.prior || (a.pe.lowestListingMinor ?? Infinity) - (b.pe.lowestListingMinor ?? Infinity)));
+    // V2.6: when the search budget cannot reach every candidate one by one, the first search is brand-wide (the leading
+    // candidates' shared brand), so the result pool covers several models; each candidate is then read against it.
+    if (d.router?.policy === "v2" && !lock && pre.length > 1) {
+      const brand = pre[0]!.p.identity.brand;
+      const fams = new Set(pre.filter((x) => x.p.identity.brand === brand).map((x) => `${x.p.identity.model}`.toLowerCase()));
+      const left = Math.min(d.router.remainingSearches?.(d.ctx) ?? Infinity, L.maxEvidenceSearches);
+      if (brand && fams.size >= 2 && fams.size > left) {
+        const r = await d.router.verifyMany(pre[0]!.p, caps, d.ctx, { sellers, maxSearches: 1, broad: true });
+        trace.evidenceSearches += r.searchesSent; trace.evidenceSteps.push(...r.steps);
+      }
+    }
     let best: { price: number; nice: number } | null = null;
     const verifiedFamilies = new Set<string>();
     let checked = 0;
@@ -187,7 +231,7 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
       const v = await verifyFor(d, p, caps, sellers, Math.min(L.maxEvidenceSearchesPerCandidate, L.maxEvidenceSearches - trace.evidenceSearches), trace);
       verdicts.set(p.productId, v.verdicts);
       if (v.blocked.length) { limitReached = true; notChecked.set(p.productId, v.blocked); trace.stops.push("usage limit reached during evidence; remaining requirements stay unverified"); }
-      const allMust = intent.mustHave.every((m) => v.verdicts[m]?.status === "VERIFIED_TRUE");
+      const allMust = intent.mustHave.every((m) => v.verdicts[m]?.status === "VERIFIED_TRUE") && propsHold(v.verdicts);
       if (allMust && pe.blockersBeforeEvidence.length === 0) {
         const nice = intent.niceToHave.filter((n) => v.verdicts[n]?.status === "VERIFIED_TRUE").length;
         const price = pe.lowestListingMinor ?? Infinity;
@@ -195,15 +239,43 @@ export async function runResearchV2(intent: ResearchIntentV2, d: PlannerDeps): P
       }
       if (limitReached) break;
     }
+    // V2.6: candidates the search budget did not reach are still read against every result this research already
+    // retrieved (no new search). A sibling's search often returns this candidate's manufacturer page too.
+    if (d.router?.policy === "v2") for (const { p } of pre) {
+      if (verdicts.has(p.productId)) continue;
+      const r = await d.router.verifyMany(p, caps, d.ctx, { sellers, maxSearches: 0 });
+      trace.evidenceSteps.push(...r.steps);
+      // Only a settled outcome is kept: every requirement decided, or one known false. A partial read changes nothing.
+      const vs = Object.values(r.verdicts);
+      if (!(vs.every((x) => x.status !== "UNVERIFIED") || vs.some((x) => x.status === "VERIFIED_FALSE"))) continue;
+      verdicts.set(p.productId, r.verdicts);
+      const open = caps.filter((c) => r.verdicts[c]?.status === "UNVERIFIED");
+      if (open.length) notChecked.set(p.productId, open); else notChecked.delete(p.productId);
+    }
+  }
+  // V2.12 (IW-12 b10): with a budget, the offers of the leading candidates are quoted (no destination: tax stays
+  // unknown) so the budget check sees shipping and fees, not only the listing price. Read-only; no checkout is created.
+  const knownCost = new Map<string, Record<string, number>>();
+  const maxBudget = intent.budgetMaxMinor ?? intent.budgetMinor;
+  if (maxBudget !== null && maxBudget !== undefined) {
+    for (const p of pool.slice(0, 8)) {
+      const rec: Record<string, number> = {};
+      for (const o of (offers.get(p.productId) ?? []).filter((x) => x.availability !== "OUT_OF_STOCK" && x.currency === intent.currency).slice(0, 6)) {
+        let q: Awaited<ReturnType<typeof d.research.getQuote>> = null;
+        try { q = await d.research.getQuote(o.offerId, 1, null); } catch { q = null; }
+        if (q && q.currency === intent.currency) rec[o.offerId] = q.itemPriceMinor + (q.shippingMinor ?? 0) + (q.feesMinor ?? 0) - (q.discountMinor ?? 0);
+      }
+      if (Object.keys(rec).length) knownCost.set(p.productId, rec);
+    }
   }
   const inputs: CandidateInput[] = pool.map((p) => {
     const v = verdicts.get(p.productId) ?? (d.router?.policy === "v2" ? fixtureVerdicts(p, caps) : Object.fromEntries(caps.map((c) => [c, v1Verdict(p, c, null)])));
-    return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, intent.mustHave), nice: pick(v, intent.niceToHave),
-      listingClaims: intent.mustHave.filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length, notChecked: notChecked.get(p.productId) ?? (verdicts.has(p.productId) ? [] : caps.filter((c) => !v[c] || v[c]!.status === "UNVERIFIED")), limitReached };
+    return { product: p, offers: offers.get(p.productId) ?? [], must: pick(v, mustCaps), nice: pick(v, intent.niceToHave), ...(knownCost.has(p.productId) ? { knownCostMinor: knownCost.get(p.productId)! } : {}),
+      listingClaims: [...intent.mustHave, ...propCaps.filter((x) => !x.startsWith("not:"))].filter((m) => clauseStatementAny(`${p.title}. ${p.description?.text ?? ""}`, m) === true).length, notChecked: notChecked.get(p.productId) ?? (verdicts.has(p.productId) ? [] : caps.filter((c) => !v[c] || v[c]!.status === "UNVERIFIED")), limitReached };
   });
-  const exactFailure = exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
+  const exactFailure = namedFallback ? null : exact && resolution && resolution.status !== "LOCKED" ? (resolution.status === "AMBIGUOUS" ? resolution.question : resolution.reason) : exact && !resolution ? "No exact product could be resolved." : null;
   const decision = decide(intent, inputs, { exactLock: lock, exactFailure, weights: d.weights ?? null, now: d.now() });
-  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace };
+  return { products: [...products.values()], offers, resolution, verdicts, legacyRouting, decision, trace, namedFallback };
 }
 
 /** V1 capability status (any non-listing claim decides; listing claims never do). */
@@ -254,4 +326,16 @@ async function verifyFor(d: PlannerDeps, p: CatalogProduct, caps: string[], sell
       basis: r.sufficiency === "CONTRADICTED" ? "CONFLICT" : r.sufficiency === "INSUFFICIENT" ? "INSUFFICIENT" : items.some((i) => i.sourceClass === "MANUFACTURER") ? "MANUFACTURER" : "TWO_EXPERT_GROUPS", evidence: items, independentGroups: 0 };
   }
   return { verdicts: out, blocked };
+}
+
+/**
+ * V2.9: a lock through the full requested name ("F2 Cordless", "A5 4K") researches the product under that name, so
+ * evidence must name the full model: a page about the shorter sibling ("the Floska F2 is corded") never counts for it.
+ */
+function lockedAs(p: CatalogProduct, model: string | null): CatalogProduct {
+  const norm = (m: string) => m.normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+  if (!model || !p.identity.model) return p;
+  const a = norm(model), b = norm(p.identity.model);
+  if (a.length <= b.length || !a.startsWith(b)) return p;
+  return { ...p, identity: { ...p.identity, model } };
 }

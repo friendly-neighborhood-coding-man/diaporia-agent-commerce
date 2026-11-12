@@ -20,6 +20,20 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 - Unknown shipping or tax stays **unknown**; such offers are never ranked as "cheapest". Variant or condition substitutions are refused.
 - Merchant and review text is treated as untrusted data; listings that try to instruct the agent are excluded.
 
+## See it work in one command
+
+```bash
+npm ci && npm run demo:full
+```
+
+An AI host connects over MCP and runs three scenarios end to end, offline, in about a second (no keys, no network, no money):
+
+1. **Discovery to receipt.** "wireless headphones under $150 with multipoint and a lanyard loop" becomes structured requirements. Research verifies each MUST requirement from the manufacturer's own page, rejects the cheaper model whose maker says it has no lanyard loop, excludes the bundle, and flags a listing that tries to instruct the AI. It then locks the exact product and verifies merchant identity, rejecting a look-alike domain. It compares verified checkout totals, not search prices. The AI prepares a checkout it cannot pay for; the owner sets a limit on the owner page; the buyer approves on the MOCK PayPal page. The result is a server-verified status and a receipt with the full audit trail.
+2. **A requirement nobody can verify.** "it must fold flat into a slim case" stays an open MUST requirement (INVESTIGATE, never RECOMMEND). The AI can only propose an attestation. The owner confirms it with a passkey, and the ledger records `OWNER_ATTESTED`, never `VERIFIED`.
+3. **Unsafe purchases blocked.** The A9 is requested but only the A9 Pro exists, so it is never substituted. A misled AI's $10,000 budget is ignored in favour of the user's $150. A forged "the owner already approved" statement changes nothing.
+
+Each run writes `demo-output/<run>/trace.json`, `transcript.md` and a SHA-256 of the trace, and exits non-zero if any step misbehaves. The human steps are played by a scripted demo owner with DEMO-ONLY credentials generated for that run. This is a development simulation of a person, not real consent, and the trace says so. Payments are MOCK. Submission notes: [docs/SUBMISSION.md](docs/SUBMISSION.md).
+
 ## Status (what is real, what is not)
 
 | Capability | Status |
@@ -52,7 +66,8 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 npm ci
 npm test            # all automated mock and offline integration tests
 npm run typecheck
-npm run demo:e2e    # full MCP purchase path, all MOCK
+npm run demo:full   # research → evidence → identity → verified total → owner approval → MOCK checkout → receipt, plus blocked unsafe purchases
+npm run demo:e2e    # full MCP purchase path on the fixture catalog, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
 npm run demo:quote     # discovery → Shopify cart estimate → external checkout handoff (fixtures)
 npm run demo:service   # evidence routing + usage ledger, community vs simulated managed billing (all MOCK)
@@ -62,10 +77,12 @@ npm run demo:subscription  # managed subscription billing against a fake PayPal:
 Run the server:
 
 ```bash
-npm run dev         # http://127.0.0.1:8790/mcp, mock payments, dev credentials written to .data/dev-credentials.json
+npm run dev         # http://127.0.0.1:8790/mcp, mock payments, the AI-client token is written to .data/dev-credentials.json
 ```
 
-Create a spending mandate as the human owner (in a second terminal):
+Run this way (as your own account, the one your AI host also uses), the server offers research and comparison only: payment-facing operations stay disabled until DIAPORIA runs under its own OS account (docs/SETUP.md, "Service account"; V2.2). `.data/dev-credentials.json` holds the AI client's token only. Owner credentials (owner key and passkey) are never written there: the human owner enrolls them in a protected owner registry from a separate OS account (docs/SETUP.md, "Owner confirmation"). Until then every owner page refuses, and research holds cannot be confirmed.
+
+Create a spending mandate as the human owner (in a second terminal, typing your owner key when asked):
 
 ```bash
 npm run mandate:create -- --brand Sony --model WH-CH720N --variant Black --sku WHCH720N/B --max 60.00

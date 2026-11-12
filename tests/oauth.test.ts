@@ -87,7 +87,7 @@ describe("OAuth 2.1 for remote MCP clients", () => {
     const client2 = new Client({ name: "sdk-oauth-host", version: "1.0.0" });
     await client2.connect(new StreamableHTTPClientTransport(new URL(`${url}/mcp`), { authProvider: provider }));
     const names = (await client2.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(["compare_purchase_offers", "get_checkout_status", "get_purchase_receipt", "get_usage_summary", "prepare_checkout", "research_purchase"]);
+    expect(names).toEqual(["compare_purchase_offers", "get_checkout_status", "get_purchase_receipt", "get_usage_summary", "prepare_checkout", "research_purchase", "resolve_research_hold"]);
     const { compare } = await researchAndCompare(client2);
     expect(compare.state).toBe("OFFER_VERIFIED");
     await client2.close();

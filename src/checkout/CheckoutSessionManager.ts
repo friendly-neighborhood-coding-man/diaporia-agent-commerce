@@ -122,6 +122,18 @@ export class CheckoutSessionManager {
     return this.getPurchaseSession(id, userId);
   }
 
+  /**
+   * V2.4: a request that only named a product with an open variant is researched as discovery. Allowed only while the
+   * session is CREATED (before any research result, comparison or lock exists), and only towards discovery.
+   */
+  researchAsDiscovery(ps: PurchaseSession, intent: RoutedIntent): PurchaseSession {
+    if (intent.mode !== "PRODUCT_DISCOVERY") throw new Error("researchAsDiscovery only switches a session to discovery");
+    const r = this.store.db.prepare(`UPDATE purchase_sessions SET mode=?, intent_json=?, version=version+1, updated_at=? WHERE id=? AND user_id=? AND state='CREATED' AND version=?`)
+      .run("PRODUCT_DISCOVERY", j(intent), this.now(), ps.purchaseSessionId, ps.userId, ps.version);
+    if (r.changes !== 1) throw new StaleStateError("Purchase session changed concurrently; retry with fresh state");
+    return this.getPurchaseSession(ps.purchaseSessionId, ps.userId);
+  }
+
   /** Scoped by user: another user's session is indistinguishable from a missing one. */
   getPurchaseSession(id: string, userId: string): PurchaseSession {
     const r = this.store.db.prepare("SELECT * FROM purchase_sessions WHERE id = ? AND user_id = ?").get(id, userId) as Row | undefined;

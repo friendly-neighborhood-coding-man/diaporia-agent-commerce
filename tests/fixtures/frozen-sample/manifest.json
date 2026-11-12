@@ -1,0 +1,10 @@
+{
+  "schema": "diaporia.research-eval.frozen-manifest.v1",
+  "caseFile": "cases.json",
+  "sha256": "0383899542f828cd7ce8473ee2e8fb59a1f0276bef1da577b72f1234e2124d9f",
+  "cases": 2,
+  "author": "builder (format sample only; not evidence)",
+  "frozenAt": "2026-11-11T00:00:00Z",
+  "worldSha256": "bcdf4696963d5b829dca2d9d56669a199139f4af0927d7796d04a430bcdf37de",
+  "note": "Format example for the protocol. Copied from dev cases; never an evaluation result."
+}

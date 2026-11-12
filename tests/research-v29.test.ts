@@ -1,0 +1,301 @@
+/**
+ * V2.9: variant words after a model code are compared by name, never by a suffix allow-list, after the first scored
+ * IW-10 run (IW-10 is now seen; these tests use builder-written fictional products only: Corvan, Mirelle, Toska,
+ * Pellan, Quillon, Abrin, Contoso). Nothing is copied from any IW set.
+ */
+import { describe, expect, it } from "vitest";
+import { parseResearchIntent } from "../src/intent/ResearchIntentV2.js";
+import { extractIdentity } from "../src/identity/ProductIdentityExtractor.js";
+import { resolveExactV2 } from "../src/identity/ProductResolverV2.js";
+import { mentionsOtherVariant, missingNameWords, pickVariant, variantRuns } from "../src/identity/VariantTail.js";
+import { statementFrom } from "../src/evidence/EvidenceV2.js";
+import { Channel3ResearchAdapter } from "../src/research/Channel3ResearchAdapter.js";
+
+const intent = (request: string) => parseResearchIntent({ request } as any) as any;
+const product = (id: string, title: string, brand: string, category = "unknown"): any =>
+  ({ productId: id, title, category, identity: { ...extractIdentity(title, brand), brand, variant: null, condition: "new", sku: null }, description: null, capabilities: [], offers: [] });
+const offers = (id: string) => [{ productId: id, offerId: `o-${id}`, availability: "IN_STOCK", currency: "USD", itemPriceMinor: 5000, listedIdentity: { condition: "new" } }] as any;
+
+describe("V2.9 the words right after the model code tell siblings apart", () => {
+  it("a name word, a short code or an inserted feature word is a variant; shared words and descriptors are not", () => {
+    expect(variantRuns(["Toska R9 Electric Scooter", "Toska R9 Dual Electric Scooter"], "Toska", "R9")).toEqual([[], ["Dual"]]);
+    expect(variantRuns(["Toska BM-3 Video Baby Monitor", "Toska BM-3 HD Video Baby Monitor"], "Toska", "BM-3")).toEqual([[], ["HD"]]);
+    expect(variantRuns(["Pellan F2 Water Flosser", "Pellan F2 Cordless Water Flosser"], "Pellan", "F2")).toEqual([[], ["Cordless"]]);
+    expect(variantRuns(["Corvan CX-7 Wireless Bluetooth Headphones", "Corvan CX-7 Active Noise Canceling Headphones"], "Corvan", "CX-7")).toEqual([[], []]);
+    expect(variantRuns(["Pellan LX-2 27-inch 4K Monitor", "Pellan LX-2 27-inch QHD Monitor"], "Pellan", "LX-2")).toEqual([[], []]);
+  });
+  it("the plain request keeps the plain listing; a tie between two named variants keeps nothing", () => {
+    const t = (x: string) => x;
+    expect(pickVariant(["Toska R9 Electric Scooter", "Toska R9 Dual Electric Scooter"], t, "Toska", "R9", []).keep).toEqual(["Toska R9 Electric Scooter"]);
+    expect(pickVariant(["Toska R9 Electric Scooter", "Toska R9 Dual Electric Scooter"], t, "Toska", "R9", ["Dual"]).keep).toEqual(["Toska R9 Dual Electric Scooter"]);
+    expect(pickVariant(["Toska R9 Dual Scooter", "Toska R9 Solo Scooter"], t, "Toska", "R9", []).keep).toEqual([]);
+  });
+  it("every name word the user wrote after the code must be in the listing", () => {
+    expect(missingNameWords("Toska R9 Electric Scooter", ["Dual"])).toEqual(["Dual"]);
+    expect(missingNameWords("Toska R9 Dual Electric Scooter", ["Dual"])).toEqual([]);
+    expect(missingNameWords("Toska R9 Electric Scooter", ["black", "scooter"])).toEqual([]);
+  });
+});
+
+describe("V2.9 resolver: a variant the request names is locked by its full name, never the shorter sibling", () => {
+  const listings = [product("plain", "Toska R9 Electric Scooter", "Toska"), product("dual", "Toska R9 Dual Electric Scooter", "Toska")];
+  it("'R9 Dual' locks the Dual and says so in the locked model", () => {
+    const r: any = resolveExactV2(intent("Toska R9 Dual electric scooter"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("dual");
+    expect(r.identity.model).toMatch(/R9 Dual/);
+  });
+  it("'R9' locks the plain listing, never the Dual", () => {
+    const r: any = resolveExactV2(intent("Toska R9 electric scooter"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("plain");
+  });
+  it("'R9 Dual' with only the plain listing found fails closed", () => {
+    const r: any = resolveExactV2(intent("Toska R9 Dual electric scooter"), [listings[0]], offers);
+    expect(r.status).toBe("NOT_FOUND");
+  });
+});
+
+describe("V2.9 evidence about a sibling variant never counts", () => {
+  const plain = product("p", "Pellan A5 Action Camera", "Pellan", "action-cameras");
+  it("a page about 'A5 4K' says nothing about the A5, not even in a pronoun clause", () => {
+    const hit = { title: "Pellan A5 4K Action Camera specifications", snippet: "Unlike the Pellan A5, which tops out at 1080p, the Pellan A5 4K records 4K video. It is waterproof to 10 m." };
+    expect(mentionsOtherVariant(hit.snippet, plain.title, "A5")).toBe(true);
+    expect(statementFrom(hit, plain, "waterproof")).toBeNull();
+    expect(statementFrom({ title: "Pellan A5 Action Camera specifications", snippet: "The Pellan A5 is waterproof to 10 m." }, plain, "waterproof")?.value).toBe(true);
+  });
+});
+
+describe("V2.9 the adapter never merges or pools sibling variants", () => {
+  const item = (id: string, title: string) => ({ id, title, brands: [{ name: "Pellan" }],
+    offers: [{ domain: `${id}.example`, url: `https://${id}.example/p`, price: { price: 99.5, currency: "USD" }, availability: "InStock", condition: null }] });
+  const fake = (pages: unknown[]) => { let n = 0; return (async () => Response.json(pages[n++])) as unknown as typeof fetch; };
+  it("'A5 4K' stays its own product beside 'A5', and the A5's offers never include it", async () => {
+    const a = new Channel3ResearchAdapter("ch3-FAKE-KEY-0123456789", { fetchImpl: fake([{ products: [item("a5", "Pellan A5 Action Camera"), item("a54k", "Pellan A5 4K Action Camera")] }]) });
+    const r = await a.searchPage({ text: "x", category: null, brand: null, model: null, query: "pellan a5" });
+    expect(r.products).toHaveLength(2);
+    const k = r.products.find((p) => p.title.includes("4K"))!;
+    expect(k.research!.variantRun).toEqual(["4K"]);
+    const plain = r.products.find((p) => !p.title.includes("4K"))!;
+    const o = await a.findOffers(plain.identity);
+    expect(o.filter((x) => x.listedIdentity.model === plain.identity.model).map((x) => x.merchantDomain)).toEqual(["a5.example"]);
+  });
+});
+
+describe("V2.9 a weight is not money", () => {
+  it("'250 grams' is a quantity, the dollar amount is the budget", () => {
+    const i = intent("Quillon kitchen scale that weighs up to 250 grams, under $30");
+    expect(i.budgetMinor ?? i.budget?.amountMinor).toBe(3000);
+  });
+});
+
+describe("V2.9 a part noun after or before the model asks for the part", () => {
+  it("'<model> battery', '<model> Belt' and 'dive housing for <model>' are accessory requests", () => {
+    expect(intent("Corvan Q8 battery").target).toMatchObject({ model: "Q8", kind: "ACCESSORY", accessoryNoun: "battery" });
+    expect(intent("Mirelle T5 Belt").target).toMatchObject({ model: "T5", kind: "ACCESSORY" });
+    expect(intent("dive housing for the Pellan A5").target).toMatchObject({ model: "A5", kind: "ACCESSORY", accessoryNoun: "dive housing" });
+    expect(intent("Pellan 10-inch frying pan under $40").target).toBeNull();
+  });
+  it("the part listing is locked, never the product it fits", () => {
+    const listings = [product("drone", "Corvan Q8 Drone", "Corvan"), product("batt", "Replacement Battery for Corvan Q8 Drone", "Corvan")];
+    const r: any = resolveExactV2(intent("Corvan Q8 battery"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("batt");
+  });
+  it("a listing of another kind is never the noun the request names", () => {
+    const r: any = resolveExactV2(intent("Pellan A5 drone"), [product("cam", "Pellan A5 Action Camera", "Pellan")], offers);
+    expect(r.status).toBe("NOT_FOUND");
+  });
+});
+
+describe("V2.10 the direction of 'up to' comes from the verb (IW-11 is seen; fictional products only)", () => {
+  it("after a capacity verb it is a minimum; after a weight word a maximum; otherwise it must be met exactly", async () => {
+    const { clauseStatement } = await import("../src/research/capabilities.js");
+    const must = (r: string) => intent(r).unresolvedMust as string[];
+    expect(must("Abrin smart scale that supports up to 180 kg")).toContain("unrecognized:at-least-180-kg");
+    expect(clauseStatement("It supports users up to 150 kg.", "unrecognized:at-least-180-kg")).toBe(false);
+    expect(clauseStatement("Rated for users up to 200 kg.", "unrecognized:at-least-180-kg")).toBe(true);
+    expect(must("Contoso laptop that weighs up to 1.5 kg")).toContain("unrecognized:at-most-1.5-kg");
+    expect(must("Toska vacuum with up to 60 minutes")).toContain("unrecognized:up-to-60-minutes");
+    expect(clauseStatement("It runs for up to 45 minutes.", "unrecognized:up-to-60-minutes")).toBe(false);
+  });
+  it("a limit word inside a model name is never money", () => {
+    const i = intent("Quillon K2 Max 3D printer");
+    expect(i.target.model).toBe("K2 Max 3D");
+    expect(i.budgetMinor ?? null).toBeNull();
+  });
+  it("'doesn't need X' excludes X", () => {
+    const m = intent("smart scale that doesn't need an app subscription").unresolvedMust as string[];
+    expect(m).toContain("not:app-subscription");
+    expect(m.some((k) => /^unrecognized:.*app-subscription/.test(k))).toBe(false);
+  });
+});
+
+describe("V2.11 a part listed under the base model is checked against the maker's fit statement (IW-11 is seen; fictional products only)", () => {
+  it("the fit statement must list the full requested model; a negated fit says it does not fit", async () => {
+    const { fitStatement, fitKey } = await import("../src/research/capabilities.js");
+    const s = "The Toska R9 Spare Battery fits the Toska R9 and R9 Dual Electric Scooters.";
+    expect(fitStatement(s, fitKey("R9 Dual"))).toBe(true);
+    expect(fitStatement(s, fitKey("R9 Max"))).toBeNull();
+    expect(fitStatement("It does not fit the R9 Max, whose battery is built in.", fitKey("R9 Max"))).toBe(false);
+    expect(fitStatement("It fits the Pellan SD-4 and SD-4P Dehumidifiers.", fitKey("SD-4P"))).toBe(true);
+    expect(fitStatement("It fits the Pellan Note 3 and Note 3 Pro E-Readers.", fitKey("Note 3 Colour"))).toBeNull();
+  });
+  it("a part request for a longer host name locks the base-model part only with a fit requirement", () => {
+    const listings = [product("dual", "Toska R9 Dual Electric Scooter", "Toska"), product("batt", "Toska R9 Spare Battery", "Toska")];
+    const i = intent("spare battery for the Toska R9 Dual");
+    expect(i.target).toMatchObject({ kind: "ACCESSORY", accessoryNoun: "battery" });
+    const r: any = resolveExactV2(i, listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("batt");
+    expect(r.fitModel).toBe("R9 Dual");
+  });
+  it("a hyphenated name word stays in the requested model", () => {
+    expect(intent("Pellan C3 Step-Through").target.model).toBe("C3 Step-Through");
+  });
+});
+
+describe("V2.11 category names, spec lines and part pages", () => {
+  it("everyday category names are categories, and the noun before a threshold is not a requirement of its own", async () => {
+    const { requestCategory } = await import("../src/research/capabilities.js");
+    expect(requestCategory("e-bike")?.id).toBe("electric-bikes");
+    expect(requestCategory("robotic lawnmower")?.id).toBe("robot-lawn-mowers");
+    expect(requestCategory("ebook reader")?.id).toBe("e-readers");
+    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).toContain("unrecognized:at-least-40-km-range");
+    expect(intent("electric scooter with a range of at least 40 km").unresolvedMust).not.toContain("unrecognized:range");
+  });
+  it("'Built-in pump: no' denies the pump", async () => {
+    const { clauseStatement } = await import("../src/research/capabilities.js");
+    expect(clauseStatement("Built-in pump: no.", "unrecognized:pump")).toBe(false);
+    expect(clauseStatement("Built-in pump: yes.", "unrecognized:pump")).toBe(true);
+  });
+  it("a page about a part of the model says nothing about the product itself", () => {
+    const bike = product("c3", "Pellan C3 Electric Bike", "Pellan", "electric-bikes");
+    expect(statementFrom({ title: "Pellan C3 Spare Battery", snippet: "The Pellan C3 Spare Battery fits the Pellan C3 Electric Bike, which is cordless." }, bike, "cordless")).toBeNull();
+  });
+});
+
+describe("V2.11 spec wording, part exclusions and conversation", () => {
+  it("a capacity verb with a number is a minimum with its noun; a rating qualifier keeps the unit", async () => {
+    const { clauseStatement } = await import("../src/research/capabilities.js");
+    expect(intent("Abrin robot mower that handles 35% slopes").unresolvedMust).toContain("unrecognized:at-least-35-percent-slopes");
+    expect(clauseStatement("It handles slopes up to 30%.", "unrecognized:at-least-35-percent-slopes")).toBe(false);
+    expect(intent("dehumidifier that removes 20 L a day").unresolvedMust).toEqual(["unrecognized:at-least-20-l-day"]);
+    expect(clauseStatement("Capacity: 25 L/day.", "unrecognized:at-least-20-l-day")).toBe(true);
+    expect(clauseStatement("It is rated at 2,400 ANSI lumens.", "unrecognized:at-least-2000-lumens")).toBe(true);
+    expect(intent("robot mower for a lawn of 800 m²").unresolvedMust).toContain("unrecognized:at-least-800-m2-lawn");
+  });
+  it("'<exact product>, without the cover' asks for the product alone", () => {
+    const i = intent("Contoso Hearth 12 Dual Fuel, without the cover");
+    expect(i.unresolvedMust).toEqual([]);
+    expect(i.excludeBundles).toBe(true);
+  });
+  it("conversation around the request is not a requirement, and the brand's clause holds the model", () => {
+    expect(intent("lol my roommate keeps borrowing my Mirelle T5, so I need my own Mirelle T5").uninterpreted).toEqual([]);
+    expect(intent("tbh I'd be happy with the Quillon K7 Max, my old one died").target.model).toBe("K7 Max");
+    expect(intent("65 inch TV with HDMI 2.1 under $1.2k").target).toBeNull();
+  });
+});
+
+describe("V2.12 (IW-12 is seen; fictional products only)", () => {
+  it("'<anything> for the <model>' asks for a part; the model itself never satisfies it", () => {
+    expect(intent("spray skirt for the Toska Arc 2 Drop-Stitch").target).toMatchObject({ kind: "ACCESSORY", accessoryNoun: "spray skirt", model: "Arc 2 Drop-Stitch" });
+    expect(intent("gift for my wife: the Corvan Q8").target.kind).toBe("STANDALONE");
+    expect(intent("$700 for the Toska Arc 2?").target.kind).toBe("STANDALONE");
+    const listings = [product("kayak", "Toska Arc 2 Inflatable Kayak", "Toska"), product("skirt", "Toska Arc 2 Spray Skirt", "Toska")];
+    const r: any = resolveExactV2(intent("spray skirt for the Toska Arc 2"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("skirt");
+  });
+  it("a thousands code after a name word is the model number", () => {
+    expect(intent("Mirelle Frost 12K portable AC").target.model).toBe("Frost 12K");
+    expect(extractIdentity("Mirelle Frost 9K Portable Air Conditioner", "Mirelle").model).not.toBe("Frost 12K");
+    expect(extractIdentity("Mirelle Frost 12K Portable Air Conditioner", "Mirelle").model).toBe("Frost 12K");
+  });
+  it("the budget is checked on the quoted item, shipping and fees, not the listing price alone", async () => {
+    const { decide } = await import("../src/decision/DecisionEngine.js");
+    const i = intent("Toska Arc 2 kayak, $700");
+    const p = product("arc2", "Toska Arc 2 Inflatable Kayak", "Toska", "kayaks");
+    const base = { product: p, offers: [{ ...offers("arc2")[0], itemPriceMinor: 62900 }], must: {}, nice: {}, notChecked: [], limitReached: false };
+    const lock = { exactLock: { productId: "arc2" }, exactFailure: null, weights: null, now: Date.now() } as any;
+    expect(decide(i, [base] as any, lock).ranking[0]!.blockers.map((b: any) => b.code)).not.toContain("BUDGET_TIGHT");
+    const quoted = decide(i, [{ ...base, knownCostMinor: { "o-arc2": 68899 } }] as any, lock);
+    expect(quoted.state).not.toBe("RECOMMEND");
+    expect(quoted.ranking[0]!.blockers.map((b: any) => b.code)).toContain("BUDGET_TIGHT");
+    expect(decide(i, [{ ...base, knownCostMinor: { "o-arc2": 71000 } }] as any, lock).ranking[0]!.disqualifiers.map((d: any) => d.code)).toContain("OVER_BUDGET");
+  });
+});
+
+describe("V2.13 every request token is accounted for (IW-13 is seen; fictional products only)", () => {
+  it("a number with a unit right after a word-only name is the model number", () => {
+    expect(intent("Pellan Brio 30L Grill").target.model).toBe("Brio 30L");
+    expect(intent("Pellan Brio 30L Grill").requestTail).toContain("Grill");
+    expect(extractIdentity("Pellan Brio 30L Microwave Oven", "Pellan").model).toBe("Brio 30L");
+    expect(extractIdentity("Abrin Reach 40V Pro Cordless Trimmer", "Abrin").model).toBe("Reach 40V Pro");
+    expect(extractIdentity("Abrin Reach 20V Cordless Trimmer", "Abrin").model).not.toBe("Reach 40V");
+  });
+  it("a minus sign before the model number is identity, never a separator", () => {
+    expect(extractIdentity("Quillon Ember -10 Sleeping Bag", "Quillon").model).toBe("Ember -10");
+    const listings = [product("e0", "Quillon Ember 0 Sleeping Bag", "Quillon"), product("em10", "Quillon Ember -10 Sleeping Bag", "Quillon")];
+    expect(resolveExactV2(intent("Quillon Ember 10 sleeping bag"), listings, offers).status).not.toBe("LOCKED");
+    const r: any = resolveExactV2(intent("Quillon Ember -10 sleeping bag"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("em10");
+  });
+  it("a product noun that only ends in a part word names the product, not a part", () => {
+    expect(intent("Quillon Ember 0 sleeping bag").target.kind).toBe("STANDALONE");
+    expect(intent("Corvan X5 carrying case").target.kind).toBe("ACCESSORY");
+  });
+  it("a product noun after the model the listing does not account for excludes it", async () => {
+    const listings = [product("b25", "Pellan Brio 25L Microwave Oven", "Pellan", "microwave-ovens"), product("b30", "Pellan Brio 30L Microwave Oven", "Pellan", "microwave-ovens"),
+      product("b30g", "Pellan Brio 30L Grill Microwave Oven", "Pellan", "microwave-ovens")];
+    expect(resolveExactV2(intent("Pellan Brio 25L Grill microwave"), listings, offers).status).not.toBe("LOCKED");
+    const r: any = resolveExactV2(intent("Pellan Brio 30L Grill"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("b30g");
+    const { decide } = await import("../src/decision/DecisionEngine.js");
+    const d = decide(intent("Pellan Brio 25L Grill microwave"), [{ product: listings[0], offers: offers("b25"), must: {}, nice: {}, notChecked: [], limitReached: false }] as any, { exactLock: { productId: "b25" }, exactFailure: null, weights: null, now: Date.now() } as any);
+    expect(d.state).toBe("HOLD");
+  });
+  it("the adapter never merges a sibling that inserts a product noun before the shared product phrase", () => {
+    const runs = variantRuns(["Pellan Brio 30L Microwave Oven", "Pellan Brio 30L Grill Microwave Oven"], "Pellan", "Brio 30L");
+    expect(runs[0]).not.toEqual(runs[1]);
+  });
+  it("'not the one with X' excludes X and never also requires it", () => {
+    const keys = (intent("Pellan microwave with a 30 L cavity, not the one with a grill").requirements as any[]).map((r) => `${r.polarity}:${r.key}`);
+    expect(keys).toContain("EXCLUDED:not:grill");
+    expect(keys).not.toContain("REQUIRED:unrecognized:grill");
+  });
+  it("a signed number or a temperature nothing interpreted blocks instead of being dropped", () => {
+    expect(intent("sleeping bag rated to -10 °C").uninterpreted.map((u: any) => u.text)).toContain("-10 °C");
+    expect(intent("Quillon Ember -10 sleeping bag").uninterpreted).toEqual([]);
+  });
+});
+
+describe("V2.14 global token accounting (IW-14 is seen; fictional products only)", () => {
+  it("an -ing modifier before a part noun keeps the whole part phrase", () => {
+    expect(intent("sanding discs for the Abrin Grit 18V").target).toMatchObject({ kind: "ACCESSORY", accessoryNoun: "sanding disc", model: "Grit 18V" });
+    expect(intent("looking for the Corvan Q8").target.kind).toBe("STANDALONE");
+  });
+  it("a word before the product noun in discovery is a must-have, never context", () => {
+    expect(intent("folding camping stools").unresolvedMust).toContain("unrecognized:folding");
+    expect(intent("very quiet mini fridge").unresolvedMust).toContain("unrecognized:quiet");
+  });
+  it("a number right after a name that nothing claimed blocks", () => {
+    expect(intent("pellan vista 600").uninterpreted.map((u: any) => u.text)).toContain("600");
+    expect(intent("tent for 2 people").uninterpreted).toEqual([]);
+    expect(intent("monitor 27 inch").uninterpreted).toEqual([]);
+  });
+  it("length units are model identity, spaced or joined", () => {
+    expect(intent("Quillon Bough 40cm chainsaw").target.model).toBe("Bough 40cm");
+    expect(intent("Quillon Bough 30 cm").target.model).toBe("Bough 30cm");
+    expect(intent("Abrin Grit 18 V").target.model).toBe("Grit 18V");
+    expect(extractIdentity("Quillon Bough 30cm Cordless Chainsaw", "Quillon").model).toBe("Bough 30cm");
+  });
+  it("the locked listing's model with the requested tail is the requested model", async () => {
+    const { decide } = await import("../src/decision/DecisionEngine.js");
+    const p = product("dz", "Mirelle Icebox -22 Dual Zone Portable Fridge", "Mirelle");
+    const d = decide(intent("Mirelle Icebox -22 Dual Zone"), [{ product: p, offers: offers("dz"), must: {}, nice: {}, notChecked: [], limitReached: false }] as any, { exactLock: { productId: "dz" }, exactFailure: null, weights: null, now: Date.now() } as any);
+    expect(d.ranking[0]!.disqualifiers.map((x: any) => x.code)).not.toContain("NOT_REQUESTED_MODEL");
+  });
+});

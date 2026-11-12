@@ -16,6 +16,8 @@ import { esc, money, page } from "./html.js";
 import { RateLimiter } from "./rateLimit.js";
 import { BrowserCheckoutHandoff } from "../handoff/BrowserCheckoutHandoff.js";
 import { createHandoffRoutes } from "../handoff/http.js";
+import { OwnerConfirmationBoundary } from "../auth/OwnerConfirmation.js";
+import { createResearchHoldRoutes } from "./researchHoldRoutes.js";
 import { OAuthAuthority, type PendingAuthorization } from "../auth/oauth.js";
 
 export interface AppConfig {
@@ -48,6 +50,18 @@ export interface AppConfig {
   readRetry?: { attempts: number; baseDelayMs: number };
   /** Metering, evidence routing, community/managed mode and service billing. */
   service?: import("../engine/ServicePlane.js").ServicePlane | null;
+  /**
+   * R-A: the protected human-confirmation boundary for research-hold proposals (src/auth/OwnerConfirmation.ts). Absent
+   * = unavailable: no research hold can be confirmed (fail closed).
+   */
+  ownerConfirmation?: OwnerConfirmationBoundary;
+  /**
+   * V2.2 WP-2 (H-2): whether the service runs under its own OS principal, separate from the AI host, with its data,
+   * code and configuration protected from the AI host (src/security/ServiceIsolation.ts). src/main.ts always passes it;
+   * when it is not established, every payment-facing operation is disabled (fail closed). Embedded test apps that
+   * construct createApp directly may omit it.
+   */
+  serviceIsolation?: { established: boolean; reason: string };
   /** Browser checkout handoff (separate path; absent = disabled). */
   handoff?: Omit<import("../handoff/BrowserCheckoutHandoff.js").HandoffConfig, "baseUrl" | "enabled"> | null;
 }
@@ -67,11 +81,12 @@ export function createApp(cfg: AppConfig): App {
   const payments = cfg.payments ? cfg.payments(cfg.baseUrl) : new MockPayPalProvider(cfg.baseUrl);
   const mockPayPal = payments instanceof MockPayPalProvider ? payments : null;
   // Payment flows run only with per-user dev tokens on a loopback-only deployment.
-  const paymentExecutionEnabled = (cfg.authMode === "dev" || cfg.authMode === "oauth") && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
+  const paymentExecutionEnabled = (cfg.authMode === "dev" || cfg.authMode === "oauth") && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl) && cfg.serviceIsolation?.established !== false;
   // Managed mode needs production authentication, which does not exist yet. Only an explicit loopback simulation may run it.
   if (cfg.service?.mode === "managed" && !(cfg.service.managedSimulation === true && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl)))
     throw new Error("Managed mode requires production authentication (not implemented). Only managedSimulation on loopback is allowed.");
-  const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled,
+  const ownerConfirmation = cfg.ownerConfirmation ?? OwnerConfirmationBoundary.unavailable("no protected owner confirmation boundary is configured on this server", new URL(cfg.baseUrl).hostname, [new URL(cfg.baseUrl).origin], now);
+  const gateway = new CommerceGateway(store, cfg.research ?? new MockCommerceResearchAdapter(now), payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled, ownerConfirmation, serviceIsolation: cfg.serviceIsolation ?? null,
     ...(cfg.merchantIdentity ? { merchantIdentity: cfg.merchantIdentity } : {}), sandboxPlatformPayeeId: cfg.sandboxPlatformPayeeId ?? null,
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
     ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service: cfg.service ?? null }, now);
@@ -91,6 +106,10 @@ export function createApp(cfg: AppConfig): App {
   // WP-5 (IR-10): previewMinor is the strictly parsed limit the owner was shown on the confirm step.
   const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number; csId: string; summaryHash: string; previewMinor?: number }>();
   const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
+  const researchHoldRoutes = createResearchHoldRoutes({ gateway, verifyOwnerKey: (k, client) => cfg.auth.verifyOwnerKey(k, client), ownerKeyLimited: (client) => cfg.auth.ownerKeyLimited(client),
+    confirmation: ownerConfirmation,
+    now, secureCookies: base.protocol === "https:",
+    sameOriginForm: (req) => sameOriginStrict(req, allowedOrigins), readText });
   const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
     sameOrigin: (req) => sameOriginStrict(req, allowedOrigins), readText }) : null;
   const handoffTimer = handoff ? setInterval(() => { void handoff.tick(); }, 15_000) : null;
@@ -159,12 +178,12 @@ export function createApp(cfg: AppConfig): App {
         }
       }
       // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
-      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
+      if ((!paymentExecutionEnabled || cfg.serviceIsolation?.established === false) && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff|research-holds)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
       // ---- Owner API (human-held owner key; AI client tokens cannot reach this) ----
       if (url.pathname === "/owner/mandates" && req.method === "POST") {
         if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
-        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"));
+        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"), ip);
         if (!userId) return send(res, 401, { error: "Owner key required" });
         if (!paymentExecutionEnabled) return send(res, 403, { error: "Payment execution disabled on this deployment" });
         const b = ((await readJson(req)) ?? {}) as Record<string, unknown>;
@@ -180,7 +199,7 @@ export function createApp(cfg: AppConfig): App {
       const revoke = /^\/owner\/mandates\/(mdt_[0-9a-f-]{36})\/revoke$/.exec(url.pathname);
       if (revoke && req.method === "POST") {
         if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
-        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"));
+        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"), ip);
         if (!userId) return send(res, 401, { error: "Owner key required" });
         const m = gateway.mandates.revoke(revoke[1]!, userId);
         gateway.audit.append(m.mandateId, userId, "MANDATE_REVOKED", {});
@@ -190,7 +209,7 @@ export function createApp(cfg: AppConfig): App {
       const rec = /^\/owner\/checkouts\/(cs_[0-9a-f-]{36})\/reconcile$/.exec(url.pathname);
       if (rec && req.method === "POST") {
         if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
-        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"));
+        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"), ip);
         if (!userId) return send(res, 401, { error: "Owner key required" });
         const cs = await gateway.reconcile(userId, rec[1]!);
         return send(res, 200, gateway.getCheckoutStatus(userId, cs.checkoutSessionId));
@@ -199,7 +218,7 @@ export function createApp(cfg: AppConfig): App {
       const cancel = /^\/owner\/checkouts\/(cs_[0-9a-f-]{36})\/cancel$/.exec(url.pathname);
       if (cancel && req.method === "POST") {
         if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
-        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"));
+        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"), ip);
         if (!userId) return send(res, 401, { error: "Owner key required" });
         const out = await gateway.cancelCheckoutAsOwner(userId, cancel[1]!);
         return send(res, out.cancelled ? 200 : 409, { cancelled: out.cancelled, reason: out.reason, status: gateway.getCheckoutStatus(userId, out.checkout.checkoutSessionId) });
@@ -215,7 +234,8 @@ export function createApp(cfg: AppConfig): App {
         if (req.method !== "POST" || !sameOriginForm(req, allowedOrigins)) return send(res, 403, { error: "Forbidden" });
         const form = new URLSearchParams(await readText(req));
         if (form.get("action") === "review") {
-          const userId = cfg.auth.verifyOwnerKey(form.get("ownerKey") ?? undefined);
+          if (cfg.auth.ownerKeyLimited(ip)) return html(res, 429, envPage("Too many attempts", "<p>Too many wrong owner keys. Wait 15 minutes and try again.</p>"));
+          const userId = cfg.auth.verifyOwnerKey(form.get("ownerKey") ?? undefined, ip);
           if (!userId) return html(res, 401, envPage("Not authorized", "<p>Owner key not recognized.</p>"));
           let cs;
           try { cs = gateway.sessions.getCheckout(csId, userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
@@ -337,7 +357,7 @@ export function createApp(cfg: AppConfig): App {
           <form method="post" action="/mock-paypal/checkout/${esc(orderId)}/cancel">${ownerField}<p><button class="secondary">Cancel</button></p></form>`, "MOCK PayPal — not real, not Sandbox"));
         if (mock[2] && req.method === "POST") {
           if (!sameOriginStrict(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
-          const ownerUserId = cfg.auth.verifyOwnerKey(new URLSearchParams(await readText(req)).get("owner_key") ?? undefined);
+          const ownerUserId = cfg.auth.verifyOwnerKey(new URLSearchParams(await readText(req)).get("owner_key") ?? undefined, ip);
           if (!ownerUserId) return html(res, 401, page("Not authorized", "<p>Owner key required (MOCK buyer login). Nothing was approved.</p>", "MOCK PayPal — not real, not Sandbox"));
           // The mock order carries its checkout id (PayPal custom_id); the owner must be that checkout's user.
           const row = store.db.prepare("SELECT user_id FROM checkout_sessions WHERE id = ?").get(String(order.customId)) as { user_id: string } | undefined;
@@ -350,6 +370,9 @@ export function createApp(cfg: AppConfig): App {
         }
         return send(res, 405, { error: "Method not allowed" });
       }
+
+      // ---- V21-04 owner confirmation of research-hold proposals (owner key + cookie + CSRF; never via MCP) ----
+      if (await researchHoldRoutes(req, res, url)) return;
 
       // ---- Browser checkout handoff page (owner-authenticated; separate from the PayPal Sandbox path) ----
       if (handoffRoutes && await handoffRoutes(req, res, url)) return;

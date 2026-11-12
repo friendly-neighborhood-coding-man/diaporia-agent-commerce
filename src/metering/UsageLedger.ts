@@ -240,6 +240,14 @@ export class UsageLedger {
     };
   }
 
+  /** V2.6: calls still allowed for this request under the per-request call cap (null when no cap is configured). */
+  remainingCalls(requestId: string, userId: string, provider: Provider): number | null {
+    const cap = this.limits.perRequestCalls?.[provider];
+    if (cap === undefined) return null;
+    const used = (this.store.db.prepare("SELECT COUNT(*) n FROM usage_attempts a JOIN usage_records r ON r.id=a.record_id WHERE a.request_id=? AND a.provider=? AND r.user_id=?")
+      .get(requestId, provider, userId) as { n: number }).n;
+    return Math.max(0, cap - used);
+  }
   forRequest(requestId: string, userId: string): UsageRecord[] {
     return (this.store.db.prepare("SELECT * FROM usage_records WHERE request_id=? AND user_id=? ORDER BY created_at").all(requestId, userId) as Row[]).map(toRecord);
   }

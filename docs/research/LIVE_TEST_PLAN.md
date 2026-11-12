@@ -100,6 +100,15 @@ The run stops, and the remaining requests are recorded as NOT_RUN, on the first 
 4. any run-total call or credit cap reached, or any redirect;
 5. any request to a host other than the two providers;
 6. any unexpected exception.
+7. (V2.1) a provider reporting more credits than the contract prices the call at (unexpected billing);
+8. (V2.1) a successful Tavily response without `usage.credits` (cost uncertain);
+9. (V2.1) a Channel3 `currency`/`country` outside the documented sets, refused before sending (no KRW, no KR);
+10. (V2.1) a successful response with an unexpected shape (Channel3 search without `products[]`, lookup without
+    `product`, Tavily without `results[]`).
+
+The script also refuses to start (before any call) when `PROVIDER_CONTRACTS_READ_AT` in `LiveCallGuard.ts` is more
+than 14 days old (currently 2026-11-10, so it refuses from 2026-11-25 until the docs are re-read).
+
 
 ## What is measured, and pass criteria proposed in advance
 
@@ -115,3 +124,20 @@ The run stops, and the remaining requests are recorded as NOT_RUN, on the first 
 A pass here is a real-world smoke result on 10 requests, not a quality benchmark. Suggested next step after it: a
 larger, independently written case set before any change to the live per-request caps in `main.ts` (currently Channel3
 1, Tavily 2), which stay unchanged unless the owner decides otherwise.
+
+## V2.1 readiness (offline only; the plan is still NOT AUTHORIZED and NOT RUN)
+
+* **Contracts.** `docs.tavily.com` and `docs.trychannel3.com` were again unreachable from the cloud container on
+  2026-11-11 (DNS refused by the network policy, through both curl and a fetch agent). Nothing in
+  `PROVIDER_CONTRACTS.md` (read by the owner on 2026-11-10) could be re-verified, and no response shape has been observed
+  live. The new runtime shape and credit checks above make an unverified contract stop the run instead of being trusted.
+* **Isolation per arm.** Each arm builds a new in-memory service store, evidence store and ledger; the dry run asserts
+  the evidence store is empty at the start of each arm.
+* **Accounting.** Every HTTP attempt goes through the guard (retries and refused redirects included). The dry run
+  asserts the fake provider saw exactly the number of calls the guard counted. `perArm` reports calls and charged
+  credits separately for arm A and arm B; run totals stay Channel3 40 / Tavily 80.
+* **Offline dry run** (`tests/live-ltp-v2-01-dryrun.test.ts`, fake providers at the real hostnames, no network):
+  arm A 10 + 10, arm B 15 + 15 HTTP calls, $0.375 upper bound, no stop. The fake world does not contain these real
+  products, so the decisions in a dry run mean nothing; only the accounting is tested.
+* **Owner steps still required before any go:** re-read both provider docs and update `PROVIDER_CONTRACTS_READ_AT`;
+  check remaining credits; run from the owner's machine. The plan id and `--confirm-live` are still required.
