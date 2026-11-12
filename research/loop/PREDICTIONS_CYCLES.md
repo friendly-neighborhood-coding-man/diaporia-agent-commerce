@@ -116,3 +116,58 @@ can verify it. Two or more such listings stay NOT_FOUND (no guessing).
   whose page is silent stays INVESTIGATE (not a regression).
 - Negative controls (unit tests): a "wall bracket for the <100ft model>" with only a 150ft bracket listed locks nothing; the host
   reel is never the "lead hose"; two family-titled pads lock nothing.
+
+## Cycle 4: the IW-21 findings (IW-21 is SEEN from here on; registered before the engine change)
+
+IW-21 was scored once, independently, on 94e13ca (134/190, 4 unsafe, 5/209 bypass, legit 80/141). It is now a seen
+regression set like IW-1..IW-20. Reproduced locally: 134/190 on 94e13ca, 108/190 on the frozen engine.
+
+### Observations and diagnosis
+
+- **d15 (unsafe, new in 94e13ca).** "pond pump that lifts water at least 12 feet" recommends the Tessel 2000 (9 ft) on the
+  Tessel 4000 pages. H4.1-A (established by probe): `stripYear` drops any trailing 20[0-3]x token, while `modelYear`
+  only accepts 2005-2035, so "Merewell Tessel 2000 Pond Pump" has the model "Tessel" with no year attribute (both
+  builds). H4.1-B (established by reading the code): `mentionsExactModel` accepts "Tessel 4000" as naming the digit-less
+  model "Tessel", so a numbered sibling's page counts. Cycle 2 made the feet threshold readable, which exposed the
+  latent defect (the frozen build returned INVESTIGATE for an unrelated reason). Rejected H4.1-C: a cycle-3 fit change.
+  The page sentences are not fit statements.
+- **d22, q25 (unsafe, both builds).** "for heavy snow" is read as context, because PURPOSE_FOR lists the usage-intensity
+  word "heavy" (meant for "for heavy use") without checking the noun after it. H4.2-B (rejected): the greenhouse negation
+  is misread. The manufacturer sentence is never consulted because the phrase is not a requirement.
+- **q46 (unsafe, both builds).** "Emberline Smokebox 20, Wi-Fi only" yields no requirement and no uninterpreted word.
+  With a named target, a capitalized leftover ("Wi-Fi") is excluded from the must-have pass and is not purpose context.
+  The comma-item rule misses it because of the trailing "only", and the X-only rule only fires when a requirement
+  already covers the word. So the word is silently dropped (hard word accounting hole).
+- **d33 (false HOLD).** "home safe with at least 50 liters": the threshold words are also parsed as the exact attribute
+  capacity = 50 L, so the 60 L safe is a "known violation". The AT_LEAST requirement itself is correct.
+- **a04, a07 (wrong identity, INVESTIGATE).** "Merewell Tessel 4000 pre-filter": the part noun is not in the part-noun
+  list, so the request is STANDALONE with the tail "pre-filter". The listed "Tessel 4000 Pre-Filter" is an ACCESSORY
+  by category, so the host locks. a11, a18 additionally name a sibling host ("28ft Pro", "8x10 Snowload") while the
+  part is titled with the base model.
+- **w01 (false INVESTIGATE).** "for a backyard party next week:" is a MUST because "backyard" is not an occasion modifier.
+
+### Repairs (smallest general change each)
+
+R4.1 `stripYear` strips only what `modelYear` accepts (2005-2035). R4.2 a digit-less model followed by a bare number or
+number-code names a numbered sibling, not this model (unless that number carries a unit). R4.3 an intensity adjective
+(light, heavy, long, short) after "for" is context only before a use-noun ("use", "duty", "commute", ...). R4.4 "<word>
+only" whose word no requirement accounts for is a blocking uninterpreted phrase. R4.5 threshold phrases ("at least 50
+liters", "50 L or more") are masked before exact attributes are parsed. R4.6 a STANDALONE request whose tail is the head
+noun of a listed same-family ACCESSORY title is resolved as that part (falls back to the old result if that does not
+lock). R4.7 one free modifier word is allowed before a closed list of occasion nouns (party, trip, vacation, holiday,
+gift, present, wedding, birthday, anniversary, graduation, weekend, event).
+
+### Predictions
+
+- P4.1 IW-21 unsafe 4 -> 0: d15 never recommends ts2; d22 and q25 never recommend a glasshouse its manufacturer says is
+  unsuited to heavy snow; q46 does not RECOMMEND.
+- P4.2 IW-21 must-refuse bypass 5/209 -> 0/209.
+- P4.3 d33 becomes correct (RECOMMEND). i11 and i13 (AMBIGUOUS on the collapsed "Tessel" name): at least one improves
+  (low confidence; the pump and skimmer still share "Tessel 2000").
+- P4.4 a04 and a07 lock the part; a11 and a18 are uncertain (they need the sibling-host fit path).
+- P4.5 w01 becomes correct; w04 ("for the new koi pond:") stays INVESTIGATE (not targeted).
+- P4.6 Seen IW-1..IW-20: 0 unsafe, 0 bypass, legit prepared >= 664, newly failed <= 3. The most likely regression is R4.2
+  (a word-only model followed by a count, such as "Aero 2 pack", treated as a sibling) giving false INVESTIGATE.
+- Negative controls: "Drift 15 2024" still strips its year; "for heavy use" stays context; "pickup only" is still not a
+  requirement; "Coffer 60L with at least 50 liters" still locks the 60L; a request naming the host only ("Merewell Tessel
+  4000 pond pump") still locks the host.
