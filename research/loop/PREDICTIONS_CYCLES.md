@@ -45,3 +45,43 @@ Count nouns ("2 Burner", "two-burner") and grains ("48,000 grain") are out of sc
   locks nothing; "hose reel for at least 120 feet" stays a threshold requirement, not a model; "Crest 58 cm" never locks 54cm.
 - Expected regression risk: a lowercase category phrase taken as a brand ("roof box 450l") turns a discovery into HOLD. Predicted
   count on seen sets: 0-2 cases. Any case that newly fails is listed in the journal.
+
+## Cycle 2 — F4/F2 numeric meaning: one canonical unit dimension, counts, and "for <a quantity>" as a fit limit
+
+**Observed (seen, cycle-1 build, IW-20 world pages):** every one of these stays INVESTIGATE with "no attributable statement found"
+although the registered manufacturer states the number:
+- unit spelled differently on the page: "at least 8 amps" vs "at 10 A"; "at least 5 kilowatts" vs "delivers 7 kW"; "at least 120
+  feet" vs "holds up to 150 ft"; IW-19 "at least 400 liters" vs "450 L", "at least 30 gallons" vs "40 gal".
+- count stated as a word with a measurement between: "at least 3 burners" vs "three 10,000 BTU burners".
+- a quantity that the product must accommodate ("for my 45 lb son", "for a 57 cm head", "for a family of 5", "for use at 4,000 m",
+  "for a 650 sq ft garage") vs a stated limit or range ("carries one child up to 40 lb", "fits heads 52 to 55 cm", "for homes of 3
+  to 5 people", "rated for use up to 4,500 m", "heats up to 700 sq ft"). These are kept as MUST since V2.19.2 but never compared.
+
+**Hypotheses.**
+- H2-A (chosen): the earliest loss is in `numericStatement`: the unit is matched as a literal string and the count noun must touch
+  its number, so the number the page states is never read; and a "for <quantity>" phrase has no numeric proposition at all, so its
+  value is never compared with the page's limit.
+- H2-B (alternative): evidence retrieval never fetches the page (search terms). Discriminator: the "windscreen" and "jogging" cases
+  on the same pages DO verify, and the trace shows the page in the evidence list with value null; H2-B would show no page.
+- H2-C (risk): a unit-dimension match will read an unrelated number of the same unit ("weighs 7 kg" for a kg capacity) as the limit.
+  Mitigation built into the repair: a "for <quantity>" fit is decided only by a bounded statement (up to N, N to M, maximum N,
+  rated for N, not above N), never by a bare number.
+
+**Repair plan.** (1) Canonical unit dimensions in `numericStatement` (ft/foot/feet, in/inch, cm, mm, m/meter, A/amp, kW/kilowatt,
+W/watt, V/volt, L/liter, gal/gallon, lb/pound, kg, sq ft/square feet, people/persons); a spelled count word before the noun with
+at most one measurement in between counts. (2) A "for <quantity>" requirement becomes a WITHIN proposition: TRUE when a bounded
+statement of the same dimension contains the value, FALSE when it excludes it, otherwise unknown. Directions are kept: "up to N" on
+the product side is an upper limit of what it accepts; "not above N" is an upper limit; the requested value must be inside.
+
+**Predictions (seen sets, service arm, vs the cycle-1 build):**
+- P2.1 IW-20: of d05, d12, d14, d21 (spelled/count thresholds), at least 3 become RECOMMEND.
+- P2.2 IW-20: of d09, d19, d28, q05, q18, q29 (for <quantity>), at least 3 become RECOMMEND for the expected product, and the
+  products whose stated limit excludes the value (Tote 1-Seat for 45 lb, Crest 54cm for 57 cm, Plinth 32k for 5 people, Hob
+  2-Burner for 3,800 m) are never RECOMMEND.
+- P2.3 IW-19: of d24, d25, d27, d19, d36 at least 2 become RECOMMEND.
+- P2.4 Safety: 0 unsafe and 0 bypass on every seen set; no new wrong-product prepared.
+- P2.5 Regression risk: a few cases move from INVESTIGATE to HOLD because a limit now reads FALSE; each is checked against the
+  world page (a correct refusal is not a regression). Predicted new false HOLD: 0-2.
+- Negative controls (unit tests): "at least 5 kilowatts" vs "delivers 4 kW" is FALSE; "for my 45 lb son" vs "weighs 30 lb" stays
+  unknown (bare number, no bound); "up to 90 lb total" keeps its fail-closed EXACT reading; "for use at 3,800 m" vs "not suitable
+  above 3,000 m" is never TRUE.
