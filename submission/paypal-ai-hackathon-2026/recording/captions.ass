@@ -1,0 +1,32 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Cap,Inter,31,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,1,40,420,32,1
+Style: Tag,Inter,21,&H00A8B3BF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,3,40,40,38,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:11.00,0:00:18.39,Cap,,0,0,0,,Claude Code, a real AI host, gets a shopping request (typed by the recording script).
+Dialogue: 0,0:00:18.39,0:00:29.33,Cap,,0,0,0,,The host calls DIAPORIA's start_shopping_panel tool over MCP; research runs server-side.
+Dialogue: 0,0:00:29.33,0:00:40.25,Cap,,0,0,0,,The DIAPORIA Buy panel opens beside the assistant with live progress (offline demo catalog).
+Dialogue: 0,0:00:40.25,0:00:48.63,Cap,,0,0,0,,Card prices are search-time listings, not totals. Only the Halden A8 has every must-have verified.
+Dialogue: 0,0:00:48.63,0:00:58.94,Cap,,0,0,0,,Orrin Q3 is cheaper, but nothing attributable verifies its must-haves: not recommended.
+Dialogue: 0,0:00:58.94,0:01:11.84,Cap,,0,0,0,,Halden A8: each must-have is backed by a quoted manufacturer source; identity is locked.
+Dialogue: 0,0:01:11.84,0:01:16.68,Cap,,0,0,0,,Selecting the product asks every merchant for a fresh quote with shipping and tax.
+Dialogue: 0,0:01:16.68,0:01:30.25,Cap,,0,0,0,,Verified total $138.35 vs. the $121 listing. Look-alike alpha-audi0.example is rejected.
+Dialogue: 0,0:01:30.25,0:01:36.11,Cap,,0,0,0,,The AI can prepare a checkout but cannot authorize spending. Approval moves to the owner page.
+Dialogue: 0,0:01:36.11,0:01:46.80,Cap,,0,0,0,,Owner page (MOCK). A scripted demo owner enters a DEMO-ONLY key: a simulation, not real consent.
+Dialogue: 0,0:01:46.80,0:01:52.78,Cap,,0,0,0,,The simulated owner sets a $100 spending limit, below the $138.35 verified total...
+Dialogue: 0,0:01:52.78,0:01:59.89,Cap,,0,0,0,,...and DIAPORIA refuses it: AMOUNT_EXCEEDED. No payment is started.
+Dialogue: 0,0:01:59.89,0:02:08.28,Cap,,0,0,0,,The simulated owner sets a $140 limit and confirms.
+Dialogue: 0,0:02:08.28,0:02:17.85,Cap,,0,0,0,,MOCK PayPal approval: no PayPal call, no money. The owner key stands in for the buyer's login.
+Dialogue: 0,0:02:17.85,0:02:21.85,Cap,,0,0,0,,The receipt appears only after the DIAPORIA backend verifies the MOCK capture.
+Dialogue: 0,0:02:21.85,0:02:33.06,Cap,,0,0,0,,The host reads DIAPORIA's records: only a MOCK capture is complete. No order, no fulfilment.
+Dialogue: 0,0:02:33.06,0:02:44.66,Cap,,0,0,0,,Recorded PayPal Sandbox run, Nov 9: real test API calls; capture still PENDING_REVIEW.
+Dialogue: 0,0:00:11.00,0:02:33.06,Tag,,0,0,0,,Live recording · build be03b52 · MOCK · no money
+Dialogue: 0,0:02:33.06,0:02:44.66,Tag,,0,0,0,,Excerpt of docs/TEST_REPORT.md · not re-run

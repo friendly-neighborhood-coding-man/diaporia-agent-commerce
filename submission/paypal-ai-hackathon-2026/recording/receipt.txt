@@ -1,0 +1,93 @@
+D
+DIAPORIA Buy
+MOCK · no money moves
+live
+YOUR REQUEST
+I need wireless headphones under $150 with multipoint and a lanyard loop, lowest total price.
+Budget $149.99
+Payment confirmed
+Step 6 of 6
+✓
+Payment completed
+Verified by the payment backend · MOCK: no real money moved
+$138.35
+
+MOCK payment: no PayPal API was called.
+
+Status
+COMPLETED
+Environment
+MOCK
+Provider order
+MOCK3FB6F5735666CEB1
+Capture
+MOCKCAPE2960A1C8EA0
+Checkout
+cs_3cca8fb0-29b1-4210-8f56-12997acbcc25
+Merchant order
+Not verified
+
+Payment captured (MOCK (no PayPal API call)). No merchant order confirmation was received and no fulfillment or shipment is verified, so this is not a completed merchant purchase.
+
+Audit timeline
+19
+✓
+research started
+2026-11-12T10:57:06.028Z
+✓
+researched
+2026-11-12T10:57:18.653Z
+✓
+buy panel product selected
+2026-11-12T10:57:50.582Z
+✓
+offers compared
+2026-11-12T10:57:55.395Z
+✓
+checkout prepared
+2026-11-12T10:58:08.996Z
+✓
+merchant identity bound
+2026-11-12T10:58:08.996Z
+✓
+owner authorization required
+2026-11-12T10:58:08.999Z
+✓
+mandate created by owner
+2026-11-12T10:58:31.504Z
+✓
+mandate rejected
+2026-11-12T10:58:31.505Z
+✓
+mandate revoked unused
+2026-11-12T10:58:31.506Z
+✓
+mandate created by owner
+2026-11-12T10:58:47.003Z
+✓
+mandate reserved
+2026-11-12T10:58:47.003Z
+✓
+provider order created
+2026-11-12T10:58:47.004Z
+✓
+mock buyer approved
+2026-11-12T10:58:52.684Z
+✓
+buyer returned
+2026-11-12T10:58:52.687Z
+✓
+buyer approval verified
+2026-11-12T10:58:52.688Z
+✓
+merchant recipient verified
+2026-11-12T10:58:52.690Z
+✓
+capture requested
+2026-11-12T10:58:52.691Z
+✓
+payment completed verified
+2026-11-12T10:58:52.692Z
+Research activity
+20 steps
+This panel shows the DIAPORIA server's records. It never authorizes a payment: the owner page and the payment approval do that.

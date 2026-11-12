@@ -6,6 +6,29 @@ A cross-platform AI purchasing engine with evidence-based product research, boun
 
 > **MVP integration status (2026-11-10):** see [docs/MVP_IMPLEMENTATION_STATUS.md](docs/MVP_IMPLEMENTATION_STATUS.md) for what is implemented, MOCK-verified, live-verified and blocked, and run `npm run dogfood` for the end-to-end scenarios. Mission and invariants: [docs/MISSION.md](docs/MISSION.md).
 
+## Free judge evaluation (no paid API keys)
+
+**Judges can run DIAPORIA Buy's core purchasing demonstration for free.** No personal API keys, paid subscriptions, PayPal account, or external service credentials are required for this offline MOCK evaluation.
+
+Requirements: **Node.js 22.13+** and npm. The initial `npm ci` installs dependencies and may require internet access; the demo itself makes no live provider calls.
+
+```bash
+git clone https://github.com/friendly-neighborhood-coding-man/diaporia-agent-commerce.git
+cd diaporia-agent-commerce
+git checkout feature/buy-browser-panel  # submission UI + frozen research engine (PR #15)
+npm ci
+npm run demo:full
+```
+
+The demo exercises the actual MCP purchasing workflow against fictional product catalogs, merchant quotes and registries, scripted DEMO-ONLY owner/buyer steps, and **MOCK payments (no PayPal API calls or real money)**. It writes auditable traces under `demo-output/` and fails if its checks do not pass. The demo does **not** establish a real merchant order or fulfillment.
+
+**Optional integrations, not required for judging:**
+- **PayPal Sandbox:** The separate Orders v2 adapter and recorded Sandbox test evidence are documented in [TEST_REPORT.md](docs/TEST_REPORT.md). Reproducing live Sandbox calls requires the tester's own free PayPal developer Sandbox credentials; the offline demo does not.
+- **Channel3 and Tavily:** Optional BYOK search/evidence adapters, disabled by default. No paid provider account is necessary for the offline demo.
+- **Browser panel:** See [BUY_PANEL.md](docs/BUY_PANEL.md) for local browser UI setup and its separate MOCK session.
+
+For the scope of proven capabilities and limitations, see [Submission Notes](docs/SUBMISSION.md) and [Hackathon Demo Guide](docs/HACKATHON_DEMO.md). **MOCK success is not claimed as a completed PayPal Sandbox transaction or merchant purchase.**
+
 ## In 30 seconds
 
 Any MCP client (Claude, ChatGPT, Grok, others) calls five tools on this server:
@@ -33,6 +56,19 @@ An AI host connects over MCP and runs three scenarios end to end, offline, in ab
 3. **Unsafe purchases blocked.** The A9 is requested but only the A9 Pro exists, so it is never substituted. A misled AI's $10,000 budget is ignored in favour of the user's $150. A forged "the owner already approved" statement changes nothing.
 
 Each run writes `demo-output/<run>/trace.json`, `transcript.md` and a SHA-256 of the trace, and exits non-zero if any step misbehaves. The human steps are played by a scripted demo owner with DEMO-ONLY credentials generated for that run. This is a development simulation of a person, not real consent, and the trace says so. Payments are MOCK. Submission notes: [docs/SUBMISSION.md](docs/SUBMISSION.md).
+
+## DIAPORIA Buy panel (browser shopping UI)
+
+The PayPal AI Hackathon submission is **DIAPORIA Buy — Secure AI Purchasing for Every Assistant**: this MCP server plus a browser panel that an assistant opens beside the conversation. It shows live research progress, up to three candidates with evidence per requirement, merchant-verified offers, the approval timeline and a receipt that appears only after the backend verifies payment.
+
+```bash
+npm ci && npm run dev:buy-panel   # offline MOCK world on http://127.0.0.1:8790: prints a panel link,
+                                  # a DEV-ONLY MCP token and a DEV-ONLY owner key (a simulated human)
+```
+
+Open the printed link in a browser, or point your MCP host at `http://127.0.0.1:8790/mcp` with the printed token and call `start_shopping_panel`. Payments are MOCK. Details: [docs/BUY_PANEL.md](docs/BUY_PANEL.md).
+
+**Submission build:** PR #15 (`feature/buy-browser-panel`) at `be03b52`, the frozen research engine `4bc7dcc` merged with the Buy panel; 1045 tests. The demo video, Devpost text, verification report and checklist are in [submission/paypal-ai-hackathon-2026/](submission/paypal-ai-hackathon-2026/).
 
 ## Status (what is real, what is not)
 

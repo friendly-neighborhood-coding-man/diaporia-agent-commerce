@@ -1,0 +1,124 @@
+[
+ {
+  "t": 4.535,
+  "name": "REC_START"
+ },
+ {
+  "t": 6.036,
+  "name": "TYPE_PROMPT"
+ },
+ {
+  "t": 12.892,
+  "name": "PROMPT_SENT"
+ },
+ {
+  "t": 22.938,
+  "name": "TOOL_RESULT_PANELURL",
+  "run": "br_a4637e20-e252-4800-9563-0624885e1f1d"
+ },
+ {
+  "t": 23.832,
+  "name": "PANEL_OPEN"
+ },
+ {
+  "t": 34.746,
+  "name": "RESULTS"
+ },
+ {
+  "t": 43.135,
+  "name": "DETAIL_Q3"
+ },
+ {
+  "t": 53.442,
+  "name": "DETAIL_A8"
+ },
+ {
+  "t": 66.342,
+  "name": "SELECT_A8"
+ },
+ {
+  "t": 71.145,
+  "name": "COMPARE"
+ },
+ {
+  "t": 71.176,
+  "name": "OFFERS"
+ },
+ {
+  "t": 81.834,
+  "name": "REJECTED_SHOWN"
+ },
+ {
+  "t": 84.745,
+  "name": "PREPARE"
+ },
+ {
+  "t": 84.775,
+  "name": "HANDOFF"
+ },
+ {
+  "t": 90.609,
+  "name": "OWNER_PAGE"
+ },
+ {
+  "t": 94.909,
+  "name": "OWNER_REVIEW"
+ },
+ {
+  "t": 101.304,
+  "name": "LIMIT_100"
+ },
+ {
+  "t": 102.912,
+  "name": "CONFIRM_100"
+ },
+ {
+  "t": 107.279,
+  "name": "REFUSED_AMOUNT_EXCEEDED"
+ },
+ {
+  "t": 114.393,
+  "name": "OWNER_RETRY"
+ },
+ {
+  "t": 117.9,
+  "name": "LIMIT_140"
+ },
+ {
+  "t": 119.411,
+  "name": "CONFIRM_140"
+ },
+ {
+  "t": 122.778,
+  "name": "MOCK_PAYPAL_PAGE"
+ },
+ {
+  "t": 128.469,
+  "name": "MOCK_BUYER_APPROVED",
+  "url": "http://127.0.0.1:8790/paypal/return?checkout=cs_3cca8fb0-29b1-4210-8f56-12997acbcc25&token=…"
+ },
+ {
+  "t": 132.349,
+  "name": "BACK_TO_PANEL"
+ },
+ {
+  "t": 132.408,
+  "name": "RECEIPT"
+ },
+ {
+  "t": 136.346,
+  "name": "HOST_FOLLOWUP"
+ },
+ {
+  "t": 147.56,
+  "name": "SANDBOX_EVIDENCE"
+ },
+ {
+  "t": 161.163,
+  "name": "REC_END"
+ },
+ {
+  "t": 162.471,
+  "name": "DONE"
+ }
+]
