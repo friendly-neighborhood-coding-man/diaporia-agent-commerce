@@ -231,7 +231,7 @@ export class BuyPanel {
     return redact({
       productId, title: c.title, identity: c.identity, rank: rk?.rank ?? null, status: statusOf(c, rk),
       listingPrice: { ...c.listingPrice, merchantDomain: rk?.price?.merchantDomain ?? null, offersConsidered: rk?.price?.offersConsidered ?? null },
-      validated: validatedRows(c),
+      validated: validatedRows(c).map((r) => ({ ...r, label: requirementLabel(r.capability) })),
       satisfiedBy: rk?.satisfied ?? [],
       evidence: (c.evidence ?? []).map((e) => ({ capability: e.capability, status: e.status, basis: e.basis, items: (e.items ?? []).slice(0, 5) })),
       disqualifiers: rk?.disqualifiers ?? [], blockers: rk?.blockers ?? [],
@@ -351,9 +351,30 @@ export function topCandidates(research: ResearchRecord) {
       position: idx + 1, productId: c.productId, title: c.title, identity: c.identity, rank: rk?.rank ?? null, status, recommended: recommended === c.productId,
       listingPrice: { lowestListingMinor: c.listingPrice?.lowestListingMinor ?? null, currency: c.listingPrice?.currency, merchantDomain: rk?.price?.merchantDomain ?? null, note: "Search-time listing price, not a checkout total." },
       mustHave: requirementCount(c),
+      // Human labels for the card (server-derived; the browser renders them as text).
+      requirements: validatedRows(c).map((r) => ({ label: requirementLabel(r.capability), strength: r.strength, status: r.status })),
+      reason: cardReason(status, recommended === c.productId, research.decision?.recommendation?.whySelected ?? null, rk, validatedRows(c)),
       openItems: [...(rk?.blockers ?? []).map((b) => b.detail), ...must.filter((m) => m.status !== "VERIFIED_TRUE").map((m) => `${m.capability}: ${m.status}`)].slice(0, 3),
     };
   });
+}
+
+/** "unrecognized:lanyard-loop" -> "Lanyard loop", "active_noise_cancellation" -> "Active noise cancellation". */
+export function requirementLabel(cap: string): string {
+  const t = String(cap).replace(/^(?:unrecognized|must|nice|attr):/i, "").replace(/[_-]+/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : String(cap);
+}
+/** One sentence from the decision engine's own records (never invented): why recommended, or what still needs checking. */
+function cardReason(status: string, recommended: boolean, why: string[] | null, rk: Ranked | null, rows: Array<{ capability: string; status: string; strength: string }>) {
+  const must = rows.filter((r) => r.strength === "MUST");
+  const ok = must.filter((r) => r.status === "VERIFIED_TRUE").length;
+  if (recommended && why?.length) return why[0]!.length > 160 ? `${why[0]!.slice(0, 157)}…` : why[0]!;
+  if (status === "NEEDS_VERIFICATION") {
+    const open = must.filter((r) => r.status !== "VERIFIED_TRUE").map((r) => requirementLabel(r.capability));
+    return open.length ? `Needs investigation: ${open.slice(0, 3).join(", ").toLowerCase()} not yet verified by an attributable source.` : `Needs investigation: ${(rk?.blockers?.[0]?.detail ?? "open items remain").slice(0, 140)}`;
+  }
+  if (must.length && ok < must.length) return `${ok} of ${must.length} stated requirements verified with evidence; ranked #${rk?.rank ?? "?"} by the decision engine.`;
+  return must.length ? `Meets all ${ok} stated requirement${ok === 1 ? "" : "s"} with evidence; ranked #${rk?.rank ?? "?"} by the decision engine.` : `Ranked #${rk?.rank ?? "?"} by the decision engine.`;
 }
 
 /**

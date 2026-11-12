@@ -52,16 +52,16 @@
     catch (e) { return (minor / Math.pow(10, digits)).toFixed(digits) + " " + cur; }
   }
   function kv(rows) {
-    return el("table", { class: "kv" }, rows.filter(Boolean).map(function (r) {
-      return el("tr", null, [el("td", { text: r[0] }), el("td", null, [typeof r[1] === "string" || typeof r[1] === "number" ? String(r[1]) : r[1]])]);
-    }));
+    var out = [];
+    rows.filter(Boolean).forEach(function (r) { out.push(el("dt", { text: r[0] }), el("dd", null, [typeof r[1] === "string" || typeof r[1] === "number" ? String(r[1]) : r[1]])); });
+    return el("dl", { class: "kv" }, out);
   }
-  function chip(text, cls) { return el("span", { class: "chip " + (cls || ""), text: text }); }
+  function chip(text, cls) { return el("span", { class: "badge " + (cls || "neutral"), text: text }); }
   function safeUrl(u) { return typeof u === "string" && /^https?:\/\//.test(u) ? u : null; }
   function extLink(u, text) { var s = safeUrl(u); return s ? el("a", { href: s, target: "_blank", rel: "noopener noreferrer", text: text || s }) : el("span", { text: text || String(u || "") }); }
   function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(function () { toastEl.hidden = true; }, 7000); }
-  function setConn(state, text) { conn.className = "conn " + state; conn.textContent = text; }
-  function statusChip(s) { return s === "ELIGIBLE" ? chip("Eligible", "ok") : s === "NEEDS_VERIFICATION" ? chip("Needs verification", "warn") : chip(s, "bad"); }
+  function setConn(state, text) { conn.className = "conn " + state; conn.textContent = text; conn.title = "Connection: " + text; conn.setAttribute("aria-label", "Connection: " + text); }
+  function statusChip(s) { return s === "ELIGIBLE" ? chip("Eligible", "ok") : s === "NEEDS_VERIFICATION" ? chip("Needs investigation", "warn") : chip("Not eligible", "bad"); }
 
   // ---------------------------------------------------------------- API
   function api(path, opts) {
@@ -125,214 +125,363 @@
 
   function fatal(msg) {
     stopped = true; setConn("down", "offline");
-    app.replaceChildren(el("div", { class: "box bad" }, [el("h2", { text: "This panel link cannot be used" }), el("p", { text: msg }),
-      el("p", { class: "muted", text: "Ask your assistant to open a new DIAPORIA Buy panel (start_shopping_panel or open_shopping_panel)." })]));
+    app.replaceChildren(note("bad", "!", "This panel link cannot be used", [el("p", { text: msg }),
+      el("p", { class: "muted small", text: "Ask your assistant to open a new DIAPORIA Buy panel (start_shopping_panel or open_shopping_panel)." })]));
+  }
+  function note(kind, icon, title, kids) {
+    return el("div", { class: "note " + kind, role: kind === "bad" ? "alert" : null }, [el("span", { class: "ni", "aria-hidden": "true", text: icon }),
+      el("div", { class: "grow" }, [title ? el("b", { text: title }) : null].concat(kids || []))]);
   }
 
   // ---------------------------------------------------------------- views
+  var FINAL = { FAILED: 1, CANCELLED: 1, EXPIRED: 1, REFUNDED: 1 };
   function render() {
     if (!snap) return;
+    var sandbox = snap.paymentEnvironment === "PAYPAL_SANDBOX";
     envEl.hidden = false;
-    envEl.textContent = snap.paymentEnvironment === "PAYPAL_SANDBOX" ? "PAYPAL SANDBOX · test money" : "MOCK · no money moves";
+    envEl.className = "env " + (sandbox ? "sandbox" : "mock");
+    envEl.textContent = sandbox ? "PayPal Sandbox · test funds" : "MOCK · no money moves";
+    envEl.title = sandbox ? "PayPal Sandbox: test accounts, no real money" : "MOCK payment provider: nothing is charged";
     var parts = [];
-    if (snap.session) parts.push(el("div", { class: "req" }, [el("div", { class: "muted", text: "Request" }), el("div", { text: snap.session.request })]));
-    if (snap.session && snap.session.expired && snap.view !== "RECEIPT") parts.push(el("div", { class: "box warn", text: "This purchase session has expired. Research again to compare or buy." }));
+    if (snap.session && !ui.detail) parts.push(el("div", { class: "request" }, [el("div", { class: "grow" }, [el("div", { class: "lbl", text: "Your request" }), el("div", { class: "q", text: snap.session.request })]),
+      snap.session.budgetMinor ? el("span", { class: "badge neutral num", text: "Budget " + money(snap.session.budgetMinor, snap.session.currency) }) : null]));
+    parts.push(stageTrack());
+    if (snap.session && snap.session.expired && snap.view !== "RECEIPT") parts.push(note("warn", "!", "This purchase session has expired", [el("p", { class: "small", text: "Ask your assistant to research again to compare offers or buy." })]));
     if (ui.detail) parts.push(detailView());
     else if (snap.view === "PROGRESS") parts.push(progressView());
     else if (snap.view === "ERROR") parts.push(errorView());
     else if (snap.view === "RECEIPT") parts.push(receiptView());
     else if (snap.view === "CHECKOUT") parts.push(checkoutView());
-    else { if (snap.comparison) parts.push(compareView()); parts.push(resultsView()); }
-    if (!ui.detail && snap.view !== "PROGRESS" && snap.progress && snap.progress.length) parts.push(el("details", null, [el("summary", { class: "muted", text: "Research log (" + snap.progress.length + ")" }), stepsList(false)]));
+    else if (snap.comparison) parts.push(compareView());
+    else parts.push(resultsView());
+    if (!ui.detail && snap.view !== "PROGRESS" && snap.progress && snap.progress.length) parts.push(el("details", { class: "disc section" }, [el("summary", null, [el("span", { text: "Research activity" }), el("span", { class: "muted small", text: snap.progress.length + " steps" })]), el("div", { class: "body" }, [activityList(false)])]));
+    // Keep the reader's place on live updates; start at the top when the screen itself changes.
+    var screen = (ui.detail ? "D" : snap.view) + (snap.comparison ? "+C" : "");
+    var y = screen === ui.screen ? window.scrollY : 0; ui.screen = screen;
     app.replaceChildren.apply(app, parts);
+    window.scrollTo(0, y);
   }
 
-  function stepsList(running) {
+  // Six stages derived only from real server state: progress events from the research run, then the session records.
+  function stages() {
+    var ev = snap.progress || []; var has = function (step) { return ev.some(function (p) { return p.step === step; }); };
+    var researching = snap.view === "PROGRESS", failed = snap.view === "ERROR";
+    var researched = !researching && !failed;
+    var st = snap.checkout && snap.checkout.status; var done = snap.view === "RECEIPT";
+    var cmp = !!snap.comparison || !!st;
+    var s = [
+      { t: "Interpreting request", d: researching ? !!ev.length : !failed || !!ev.length },
+      { t: "Finding candidates", d: researched || has("EVIDENCE"), a: researching && (has("SEARCH") || has("DETAILS")) && !has("EVIDENCE") },
+      { t: "Verifying requirements", d: researched, a: researching && has("EVIDENCE") },
+      { t: "Comparing verified offers", d: cmp, a: researched && !cmp && !!(snap.selection && snap.selection.productId) },
+      { t: "Preparing checkout", d: !!st, a: false },
+      { t: done ? "Payment confirmed" : "Awaiting authorization", d: done, a: !!st && !done && !FINAL[st.state] },
+    ];
+    if (researching && !ev.length) s[0].a = true;
+    if (failed) { var i = s.findIndex(function (x) { return !x.d; }); if (i >= 0) s[i].f = true; }
+    if (st && FINAL[st.state]) s[5].f = true;
+    return s;
+  }
+  function stageTrack() {
+    var s = stages(); var cur = s.find(function (x) { return x.f; }) || s.find(function (x) { return x.a; }) || s.find(function (x) { return !x.d; }) || s[s.length - 1];
+    var n = s.filter(function (x) { return x.d; }).length;
+    return el("div", { class: "track", role: "group", "aria-label": "Purchase progress" }, [
+      el("div", { class: "head" }, [el("b", { text: cur.t === "Comparing verified offers" && !cur.a && !cur.d ? "Next: select a product to compare offers" : cur.t }), el("span", { class: "num", text: "Step " + Math.min(n + (cur.d ? 0 : 1), 6) + " of 6" })]),
+      el("div", { class: "bars", "aria-hidden": "true" }, s.map(function (x) { return el("span", { class: x.f ? "fail" : x.d ? "done" : x.a ? "active" : "" }); })),
+    ]);
+  }
+  function stepIcon(x) { return el("span", { class: "ico " + (x.f ? "fail" : x.d ? "done" : x.a ? "active" : ""), "aria-hidden": "true", text: x.f ? "!" : x.d ? "✓" : "" }); }
+  function activityList(running) {
     var list = snap.progress || [];
     return el("ul", { class: "steps" }, list.map(function (p, i) {
       var last = i === list.length - 1;
-      return el("li", null, [last && running ? el("span", { class: "spin" }) : el("span", { class: "dot" }), el("span", { class: "t", text: p.label }), p.detail ? el("span", { class: "d", text: p.detail }) : null]);
+      return el("li", null, [stepIcon({ d: !(last && running), a: last && running }), el("div", null, [el("div", { class: "t small", text: p.label }), p.detail ? el("div", { class: "s", text: p.detail }) : null])]);
     }));
   }
   function progressView() {
-    return el("div", null, [el("h2", { text: "Researching…" }), el("p", { class: "muted", text: "DIAPORIA is searching, checking evidence and ranking products. This view updates live." }), stepsList(true)]);
+    var s = stages().slice(0, 3);
+    var ev = snap.progress || [];
+    var lastEv = ev[ev.length - 1];
+    return el("div", { class: "card" }, [
+      el("h2", { text: "Researching products" }),
+      el("p", { class: "muted small", text: "Searching, reading product details and checking evidence. This view updates live." }),
+      el("ul", { class: "steps" }, s.map(function (x) {
+        return el("li", { class: !x.d && !x.a ? "pending" : null }, [stepIcon(x), el("div", null, [el("div", { class: "t", text: x.t }),
+          x.a && lastEv ? el("div", { class: "s", text: lastEv.label + (lastEv.detail ? " · " + lastEv.detail : "") }) : null])]);
+      })),
+      ev.length ? el("details", { class: "plain" }, [el("summary", { text: "Show all activity (" + ev.length + ")" }), activityList(true)]) : null,
+      el("div", { class: "stack section" }, [el("div", { class: "skeleton" }), el("div", { class: "skeleton" })]),
+    ]);
   }
   function errorView() {
     var e = snap.error || { code: "UNKNOWN", message: "Research did not finish." };
-    return el("div", { class: "box bad" }, [el("h2", { text: snap.runState === "INTERRUPTED" ? "Research was interrupted" : "Research failed" }), el("p", { text: e.message }), el("p", { class: "muted", text: e.code })]);
+    return note("bad", "!", snap.runState === "INTERRUPTED" ? "Research was interrupted" : "Research could not finish", [el("p", { class: "small", text: e.message }),
+      el("p", { class: "muted tiny", text: e.code + (snap.runState === "INTERRUPTED" ? " · the server restarted while research was running; ask your assistant to start a new panel." : "") })]);
   }
 
+  // ---------------------------------------------------------------- results
+  function monogram(c) {
+    var id = c.identity || {}; var src = String(id.brand || c.title || "?").trim();
+    var m = String(id.model || "").replace(/[^A-Za-z0-9]/g, "");
+    var t = (src.charAt(0) + (m.charAt(0) || src.charAt(1) || "")).toUpperCase();
+    // No product images exist in the catalog data: a labelled monogram, never a stock or generated picture.
+    return el("div", { class: "thumb" + (c.lg ? " lg" : ""), role: "img", "aria-label": "No product image available", title: "No product image available", text: t });
+  }
+  function reqChip(r) {
+    var ok = r.status === "VERIFIED_TRUE", no = r.status === "VERIFIED_FALSE" || r.status === "CONTRADICTED";
+    return el("span", { class: "req " + (ok ? "ok" : no ? "no" : "open"), title: r.label + ": " + statusText(r.status) }, [el("i", { "aria-hidden": "true", text: ok ? "✓" : no ? "×" : "?" }),
+      el("span", { text: r.label }), el("span", { class: "sr", text: " — " + statusText(r.status) })]);
+  }
+  function statusText(s) {
+    return { VERIFIED_TRUE: "verified", VERIFIED_FALSE: "does not meet", CONTRADICTED: "contradicted by evidence", UNVERIFIED: "not verified", UNKNOWN: "not verified", INSUFFICIENT: "insufficient evidence" }[s] || String(s || "").replace(/_/g, " ").toLowerCase();
+  }
+  function bestVerified() { var c = snap.comparison; return c && c.state === "OFFER_VERIFIED" && c.lowestVerifiedEligibleOffer ? c.lowestVerifiedEligibleOffer : null; }
+  function priceBlock(c, selected) {
+    var best = selected ? bestVerified() : null;
+    if (best && best.cost && best.cost.totalMinor !== null && best.cost.totalMinor !== undefined) {
+      var complete = !(best.cost.unknownComponents || []).length;
+      return el("div", { class: "price" }, [el("span", { class: "amt num", text: money(best.cost.totalMinor, best.cost.currency) }),
+        el("span", { class: "ptag ver", text: complete ? "Merchant-verified total · incl. shipping & tax" : "Merchant-verified, some costs unknown" })]);
+    }
+    var lp = c.listingPrice || {};
+    if (lp.lowestListingMinor === null || lp.lowestListingMinor === undefined) return el("div", { class: "price" }, [el("span", { class: "amt unverified", text: "Price unknown" }), el("span", { class: "ptag", text: "no listing price found" })]);
+    return el("div", { class: "price" }, [el("span", { class: "amt unverified num", text: money(lp.lowestListingMinor, lp.currency) }),
+      el("span", { class: "ptag unv", title: "Search-time listing price. Not a checkout total: shipping, tax and the merchant are verified at comparison.", text: "Listing price" + (lp.merchantDomain ? " · " + lp.merchantDomain + " (unverified)" : " · unverified") })]);
+  }
+  function productCard(c, i, sel) {
+    var isSel = sel === c.productId; var id = c.identity || {};
+    var reqs = (c.requirements || []).slice(0, 6);
+    return el("article", { class: "pcard" + (isSel ? " sel" : i === 0 && c.status === "ELIGIBLE" ? " top" : ""), "data-pid": c.productId, "aria-label": c.title }, [
+      monogram(c),
+      el("div", { class: "grow" }, [
+        el("div", { class: "between" }, [el("div", { class: "grow" }, [id.brand ? el("div", { class: "pbrand", text: id.brand }) : null, el("div", { class: "ptitle", text: id.model ? id.model + (id.variant ? " · " + id.variant : "") : c.title })]),
+          el("div", { class: "row", style: null }, [c.recommended ? chip("Recommended", "rec") : null])]),
+        el("div", { class: "row", style: null }, [statusChip(c.status), isSel ? chip("Selected", "ok") : null, c.rank ? el("span", { class: "tiny muted", text: "Rank #" + c.rank }) : null]),
+        priceBlock(c, isSel),
+        reqs.length ? el("div", { class: "reqs", "aria-label": "Requirements" }, reqs.map(reqChip)) : null,
+        c.reason ? el("p", { class: "reason", text: c.reason }) : null,
+        el("div", { class: "actions" }, [
+          el("button", { class: "btn sec", type: "button", onclick: function () { openDetail(c.productId); }, text: "Details" }),
+          isSel ? null : el("button", { class: "btn", type: "button", disabled: ui.busy || lockedOther(c.productId) || (snap.session && snap.session.expired), onclick: function () { act("/select", { productId: c.productId }); }, text: lockedOther(c.productId) ? "Locked" : "Select" }),
+        ]),
+      ]),
+    ]);
+  }
+  function lockedOther(pid) { return !!(snap.session && snap.session.lockedProductId && snap.session.lockedProductId !== pid && snap.comparison); }
   function resultsView() {
     var s = snap.session || {};
-    var kids = [el("h2", { text: snap.candidates.length ? "Top " + snap.candidates.length + " candidates" : "No eligible or investigable candidate" })];
-    if (s.decisionState) kids.push(el("p", { class: "muted", text: "Decision: " + s.decisionState + (s.budgetMinor ? " · budget " + money(s.budgetMinor, s.currency) : "") }));
-    if (!snap.candidates.length && s.holdReasons && s.holdReasons.length) kids.push(el("ul", { class: "open" }, s.holdReasons.map(function (h) { return el("li", { text: h }); })));
     var sel = snap.selection && snap.selection.productId;
-    kids.push(el("div", { class: "cards" }, snap.candidates.map(function (c) {
-      return el("button", { class: "card" + (sel === c.productId ? " sel" : ""), type: "button", "aria-pressed": sel === c.productId ? "true" : "false", "data-pid": c.productId, onclick: function () { openDetail(c.productId); } }, [
-        el("div", { class: "row" }, [el("span", { class: "pos", text: "#" + c.position }), el("span", { class: "title", text: c.title })]),
-        el("div", { class: "row" }, [statusChip(c.status), c.recommended ? chip("Recommended", "rec") : null, sel === c.productId ? chip("Selected", "ok") : null]),
-        el("div", { class: "row" }, [el("span", { class: "price", text: money(c.listingPrice.lowestListingMinor, c.listingPrice.currency) }),
-          el("span", { class: "muted", text: "lowest search-time listing" + (c.listingPrice.merchantDomain ? " (" + c.listingPrice.merchantDomain + ", merchant not yet verified)" : "") + "; not a checkout total" })]),
-        el("div", { class: "muted", text: "Requirements verified: " + c.mustHave.verified + "/" + c.mustHave.total }),
-        c.openItems.length ? el("ul", { class: "open" }, c.openItems.map(function (o) { return el("li", { text: o }); })) : null,
-      ]);
-    })));
-    if (snap.candidates.length && !sel) kids.push(el("p", { class: "muted", text: "Tap a product to see its evidence and select it." }));
-    if (sel && !snap.comparison) kids.push(compareForm());
+    var n = snap.candidates.length;
+    var kids = [el("div", { class: "between" }, [el("h1", { text: n ? (n === 1 ? "1 matching product" : "Top " + n + " matching products") : "No product could be recommended" }),
+      s.decisionState ? el("span", { class: "badge neutral", title: "Decision engine state", text: decisionText(s.decisionState) }) : null])];
+    if (n) kids.push(el("p", { class: "muted small", text: "Ranked by DIAPORIA's decision engine. Prices here are search-time listings; verified totals appear after you compare offers." }));
+    if (!n && s.holdReasons && s.holdReasons.length) kids.push(note("warn", "!", "Why nothing is shown", [el("ul", null, s.holdReasons.map(function (h) { return el("li", { class: "small", text: h }); }))]));
+    kids.push(el("div", { class: "stack section" }, snap.candidates.map(function (c, i) { return productCard(c, i, sel); })));
+    if (sel) kids.push(compareForm());
     return el("div", null, kids);
   }
+  function decisionText(d) { return { RECOMMEND: "Recommendation ready", HOLD: "On hold", INVESTIGATE: "Needs investigation", NO_MATCH: "No match" }[d] || String(d).replace(/_/g, " ").toLowerCase(); }
 
   function compareForm() {
-    var c = el("input", { name: "country", value: ui.dest.country, maxlength: "2", "aria-label": "Country", autocomplete: "off" });
-    var r = el("input", { name: "region", value: ui.dest.region, maxlength: "10", "aria-label": "Region", autocomplete: "off" });
-    return el("div", { class: "box" }, [
-      el("h3", { text: "Compare verified offers" }),
-      el("p", { class: "muted", text: "DIAPORIA asks each merchant for a fresh quote. Tax needs the shipping country and region." }),
+    var c = el("input", { id: "dc", name: "country", value: ui.dest.country, maxlength: "2", autocomplete: "off", inputmode: "text", spellcheck: "false" });
+    var r = el("input", { id: "dr", name: "region", value: ui.dest.region, maxlength: "10", autocomplete: "off", spellcheck: "false" });
+    var p = snap.candidates.find(function (x) { return x.productId === snap.selection.productId; });
+    return el("section", { class: "card section", "aria-labelledby": "cmp-h" }, [
+      el("h2", { id: "cmp-h", text: "Compare verified offers" }),
+      el("p", { class: "muted small", text: "DIAPORIA asks each merchant for a fresh quote for " + (p ? p.title : "the selected product") + ". Tax depends on where it ships." }),
       el("form", { class: "dest", onsubmit: function (ev) { ev.preventDefault(); ui.dest = { country: c.value.trim().toUpperCase(), region: r.value.trim().toUpperCase() };
         act("/compare", { destination: { country: ui.dest.country, region: ui.dest.region || undefined } }); } }, [
-        el("label", null, ["Country", c]), el("label", null, ["Region", r]),
-        el("button", { class: "btn", type: "submit", disabled: ui.busy, text: ui.busy ? "Comparing…" : "Compare offers" }),
+        el("label", { for: "dc" }, ["Ship to country", c]), el("label", { for: "dr" }, ["Region", r]),
+        el("button", { class: "btn", type: "submit", disabled: ui.busy || (snap.session && snap.session.expired), text: ui.busy ? "Requesting quotes…" : "Compare offers" }),
       ]),
     ]);
   }
 
+  // ---------------------------------------------------------------- detail
+  function evidenceItems(d, cap) {
+    var e = (d.evidence || []).find(function (x) { return x.capability === cap; });
+    return e ? e.items || [] : [];
+  }
   function detailView() {
     var d = ui.detailData;
-    var back = el("button", { class: "link", type: "button", text: "← Back to results", onclick: function () { ui.detail = null; ui.detailData = null; render(); } });
-    if (!d) return el("div", null, [back, el("p", { class: "muted", text: "Loading details…" })]);
+    var back = el("button", { class: "btn ghost back", type: "button", text: "← Back", onclick: function () { ui.detail = null; ui.detailData = null; render(); } });
+    if (!d) return el("div", null, [back, el("div", { class: "skeleton" })]);
     var sel = snap.selection && snap.selection.productId === d.productId;
     var id = d.identity || {};
-    var kids = [back, el("h2", { text: d.title }), el("div", { class: "row" }, [statusChip(d.status), d.rank ? chip("Rank " + d.rank) : null, sel ? chip("Selected", "ok") : null])];
-    kids.push(el("h3", { text: "Identity" }), kv([["Brand", id.brand || "—"], ["Model", id.model || "—"], ["Variant", id.variant || "—"], ["Condition", id.condition || "—"], id.sku ? ["SKU", id.sku] : null,
-      ["Listing price", money(d.listingPrice.lowestListingMinor, d.listingPrice.currency) + " (search-time, not a total)"]]));
-    if (d.whySelected && d.whySelected.length) kids.push(el("h3", { text: "Why it ranks here" }), el("ul", null, d.whySelected.map(function (w) { return el("li", { text: w }); })));
-    kids.push(el("h3", { text: "Requirements and features" }));
-    kids.push(d.validated.length ? kv(d.validated.map(function (v) {
-      var ok = v.status === "VERIFIED_TRUE";
-      return [v.capability + (v.strength === "MUST" ? " (must)" : ""), el("span", null, [chip(v.status.replace(/_/g, " ").toLowerCase(), ok ? "ok" : v.status === "VERIFIED_FALSE" || v.status === "CONTRADICTED" ? "bad" : "warn"),
-        v.evidence && v.evidence.url ? el("div", { class: "ev" }, [extLink(v.evidence.url, v.evidence.kind || "source")]) : null])];
-    })) : el("p", { class: "muted", text: "No stated requirements." }));
-    if (d.evidence && d.evidence.length) {
-      kids.push(el("h3", { text: "Evidence" }));
-      d.evidence.forEach(function (e) {
-        kids.push(el("div", null, [el("div", null, [el("b", { text: e.capability }), " ", chip(e.status), " ", el("span", { class: "muted", text: e.basis || "" })])]));
-        (e.items || []).forEach(function (it) {
-          kids.push(el("div", { class: "ev" }, [extLink(it.url, it.sourceClass + (it.counts ? " (counted)" : " (not counted)")), it.quote ? el("div", { text: "“" + it.quote + "”" }) : null,
-            it.whyNotCounted ? el("div", { class: "muted", text: it.whyNotCounted }) : null]));
-        });
+    var kids = [back, el("div", { class: "hero" }, [monogram({ identity: id, title: d.title, lg: true }), el("div", { class: "grow" }, [
+      id.brand ? el("div", { class: "pbrand", text: id.brand }) : null, el("h1", { text: d.title }),
+      el("div", { class: "row", style: null }, [statusChip(d.status), d.rank ? el("span", { class: "tiny muted", text: "Rank #" + d.rank }) : null, sel ? chip("Selected", "ok") : null])])])];
+    var lp = d.listingPrice || {};
+    kids.push(priceBlock({ listingPrice: { lowestListingMinor: lp.lowestListingMinor, currency: lp.currency, merchantDomain: lp.merchantDomain } }, sel));
+    if (d.whySelected && d.whySelected.length) kids.push(el("h3", { text: "Why it matches" }), el("ul", { class: "small", style: null }, d.whySelected.slice(0, 4).map(function (w) { return el("li", { text: w }); })));
+
+    var rows = d.validated || [];
+    var groups = [["Verified", rows.filter(function (v) { return v.status === "VERIFIED_TRUE"; }), "ok"],
+      ["Not yet verified", rows.filter(function (v) { return v.status !== "VERIFIED_TRUE" && v.status !== "VERIFIED_FALSE" && v.status !== "CONTRADICTED"; }), "open"],
+      ["Failed", rows.filter(function (v) { return v.status === "VERIFIED_FALSE" || v.status === "CONTRADICTED"; }), "no"]];
+    kids.push(el("h3", { text: "Requirements & evidence" }));
+    if (!rows.length) kids.push(el("p", { class: "muted small", text: "No stated requirements." }));
+    groups.forEach(function (g) {
+      if (!g[1].length) return;
+      kids.push(el("div", { class: "tiny muted", style: null, text: g[0] + " (" + g[1].length + ")" }));
+      g[1].forEach(function (v) {
+        var items = evidenceItems(d, v.capability);
+        var counted = items.filter(function (it) { return it.counts; }).length;
+        kids.push(el("details", { class: "disc" }, [
+          el("summary", null, [el("span", { class: "req " + g[2] }, [el("i", { "aria-hidden": "true", text: g[2] === "ok" ? "✓" : g[2] === "no" ? "×" : "?" }), el("span", { text: v.label || v.capability })]),
+            v.strength === "MUST" ? el("span", { class: "tiny muted", text: "must-have" }) : el("span", { class: "tiny muted", text: "nice-to-have" }),
+            el("span", { class: "tiny muted", style: null, text: items.length ? counted + "/" + items.length + " sources" : "" })]),
+          el("div", { class: "body" }, items.length ? items.map(function (it) {
+            return el("div", { class: "ev" }, [el("div", { class: "src" }, [extLink(it.url, hostOf(it.url) || it.sourceClass), " · " + (it.sourceClass || "source") + " · " + (it.counts ? "counted" : "not counted")]),
+              it.quote ? el("q", { text: it.quote }) : null, it.whyNotCounted ? el("div", { class: "tiny muted", text: it.whyNotCounted }) : null]);
+          }) : [el("p", { class: "muted small", text: statusText(v.status) + ": no attributable source was found." + (v.satisfiedBy ? " Satisfied by: " + v.satisfiedBy : "") })]),
+        ]));
       });
-    }
-    var unresolved = [].concat((d.blockers || []).map(function (b) { return b.detail; }), d.unresolved || []).filter(function (x, i, a) { return a.indexOf(x) === i; });
-    kids.push(el("h3", { text: "Unresolved conditions" }), unresolved.length ? el("ul", { class: "open" }, unresolved.map(function (u) { return el("li", { text: u }); }))
-      : el("p", { class: "muted", text: d.purchaseReady ? "None. Purchase-ready once a merchant total is verified." : "None listed." }));
-    if (d.verifyBeforePurchase && d.verifyBeforePurchase.length) kids.push(el("p", { class: "muted", text: "Verify before purchase: " + d.verifyBeforePurchase.join("; ") }));
+    });
+
+    var unresolved = [].concat((d.blockers || []).map(function (b) { return b.detail; }), d.unresolved || []).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+    if (unresolved.length || (d.disqualifiers || []).length) kids.push(el("div", { class: "section" }, [note("warn", "!", "Before this can be bought", [el("ul", null, unresolved.concat((d.disqualifiers || []).map(function (x) { return x.detail || String(x); })).map(function (u) { return el("li", { class: "small", text: u }); }))])]));
+    else if (d.purchaseReady) kids.push(el("div", { class: "section" }, [note("ok", "✓", "No open conditions", [el("p", { class: "small", text: "Purchase-ready once a merchant-verified total exists." })])]));
+    if (d.verifyBeforePurchase && d.verifyBeforePurchase.length) kids.push(el("p", { class: "muted small", text: "Verify before purchase: " + d.verifyBeforePurchase.join("; ") }));
+
+    kids.push(el("h3", { text: "Product identity" }), kv([["Brand", id.brand || "—"], ["Model", id.model || "—"], ["Variant", id.variant || "—"], ["Condition", id.condition || "—"], id.sku ? ["SKU", id.sku] : null, id.gtin ? ["GTIN", id.gtin] : null]));
     kids.push(el("h3", { text: "Merchant" }));
-    if (d.merchants.source === "VERIFIED_COMPARISON") kids.push(el("p", { class: "muted", text: d.merchants.offers.length + " merchant offers were compared. See the comparison below the results." }));
-    else kids.push(el("p", null, [d.merchants.merchantDomain ? el("span", { text: d.merchants.merchantDomain + " (search-time listing; merchant not yet verified)" }) : el("span", { class: "muted", text: "No merchant verified yet." })]));
+    if (d.merchants && d.merchants.source === "VERIFIED_COMPARISON") kids.push(el("p", { class: "small", text: d.merchants.offers.length + " merchant offer" + (d.merchants.offers.length === 1 ? " was" : "s were") + " compared with fresh quotes." }));
+    else kids.push(kv([["Search-time merchant", (d.merchants && d.merchants.merchantDomain) || lp.merchantDomain || "—"], ["Trust status", "Not yet verified (checked when you compare offers)"]]));
     if (d.untrustedListingText && d.untrustedListingText.length) {
-      kids.push(el("h3", { text: "Listing text (untrusted)" }));
-      d.untrustedListingText.forEach(function (u) { kids.push(el("div", { class: "untrusted", text: u.text }), u.flags.length ? el("div", { class: "muted", text: "Flagged: " + u.flags.join(", ") + " — shown, never followed." }) : null); });
+      kids.push(el("details", { class: "plain section" }, [el("summary", { text: "Merchant listing text (untrusted, " + d.untrustedListingText.length + ")" })].concat(d.untrustedListingText.map(function (u) {
+        return el("div", null, [el("div", { class: "untrusted", text: u.text }), u.flags && u.flags.length ? el("div", { class: "tiny muted", text: "Flagged: " + u.flags.join(", ") + ". Shown as text, never followed." }) : null]);
+      }))));
     }
-    var locked = snap.session && snap.session.lockedProductId && snap.session.lockedProductId !== d.productId && snap.comparison;
-    if (!sel) kids.push(el("button", { class: "btn block", type: "button", disabled: ui.busy || d.status === "NOT_ELIGIBLE" || locked || (snap.session && snap.session.expired), text: locked ? "Another product is already locked" : "Select this product",
-      onclick: function () { act("/select", { productId: d.productId }); } }));
-    else kids.push(el("button", { class: "btn block sec", type: "button", text: "Selected — back to compare offers", onclick: function () { ui.detail = null; render(); } }));
-    return el("div", null, kids);
+    var locked = lockedOther(d.productId);
+    kids.push(el("div", { class: "sticky" }, [sel ? el("button", { class: "btn block sec", type: "button", text: "Selected · back to offers", onclick: function () { ui.detail = null; render(); } })
+      : el("button", { class: "btn block lg", type: "button", disabled: ui.busy || d.status === "NOT_ELIGIBLE" || locked || (snap.session && snap.session.expired), text: locked ? "Another product is locked for this purchase" : d.status === "NOT_ELIGIBLE" ? "Not eligible" : "Select this product",
+        onclick: function () { act("/select", { productId: d.productId }); } })]));
+    return el("div", { class: "card" }, kids);
   }
+  function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return null; } }
 
-  function costRows(cost) {
-    if (!cost) return [["Total", "unknown"]];
-    var cur = cost.currency;
-    var unk = cost.unknownComponents || [];
-    return [["Item", money(cost.itemMinor, cur)], ["Shipping", money(cost.shippingMinor, cur)], ["Tax", money(cost.taxMinor, cur)], ["Fees", money(cost.feesMinor, cur)],
-      cost.discountMinor ? ["Discount", money(cost.discountMinor, cur)] : null, unk.length ? ["Unknown", unk.join(", ") + " (unknown is not zero)"] : null,
-      ["Verified total", el("b", { text: money(cost.totalMinor, cur) })]];
+  // ---------------------------------------------------------------- offers
+  function costLines(cost) {
+    if (!cost) return el("div", { class: "lines" }, [el("div", { class: "line unknown total" }, [el("span", { text: "Total" }), el("span", { class: "v", text: "Unknown" })])]);
+    var cur = cost.currency; var unk = cost.unknownComponents || [];
+    function line(lbl, v, key) {
+      var u = v === null || v === undefined || unk.indexOf(key) >= 0;
+      return el("div", { class: "line" + (u ? " unknown" : "") }, [el("span", { text: lbl }), el("span", { class: "v", text: u ? "Unknown" : money(v, cur) })]);
+    }
+    return el("div", { class: "lines" }, [line("Item", cost.itemMinor, "item"), line("Shipping", cost.shippingMinor, "shipping"), line("Tax", cost.taxMinor, "tax"), line("Fees", cost.feesMinor, "fees"),
+      cost.discountMinor ? el("div", { class: "line" }, [el("span", { text: "Discount" }), el("span", { class: "v", text: "−" + money(Math.abs(cost.discountMinor), cur) })]) : null,
+      el("div", { class: "line total" }, [el("span", { text: unk.length ? "Total (incomplete)" : "Verified total" }), el("span", { class: "v", text: money(cost.totalMinor, cur) })]),
+      unk.length ? el("p", { class: "tiny muted", text: "Unknown is not zero: " + unk.join(", ") + " could not be verified." }) : null]);
   }
-
   function compareView() {
     var c = snap.comparison;
-    var best = c.lowestVerifiedEligibleOffer;
-    var kids = [el("h2", { text: "Verified offers" }), el("div", { class: "row" }, [chip(c.state, c.state === "OFFER_VERIFIED" ? "ok" : "warn"), el("span", { class: "muted", text: (c.destinationUsed ? "Ship to " + c.destinationUsed.country + (c.destinationUsed.region ? "-" + c.destinationUsed.region : "") : "No destination") })])];
-    (c.eligibleOffers || []).forEach(function (o) {
-      var isBest = best && best.offerId === o.offerId;
-      kids.push(el("div", { class: "offer" }, [
-        el("div", { class: "row" }, [el("span", { class: "title", text: o.merchantName === o.merchantDomain ? o.merchantName : o.merchantName + " · " + o.merchantDomain }), isBest ? chip("Lowest verified", "ok") : null]),
-        kv(costRows(o.cost).concat([["Checkout", o.checkoutPath === "EXTERNAL_MERCHANT_CHECKOUT" ? "On the merchant's own site" : "DIAPORIA checkout (owner approval required)"], o.merchantIdentity ? ["Merchant identity", String(o.merchantIdentity.overall || o.merchantIdentity.legalEntity || "checked")] : null])),
-        prepareButton(o, c),
-      ]));
-    });
-    if ((c.ineligibleOffers || []).length) kids.push(el("details", null, [el("summary", { class: "muted", text: c.ineligibleOffers.length + (c.ineligibleOffers.length === 1 ? " offer rejected" : " offers rejected") }),
-      el("div", null, c.ineligibleOffers.map(function (o) { return el("div", { class: "ev" }, [el("b", { text: o.merchantName + " · " + o.merchantDomain }), el("div", { class: "muted", text: (o.issues || []).join("; ") })]); }))]));
+    var best = bestVerified();
+    var offers = (c.eligibleOffers || []).slice().sort(function (a, b) { return (a.cost && a.cost.totalMinor != null ? a.cost.totalMinor : Infinity) - (b.cost && b.cost.totalMinor != null ? b.cost.totalMinor : Infinity); });
+    var primary = best ? offers.find(function (o) { return o.offerId === best.offerId; }) : null;
+    var p = snap.candidates.find(function (x) { return snap.selection && x.productId === snap.selection.productId; });
+    var dest = c.destinationUsed ? c.destinationUsed.country + (c.destinationUsed.region ? "-" + c.destinationUsed.region : "") : null;
+    var kids = [el("button", { class: "btn ghost back", type: "button", text: "← Products", onclick: function () { snap.comparison = null; render(); } }),
+      el("div", { class: "between" }, [el("h1", { text: "Verified offers" }), dest ? el("span", { class: "badge neutral", text: "Ship to " + dest }) : null])];
+    if (p) kids.push(el("div", { class: "row section", style: null }, [monogram(p), el("div", { class: "grow" }, [p.identity && p.identity.brand ? el("div", { class: "pbrand", text: p.identity.brand }) : null, el("div", { class: "ptitle", text: p.title })])]));
     var open = [].concat(c.holdReasons || []).filter(function (x, i, a) { return a.indexOf(x) === i; });
-    if (open.length) kids.push(el("div", { class: "box warn" }, [el("b", { text: "Not ready for checkout" }), el("ul", { class: "open" }, open.map(function (h) { return el("li", { text: h }); })),
-      el("p", { class: "muted", text: "Open requirements are resolved only by the owner on the owner page; ask your assistant to propose a resolution." })]));
-    kids.push(el("button", { class: "link", type: "button", text: "Compare again with another destination", onclick: function () { snap.comparison = null; render(); } }));
-    return el("div", { class: "box" }, kids);
+    if (c.state !== "OFFER_VERIFIED" || open.length) kids.push(el("div", { class: "section" }, [note("warn", "!", c.state === "HOLD" || open.length ? "On hold: not ready for checkout" : "No verified offer yet", [
+      open.length ? el("ul", null, open.map(function (h) { return el("li", { class: "small", text: h }); })) : null,
+      el("p", { class: "tiny muted", text: "Open requirements are resolved only by the owner on the owner page. Your assistant can propose a resolution." })])]));
+    if (primary) {
+      kids.push(el("section", { class: "offer best section", "aria-label": "Lowest verified offer" }, [
+        el("div", { class: "between" }, [el("div", { class: "grow" }, [el("div", { class: "mname", text: primary.merchantName }), primary.merchantDomain !== primary.merchantName ? el("div", { class: "mdom", text: primary.merchantDomain }) : null]), chip("Lowest verified total", "ok")]),
+        merchantTrust(primary), costLines(primary.cost),
+        el("div", { class: "section" }, [prepareButton(primary, c)]),
+        el("p", { class: "tiny muted", style: null, text: primary.checkoutPath === "EXTERNAL_MERCHANT_CHECKOUT" ? "Completes on the merchant's own site." : "Preparing a checkout does not pay. The owner sets a spending limit and confirms on the owner page; payment approval follows." }),
+      ]));
+    }
+    var rest = offers.filter(function (o) { return !primary || o.offerId !== primary.offerId; });
+    if (rest.length) kids.push(el("h3", { text: "Other verified offers" }), el("div", { class: "card" }, rest.map(function (o) {
+      return el("details", { class: "plain" }, [el("summary", null, [el("span", { text: o.merchantName + " · " }), el("b", { class: "num", text: money(o.cost && o.cost.totalMinor, o.cost && o.cost.currency) })]), merchantTrust(o), costLines(o.cost), el("div", { class: "section" }, [prepareButton(o, c, true)])]);
+    })));
+    if ((c.ineligibleOffers || []).length) kids.push(el("h3", { text: "Rejected merchants (" + c.ineligibleOffers.length + ")" }), el("div", { class: "card" }, c.ineligibleOffers.map(function (o) {
+      return el("div", { class: "excl" }, [el("div", { class: "row", style: null }, [el("b", { text: o.merchantName }), el("span", { class: "mdom", text: o.merchantDomain })]),
+        el("ul", { class: "small muted", style: null }, (o.issues || ["Rejected by verification"]).map(function (x) { return el("li", { text: humanIssue(x) }); }))]);
+    })));
+    kids.push(el("details", { class: "plain section" }, [el("summary", { text: "Compare again with another destination" }), compareForm()]));
+    return el("div", null, kids);
   }
-
-  function prepareButton(o, c) {
-    if (c.state !== "OFFER_VERIFIED" || !o.eligible) return null;
-    if (!snap.capabilities.prepare) return el("p", { class: "muted", text: "Ask your assistant to prepare this checkout (this panel link cannot prepare checkouts)." });
-    return el("button", { class: "btn block", type: "button", disabled: ui.busy || (snap.session && snap.session.expired), text: ui.busy ? "Preparing…" : "Prepare checkout · " + money(o.cost && o.cost.totalMinor, o.cost && o.cost.currency),
+  function merchantTrust(o) {
+    var mi = o.merchantIdentity; var v = mi && String(mi.overall || "");
+    var c = v === "MATCH" ? chip("Merchant identity verified", "ok") : v === "MISMATCH" ? chip("Merchant identity mismatch", "bad") : v ? chip("Merchant identity unknown", "warn") : chip("Merchant identity not checked", "neutral");
+    return el("div", { class: "row" }, [c]);
+  }
+  function humanIssue(x) { var s = String(x).replace(/^[A-Z_]{4,}:\s*/, ""); return s.charAt(0).toUpperCase() + s.slice(1); }
+  function prepareButton(o, c, secondary) {
+    if (c.state !== "OFFER_VERIFIED" || !o.eligible) return el("button", { class: "btn block lg", type: "button", disabled: true, text: "Checkout unavailable while on hold" });
+    if (!snap.capabilities.prepare) return note("info", "i", null, [el("p", { class: "small", text: "Ask your assistant to prepare this checkout. This panel link can compare offers but not prepare checkouts." })]);
+    return el("button", { class: "btn block" + (secondary ? " sec" : " lg"), type: "button", disabled: ui.busy || (snap.session && snap.session.expired), text: ui.busy ? "Preparing…" : "Continue to checkout · " + money(o.cost && o.cost.totalMinor, o.cost && o.cost.currency),
       onclick: function () { act("/prepare", { offerId: o.offerId }); } });
   }
 
+  // ---------------------------------------------------------------- checkout + receipt
   function checkoutView() {
     var ck = snap.checkout; var st = ck.status; var h = ck.handoff;
-    var kids = [el("h2", { text: "Checkout" })];
-    if (!st) {
-      kids.push(el("p", { text: "No DIAPORIA checkout was created." }));
-    } else {
-      var final = { FAILED: 1, CANCELLED: 1, EXPIRED: 1, REFUNDED: 1 }[st.state];
-      kids.push(el("div", { class: "box " + (final ? "bad" : "") }, [
-        el("div", { class: "row" }, [el("span", { class: "muted", text: "Server-verified state" }), el("span", { class: "state", text: st.state })]),
-        el("div", { class: "big", text: money(st.amount.totalMinor, st.amount.currency) }),
-        el("div", { class: "muted", text: "Merchant-verified total for " + ((st.productIdentity && (st.productIdentity.brand + " " + st.productIdentity.model)) || "the product") + " · quantity " + st.quantity }),
-        kv([["Merchant", st.merchantIdentity ? String(st.merchantIdentity.verifiedLegalName || st.merchantIdentity.merchantName || "verified") : "—"],
-          ["Spending limit", spendingLimitText(st, ck)], ["Buyer approval", st.approval.buyerApprovalVerified ? "verified" : st.approval.required ? "required" : "not yet"],
-          ["Payment", st.paymentStatus], ["Next step", st.payment && st.payment.recommendedNextAction ? st.payment.recommendedNextAction.replace(/_/g, " ").toLowerCase() : "—"],
-          st.failure ? ["Failure", st.failure.code + ": " + st.failure.reason] : null, st.uncertainty ? ["Note", st.uncertainty] : null, ["Expires", st.expiresAt]]),
-      ]));
-    }
+    if (!st) return note("warn", "!", "No DIAPORIA checkout was created", []);
+    var fin = FINAL[st.state];
+    var ownerDone = !!(st.approval.approvalUrl || st.approval.buyerApprovalVerified || st.state === "COMPLETED");
+    var buyerDone = !!(st.approval.buyerApprovalVerified || st.state === "COMPLETED");
+    var tl = [
+      { t: "Checkout prepared", s: "Merchant-verified total locked for this product and merchant.", d: true },
+      { t: "Owner sets limit and confirms", s: "On the owner page, with the owner key.", d: ownerDone, a: !fin && h && h.kind === "OWNER_AUTHORIZATION" },
+      { t: "Payment approval", s: snap.paymentEnvironment === "PAYPAL_SANDBOX" ? "PayPal Sandbox approval (test account)." : "MOCK buyer step (stands in for PayPal login).", d: buyerDone, a: !fin && h && h.kind === "BUYER_PAYMENT_APPROVAL" },
+      { t: "Payment confirmed by the backend", s: "The receipt appears only after this.", d: st.state === "COMPLETED", a: !fin && buyerDone && st.state !== "COMPLETED" },
+    ];
+    if (fin) { var i = tl.findIndex(function (x) { return !x.d; }); if (i >= 0) tl[i].f = true; }
+    var who = st.productIdentity ? [st.productIdentity.brand, st.productIdentity.model].filter(Boolean).join(" ") : "the product";
+    var merchant = st.merchantIdentity ? String(st.merchantIdentity.verifiedLegalName || st.merchantIdentity.merchantName || "verified merchant") : "—";
+    var kids = [el("div", { class: "between" }, [el("h1", { text: fin ? "Checkout " + st.state.toLowerCase() : h ? "Approval required" : "Confirming payment" }), chip(st.state.replace(/_/g, " ").toLowerCase(), fin ? "bad" : st.state === "COMPLETED" ? "ok" : "warn")]),
+      el("div", { class: "card section" }, [el("div", { class: "big", text: money(st.amount.totalMinor, st.amount.currency) }),
+        el("div", { class: "muted small", text: "Merchant-verified total · " + who + " · qty " + st.quantity }),
+        el("div", { class: "tiny muted", text: merchant }),
+        el("ul", { class: "timeline" }, tl.map(function (x) { return el("li", { class: !x.d && !x.a && !x.f ? "pending" : null }, [stepIcon(x), el("div", null, [el("div", { class: "t", text: x.t }), el("div", { class: "s", text: x.s })])]); })),
+      ])];
+    if (st.failure || st.uncertainty) kids.push(el("div", { class: "section" }, [note(fin ? "bad" : "warn", "!", fin ? "This checkout ended" : "Note", [st.failure ? el("p", { class: "small", text: humanIssue(st.failure.reason) + " (" + st.failure.code + ")" }) : null, st.uncertainty ? el("p", { class: "small", text: st.uncertainty }) : null])]));
+    else if (fin) kids.push(el("div", { class: "section" }, [note("bad", "!", "This checkout ended: " + st.state.toLowerCase(), [el("p", { class: "small", text: "Nothing was charged by this panel. You can return to the offers for fresh quotes." })])]));
     if (h) {
-      kids.push(el("div", { class: "box warn" }, [el("b", { text: h.kind === "OWNER_AUTHORIZATION" ? "Owner approval needed" : h.kind === "BUYER_PAYMENT_APPROVAL" ? "Payment approval needed" : "Complete on the merchant site" }),
-        el("p", { text: h.who }),
+      kids.push(el("div", { class: "section" }, [
         // Same tab on purpose: the host's browser panel keeps the flow beside the conversation; /buy/ resumes this panel afterwards.
-        el("a", { class: "btn block", href: h.url, rel: "noopener noreferrer", target: h.kind === "EXTERNAL_MERCHANT_CHECKOUT" ? "_blank" : "_self", text: h.kind === "OWNER_AUTHORIZATION" ? "Open owner approval page" : h.kind === "BUYER_PAYMENT_APPROVAL" ? "Open payment approval" : "Open merchant checkout" }),
-        el("p", { class: "muted", text: "This panel only links to the approval step. It updates by itself when the server verifies the result." })]));
-    } else if (st && !{ COMPLETED: 1, FAILED: 1, CANCELLED: 1, EXPIRED: 1, REFUNDED: 1 }[st.state]) {
-      kids.push(el("p", { class: "muted", text: "Waiting for the payment backend to verify the result…" }));
-    }
-    if (st && { CANCELLED: 1, FAILED: 1, EXPIRED: 1 }[st.state]) kids.push(el("button", { class: "btn block sec", type: "button", disabled: ui.busy, text: "Back to offers (fresh quotes)",
-      onclick: function () { act("/reset", {}); } }));
-    if (ck.status && ck.status.purchaseOutcome) kids.push(el("p", { class: "muted", text: ck.status.purchaseOutcome.statement }));
+        el("a", { class: "btn block lg", href: h.url, rel: "noopener noreferrer", target: h.kind === "EXTERNAL_MERCHANT_CHECKOUT" ? "_blank" : "_self", text: h.kind === "OWNER_AUTHORIZATION" ? "Open owner approval" : h.kind === "BUYER_PAYMENT_APPROVAL" ? "Open payment approval" : "Open merchant checkout" }),
+        el("p", { class: "tiny muted", text: h.who + " This panel only links to the approval step and updates by itself when the server verifies the result." })]));
+    } else if (!fin && st.state !== "COMPLETED") kids.push(el("p", { class: "muted small section", text: "Waiting for the payment backend to verify the result…" }));
+    if ({ CANCELLED: 1, FAILED: 1, EXPIRED: 1 }[st.state]) kids.push(el("button", { class: "btn block sec section", type: "button", disabled: ui.busy, text: "Back to offers (fresh quotes)", onclick: function () { act("/reset", {}); } }));
+    kids.push(el("details", { class: "plain section" }, [el("summary", { text: "Checkout details" }), kv([["Spending limit", spendingLimitText(st)], ["Buyer approval", st.approval.buyerApprovalVerified ? "verified" : st.approval.required ? "required" : "not yet"],
+      ["Payment status", st.paymentStatus], ["Environment", snap.paymentEnvironment === "PAYPAL_SANDBOX" ? "PayPal Sandbox (test funds)" : "MOCK (no money moves)"], ["Expires", st.expiresAt]])]));
+    if (st.purchaseOutcome) kids.push(el("p", { class: "tiny muted", text: st.purchaseOutcome.statement }));
     return el("div", null, kids);
   }
-  function spendingLimitText(st, ck) {
-    if (st.state === "APPROVAL_REQUIRED" && !st.approval.approvalUrl) return "not set: the owner sets it on the owner page";
-    if (st.approval.approvalUrl || st.approval.buyerApprovalVerified || st.state === "COMPLETED") return "authorized by the owner (DIAPORIA limit for this checkout)";
-    return "not set";
+  function spendingLimitText(st) {
+    if (st.state === "APPROVAL_REQUIRED" && !st.approval.approvalUrl) return "Not set: the owner sets it on the owner page";
+    if (st.approval.approvalUrl || st.approval.buyerApprovalVerified || st.state === "COMPLETED") return "Authorized by the owner for this checkout";
+    return "Not set";
   }
-
   function receiptView() {
     var r = snap.receipt; var pr = r.paymentResult || {};
+    var sandbox = r.paymentEnvironment === "PAYPAL_SANDBOX";
     return el("div", null, [
-      el("h2", { text: "Payment completed" }),
-      el("div", { class: "box ok" }, [el("div", { class: "big", text: money(pr.amount && pr.amount.totalMinor, pr.amount && pr.amount.currency) }),
-        el("div", { class: "muted", text: r.paymentStatusNote }),
-        kv([["Status", "COMPLETED (verified by the payment backend)"], ["Environment", r.paymentEnvironment], ["Provider order", pr.providerOrderId || "—"], ["Capture", pr.captureId || "—"],
-          ["Checkout", r.checkoutSessionId], ["Merchant order", "not verified"]])]),
-      el("p", { class: "muted", text: r.purchaseOutcome && r.purchaseOutcome.statement }),
-      el("details", null, [el("summary", { class: "muted", text: "Audit timeline (" + (r.auditTimeline || []).length + ")" }),
-        el("ul", { class: "steps" }, (r.auditTimeline || []).map(function (e) { return el("li", null, [el("span", { class: "t", text: e.type }), el("span", { class: "d", text: e.at })]); }))]),
+      el("div", { class: "card" }, [
+        el("div", { class: "hero" }, [el("span", { class: "okmark", "aria-hidden": "true", text: "✓" }), el("div", { class: "grow" }, [el("h1", { text: "Payment completed" }),
+          el("div", { class: "small muted", text: "Verified by the payment backend · " + (sandbox ? "PayPal Sandbox (test funds)" : "MOCK: no real money moved") })])]),
+        el("div", { class: "big section", text: money(pr.amount && pr.amount.totalMinor, pr.amount && pr.amount.currency) }),
+        r.paymentStatusNote ? el("p", { class: "small muted", text: r.paymentStatusNote }) : null,
+        kv([["Status", "COMPLETED"], ["Environment", sandbox ? "PayPal Sandbox" : "MOCK"], ["Provider order", pr.providerOrderId || "—"], ["Capture", pr.captureId || "—"], ["Checkout", r.checkoutSessionId], ["Merchant order", "Not verified"]]),
+      ]),
+      r.purchaseOutcome ? el("p", { class: "tiny muted section", text: r.purchaseOutcome.statement }) : null,
+      el("details", { class: "disc section" }, [el("summary", null, [el("span", { text: "Audit timeline" }), el("span", { class: "muted small", text: String((r.auditTimeline || []).length) })]),
+        el("div", { class: "body" }, [el("ul", { class: "steps" }, (r.auditTimeline || []).map(function (e) { return el("li", null, [stepIcon({ d: true }), el("div", null, [el("div", { class: "t small", text: String(e.type).replace(/_/g, " ").toLowerCase() }), el("div", { class: "s num", text: e.at })])]); }))])]),
     ]);
   }
 
   // ---------------------------------------------------------------- boot
   if (!runId || !key) {
     setConn("down", "no link");
-    app.replaceChildren(el("div", { class: "box" }, [el("h2", { text: "No DIAPORIA Buy session" }), el("p", { text: "Open the panel link your assistant gave you. Ask it to start a DIAPORIA Buy panel if you have none." })]));
+    app.replaceChildren(note("info", "i", "No DIAPORIA Buy session", [el("p", { class: "small", text: "Open the panel link your assistant gave you, or ask it to start a DIAPORIA Buy panel." })]));
     return;
   }
   api("").then(function (s) { snap = s; render(); }).catch(function (e) { if (e.status === 401) fatal(e.message); });
