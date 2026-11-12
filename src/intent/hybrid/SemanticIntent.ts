@@ -153,6 +153,8 @@ export interface HybridInterpreter {
   /** Precomputed or live interpretation of the request text; null when none is available. */
   interpret(request: string): unknown | null;
   log?: Array<{ request: string; trace: HybridTrace }>;
+  /** DIAGNOSTIC only (experiment/semantic-boundary-diagnosis): replaces applySemanticIntent when it returns an intent. */
+  merge?(ts: ResearchIntentV2, input: PurchaseRequestInput, reparse: (i: PurchaseRequestInput) => ResearchIntentV2): { intent: ResearchIntentV2; trace: unknown } | null;
 }
 
 /**
