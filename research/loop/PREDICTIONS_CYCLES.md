@@ -216,3 +216,47 @@ as an invariant that must hold for every wording, and diagnoses the IW-22 cases 
 - Negative controls: "for heavy use", "for camping trips", "for my long commute", "for the weekend" stay context; a page
   that names only the candidate still counts; "Floska F2" still locks the plain F2 beside "F2 Cordless"; "check valve
   for the Delve 1/3HP" unchanged; "6인용 밥솥" unchanged.
+
+## Cycle 6 (safety only, after the independent IW-24 run; IW-24 now SEEN and used as regression data)
+
+Written before any cycle-6 code change. Head at writing: 0841d7f (code = f17a8c5).
+
+IW-24 (fresh, scored once by an isolated evaluator): candidate 7 unsafe / 4 bypass of 299 vs frozen 4bc7dcc 5 / 2.
+Two unsafe cases are introduced by the loop (a18, a30); the other five (i28, w11, q40, q42, a24) are shared with frozen.
+Reproduced locally on f17a8c5 (service arm): a18 RECOMMEND lt16vs (the host lathe, for "four-jaw chuck for the
+Brackwell Spindra 16 VS"), a30 RECOMMEND bowl30 (a spare bowl whose page says it does not fit the requested Kneadwell 30).
+
+### Diagnosis (hypotheses, then what the probes showed)
+
+- H6a: the resolver locks the host for a part request. Refuted for a18: no resolution ran. The request went to discovery.
+- H6b: the decision layer treats a part request in discovery as a host request. Confirmed: "VS" inside the model
+  "Spindra 16 VS" matches COMPARE_WORDS (`vs`), so the request is not read as naming a product; in discovery every
+  accessory is disqualified as NOT_STANDALONE and the host lathe is the only eligible candidate.
+- H6c: the fit relation "for the <host>" is dropped. Confirmed for both cases. The frozen engine kept "for the Osterby
+  Kneadwell 30" as an unrecognized must-have only by accident (the V2.19.2 quantity-"for" rule saw the number 30); that
+  accidental requirement is what made the frozen engine INVESTIGATE. Cycle 3 skipped every "for" phrase that reaches into
+  the target span, intending the resolver's fitModel to carry the fit, but fitModel is set only on the family-titled
+  fallback. A part whose own title carries the host name (bowl30 "Kneadwell 30 Spare Bowl") locks with no fit check,
+  and discovery never gets one.
+
+### Invariants
+
+- **I6 A part requested for a named host must be shown to fit that whole host.** Whenever the request states a fit
+  relation ("for", "to fit", "that fits", "compatible with", optional my/the/a) between a part and the named target, the
+  intent carries the MUST requirement fitKey(<full named model>), whatever path locks the part and in discovery too. The
+  part's title naming the host is identity, never fit evidence.
+- **I7 Words inside the named product are never request grammar.** COMPARE_WORDS is tested on the text with the target
+  span removed.
+
+### Predictions
+
+- P6.1 IW-24 (seen, regression): unsafe 7 → 5, bypass 4 → 2. a18 and a30 stop being unsafe; the five shared cases are
+  not addressed and stay.
+- P6.2 a18 becomes RECOMMEND of the chuck (its page says it fits the Spindra 16 VS); a30 becomes HOLD or INVESTIGATE.
+  Lowest confidence: a18 RECOMMEND (it may stay INVESTIGATE if the exact path does not lock the family-titled chuck).
+- P6.3 Seen IW-1..IW-22 stay at 0 unsafe and 0 bypass.
+- P6.4 Legit prepared on seen IW-1..IW-22 falls by at most 12 (from 832/1505): parts whose title carries the host name
+  and whose page never states the fit now need that statement. IW-24 legit prepared does not fall below 94/185.
+- Negative controls: "Osterby Kneadwell 30 spare bowl" (no fit relation word) gets no fit requirement; "gift for my
+  <model>" and "something for the <model>" get none (target not ACCESSORY); a STANDALONE request is unchanged; a
+  model without a compare word parses exactly as before.
