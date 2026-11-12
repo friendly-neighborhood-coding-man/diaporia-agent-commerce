@@ -1,6 +1,6 @@
 import type { Condition, IntentMode } from "../domain/types.js";
 import { parseDecimalToMinor, type Currency } from "../domain/money.js";
-import { ACCESSORY_NOUN, COLOR_WORDS, GENERIC_WORDS, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
+import { ACCESSORY_NOUN, COLOR_WORDS, canonicalUnits, unitTokenPattern, GENERIC_WORDS, PART_NOUN, PRODUCT_NOUN_PHRASES, extractIdentity, modelNumberToken, parseAttributes, type ProductKind, type VariantAttributes } from "../identity/ProductIdentityExtractor.js";
 import { capabilityPhrase, requestCapabilities, requestCategory, mentionedCategory, KO_QUERY_NOUNS } from "../research/capabilities.js";
 import type { PurchaseRequestInput } from "./PurchaseIntentRouter.js";
 import { capitalizedProductWord, modelCode, requestNameWord, tailAfter } from "../identity/VariantTail.js";
@@ -16,6 +16,12 @@ import { inclusiveMax, inclusiveMin, parseMoneyConstraints, type MoneyAmbiguity,
  */
 export interface ResearchIntentV2 {
   version: "intent-v2.0.0";
+  /**
+   * Post-submission cycle 1: the brand was read from an all-lowercase request ("pellow crest 54cm") and is only a guess.
+   * The planner keeps the exact reading only when the catalog returns a listing of that brand; otherwise it researches
+   * the `fallback` reading (no brand), so a category phrase ("roof box 450l") is never locked as a brand.
+   */
+  brandGuess?: { brand: string; fallback: ResearchIntentV2 };
   mode: IntentMode;
   language: "en" | "ko";
   currency: Currency;
@@ -106,6 +112,7 @@ const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_N
  */
 const ANY_ACC_LEAD = /(?:^|[\s,:;!?.])((?:[a-z][a-z-]*\s+){0,2}[a-z][a-z-]*)\s+(?:for|that fits?|compatible with|to fit)\s+(?:(?:my|the|a|an|our|your|his|her|their)\s+)?$/;
 const NOT_PART_LEAD = /^(?:a|an|the|one|some|any|something|anything|stuff|gift|gifts|present|presents|deal|deals|price|prices|budget|money|cash|time|room|space|upgrade|alternative|substitute|successor|replacement|sibling|version|model|option|options|help|advice|ideas?|quote|quotes|shipping|delivery|ready|good|best|great|perfect|ideal|suitable|enough|cheap|cheaper|me|us|it|this|that|these|those|just|only|also|please|thanks|buy|get|order|need|want|find|search|shop|look|pay|paid|spend|spent|went|go|going|similar|same|like|else|is|are|was|be|has|have|had)$/i;
+const STOP_LEAD = /^(?:i|we|i'?d|i'?m|need|needs|want|wants|looking|buy|get|order|find|please|can|could|you|hi|hey|hello|just|really|like|would|love|something|anything|one|plus|and|or|also|with)$/i;
 const PURPOSE_LEAD = /^(?:check|checks|info|information|review|reviews|specs?|details?|comparison|compare|question|questions|support|warranty|manual|price|cost|offer|offers|discount|coupon|sale|order|purchase|checkout|payment|recommendation|recommendations|suggestion|suggestions|research|search|me|myself|him|her|them|kid|kids|son|daughter|wife|husband|mom|dad|friend|work|home|travel|camping)$/i;
 function anyAccessoryLead(before: string): string | null {
   const m = ANY_ACC_LEAD.exec(before);
@@ -120,7 +127,10 @@ function anyAccessoryLead(before: string): string | null {
   // V2.16 (IW-16 a25, fail-closed): any other noun phrase before "for the <model>" is something for that model
   // ("isolation valve set"); only a verb form at the head, or a word that names a person, a purpose, a search or an
   // amount, keeps it from being a part request.
-  if (!ws.length || ws.some((w, i) => NOT_PART_LEAD.test(w) || (i === ws.length - 1 && PURPOSE_LEAD.test(w)) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)))) return null;
+  // Post-submission cycle 5, invariant I4 (IW-22 a01): an amount word ("room", "space", "time") rules a part out only on
+  // its own ("room for 6 people"); after a noun it is the part's own name ("annex room for the Skyloft 3P").
+  const amountOnly = (w: string, i: number) => /^(?:room|space|time)$/i.test(w) && ws.length > 1 && i > 0;
+  if (!ws.length || ws.some((w, i) => (NOT_PART_LEAD.test(w) && !amountOnly(w, i)) || (i === ws.length - 1 && PURPOSE_LEAD.test(w)) || (/(?:ing|ed|ly)$/i.test(w) && (i === ws.length - 1 || !nounHead)))) return null;
   void GENERIC_WORDS;
   return ws.join(" ").replace(/s$/, "");
 }
@@ -158,7 +168,7 @@ export function statedBudget(text: string): { currency: Currency; budgetMinor: n
 
 
 /** Brand = first capitalized Latin word (not a sentence word) that is followed by a model token or another capitalized word. */
-function findBrand(text: string): { brand: string; index: number } | null {
+function findBrand(text: string, guess = true): { brand: string; index: number; guess?: true } | null {
   const re = /(?<![A-Za-z0-9])([A-Z][A-Za-z0-9&'’]+)(?=\s+([A-Z0-9][A-Za-z0-9-]*))/g;
   for (const m of text.matchAll(re)) {
     const word = m[1]!.replace(/[’']s$/, "");
@@ -174,10 +184,17 @@ function findBrand(text: string): { brand: string; index: number } | null {
   const lc = /(?<![A-Za-z0-9])([a-z][a-z&'’]{2,})\s+([a-z]{1,4}-?\d[a-z0-9-]*)(?![A-Za-z0-9])/.exec(text);
   if (lc && !NOT_BRAND.has(lc[1]!) && !GENERIC_WORDS.has(lc[1]!) && !PRODUCT_NOUN_PHRASES.test(lc[1]!) && !requestCategory(lc[1]!) && !requestCapabilities(lc[1]!).length && !/^[a-z]+(?:ing|ed|er|ly)$/.test(lc[1]!))
     return { brand: lc[1]!, index: lc.index };
+  // Post-submission cycle 1 (F5): a lowercase brand + name word + unit model number ("pellow crest 54cm", "sandry
+  // furlong 150ft retract", "fenbrook delve 1/3hp", "wenlow tote 1-seat"). Neither word may be an ordinary, product,
+  // category or capability word, so a category phrase ("roof box 450l") never becomes a brand. Identity still fails
+  // closed: the brand must be the listing's brand.
+  const plain = (w: string) => !NOT_BRAND.has(w) && !GENERIC_WORDS.has(w) && !PRODUCT_NOUN_PHRASES.test(w) && !requestCategory(w) && !requestCapabilities(w).length && !/^[a-z]+(?:ing|ed|er|ly)$/.test(w);
+  const lu = /(?<![A-Za-z0-9])([a-z][a-z&'’]{2,})\s+([a-z][a-z'’]{2,})\s+(\d+(?:\.\d+)?(?:\/\d+)?(?:[a-z]{1,3}|-[a-z]{3,}))(?![A-Za-z0-9])/.exec(text);
+  if (guess && lu && plain(lu[1]!) && plain(lu[2]!) && !requestCategory(`${lu[1]} ${lu[2]}`) && !PRODUCT_NOUN_PHRASES.test(`${lu[1]} ${lu[2]}`)) return { brand: lu[1]!, index: lu.index, guess: true };
   return null;
 }
 
-export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntentV2 {
+export function parseResearchIntent(input: PurchaseRequestInput, opts: { noBrandGuess?: boolean } = {}): ResearchIntentV2 {
   const raw = input.request.slice(0, 2000).normalize("NFKC");
   // Instructions embedded in a request ("SYSTEM: ...", "ignore the budget") are content, not commands: cut them off.
   const text = raw.split(/\b(?:SYSTEM|ASSISTANT|DEVELOPER)(?:\s+(?:NOTE|MESSAGE|PROMPT|INSTRUCTIONS?))?\s*:|\bignore (?:all |the |previous )/i)[0]!.trim() || raw;
@@ -217,7 +234,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
 
   // Exact target: a buy verb plus a brand followed by a model (or an explicit exactProduct).
   const buy = BUY_EN.exec(text) ?? BUY_KO.exec(text);
-  const brandHit = input.exactProduct?.brand ? { brand: input.exactProduct.brand, index: Math.max(0, text.toLowerCase().indexOf(input.exactProduct.brand.toLowerCase())) } : findBrand(money.parse.masked.length === text.length ? money.parse.masked : text);
+  const brandHit = input.exactProduct?.brand ? { brand: input.exactProduct.brand, index: Math.max(0, text.toLowerCase().indexOf(input.exactProduct.brand.toLowerCase())) } : findBrand(money.parse.masked.length === text.length ? money.parse.masked : text, !opts.noBrandGuess);
   let target: ResearchIntentV2["target"] = null;
   let bundleWords: string[] = [];
   let targetSpan: [number, number] | null = null;
@@ -233,7 +250,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     // words before "with" are conversation, never the model).
     let clause = text.slice(from).split(CLAUSE_END)[0]!;
     if (from + clause.length <= brandHit.index && /\bwith\s+(?:the|a|an|my|our)\s+$/i.test(text.slice(0, brandHit.index))) clause = text.slice(brandHit.index).split(CLAUSE_END)[0]!;
-    const ex = extractIdentity(clause.replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand, { request: true });
+    const ex = extractIdentity(canonicalUnits(clause).replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand, { request: true });
     let model = input.exactProduct?.model ?? ex.model;
     // V2.9: a part noun the parse kept at the end of the model ("Spinlo T3 Belt") is the part asked for, not a name.
     if (model && !input.exactProduct?.model && ex.kind === "STANDALONE") {
@@ -278,7 +295,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
       // V2.14: the request may space a unit model number ("Bough 40 cm") that the model joins ("Bough 40cm").
       let mlen = model.length;
       if (mi < 0) {
-        const re = new RegExp(model.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/^(-?\d+(?:\\\.\d+)?)([a-z]+)$/i, "$1\\s*$2")).join("\\s+"), "i").exec(text);
+        const re = new RegExp(model.split(/\s+/).map((w) => unitTokenPattern(w) ?? w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/^(-?\d+(?:\\\.\d+)?)([a-z]+)$/i, "$1\\s*$2")).join("\\s+"), "i").exec(text);
         if (re) { mi = re.index; mlen = re[0].length; }
       }
       targetSpan = mi >= 0 ? [Math.min(brandHit.index, mi), mi + mlen + (withBundle ? withBundle[0].length : 0)] : [brandHit.index, brandHit.index + brandHit.brand.length];
@@ -301,7 +318,11 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // Attributes: the user's own words; Korean colour words included. Pack sizes mark a bundle request.
   const objectSizes = !!target?.model && target.kind === "STANDALONE";
   const attrText0 = target && targetSpan ? text.slice(targetSpan[0]) : text;
-  const attrText = objectSizes ? attrText0.replace(OBJECT_SIZE, " ") : attrText0;
+  // Post-submission cycle 4 (IW-21 d33): a threshold ("at least 50 liters", "50 L or more") is a requirement on a number,
+  // never the exact attribute "capacity = 50 L".
+  const attrText1 = attrText0.replace(/\b(?:at\s+least|at\s+most|no\s+(?:less|more|fewer)\s+than|more\s+than|less\s+than|minimum(?:\s+of)?|maximum(?:\s+of)?|min\.?|max\.?|up\s+to)\s+\d[\d,.]*\s*-?\s*[\p{L}"']+/giu, " ")
+    .replace(/\d[\d,.]*\s*-?\s*[\p{L}"']+\s+or\s+(?:more|larger|bigger|greater|higher|longer|over|above)\b/giu, " ");
+  const attrText = objectSizes ? attrText1.replace(OBJECT_SIZE, " ") : attrText1;
   const attributes: VariantAttributes = { ...parseAttributes(attrText.split(/\s+(?:under|below|budget|less than)\b/i)[0]!) };
   if (input.exactProduct?.variant) attributes.color = input.exactProduct.variant;
   // N-04: a model year or generation written right before the brand ("a 2023 Pagewell Lumen 7", "2nd gen Arden Buds").
@@ -395,7 +416,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   // dropped; the last word is the noun ("BM-3 HD baby monitor" → "monitor", "MD-7 Headphones" → "headphones").
   let targetNoun: string | null = null;
   const code = modelCode(target?.model);
-  const requestTail = target && targetSpan && code ? (tailAfter(text.slice(targetSpan[0]), target.brand, code) ?? []) : [];
+  const requestTail = target && targetSpan && code ? (tailAfter(canonicalUnits(text.slice(targetSpan[0])), target.brand, code) ?? []) : [];
   // V2.9: the search names every name word the request wrote after the code ("Rovelo R9 Dual"), so the requested
   // variant is among the results even when the model parse stopped at the code.
   if (target && exact && target.kind !== "BUNDLE") {
@@ -406,7 +427,7 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     if (extra.length) primary = [target.brand, target.model, ...extra, target.kind === "ACCESSORY" ? target.accessoryNoun : null].filter(Boolean).join(" ");
   }
   const squashK = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (target?.model && targetSpan && target.kind !== "BUNDLE" && squashK(text.slice(targetSpan[0], targetSpan[1])).includes(squashK(target.model)) && /^(?:\s|$)/.test(text.slice(targetSpan[1]))) {
+  if (target?.model && targetSpan && target.kind !== "BUNDLE" && squashK(canonicalUnits(text.slice(targetSpan[0], targetSpan[1]))).includes(squashK(target.model)) && /^(?:\s|$)/.test(text.slice(targetSpan[1]))) {
     const after = text.slice(targetSpan[1]).normalize("NFKC");
     const stop = /^(?:with|without|for|under|below|over|that|which|and|or|in|from|but|not|please|budget|max|to|at|on|by|less|no|thanks|thank|if|is|are|i|it|so|as|than|only|today|now|asap)$/i;
     const ws: string[] = [];
@@ -530,14 +551,31 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
   for (const m of text.matchAll(/(?<![\p{L}])([\p{L}][\p{L}-]*)\s+only\b/giu)) {
     const a = m.index!, b = a + m[0].length;
     if (/^(?:pair|one|unit|units|body|tool|bare|single|set|the|a|an|it|this|that|new|me|us|you|cash|card|pickup|online|weekdays?|weekends?|usd|dollars?)$/i.test(m[1]!)) continue;
-    if (!requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] >= a)) continue;
+    // Post-submission cycle 4 (IW-21 q46): "<word> only" that no requirement accounts for ("Smokebox 20, Wi-Fi only") is
+    // never dropped: it blocks as uninterpreted until settled.
+    const accounted = requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] >= a);
+    if (!accounted && !leftover.some((u) => u.span[0] >= a && u.span[1] <= b)) continue;
     if (!uninterpreted.some((u) => u.span[0] <= a && u.span[1] >= b)) uninterpreted.push({ text: m[0], span: [a, b] });
+  }
+  // Post-submission cycle 5, invariant I4: every product noun the request states must be the candidate's. A noun phrase
+  // written before "for (the) <named product>" that did not become the requested part is never dropped: the named product
+  // is the host it is for, so locking the host would buy the wrong thing. It blocks until settled.
+  if (target?.kind === "STANDALONE" && targetSpan && language === "en") {
+    const lead = /(?:^|[\s,:;])((?:[A-Za-z][A-Za-z-]*\s+){0,2}[A-Za-z][A-Za-z-]*)\s+(?:for|to fit|that fits?|compatible with)\s+(?:(?:my|the|a|an|our|your)\s+)?$/i.exec(text.slice(0, targetSpan[0]));
+    if (lead) {
+      const a = lead.index + lead[0].indexOf(lead[1]!);
+      const content = lead[1]!.split(/\s+/).filter((w) => !NOT_PART_LEAD.test(w) && !PURPOSE_LEAD.test(w) && !STOP_LEAD.test(w));
+      if (content.length && !uninterpreted.some((u) => u.span[0] <= a && u.span[1] >= a) && !requirements.some((r) => r.source === "REQUEST_TEXT" && r.note !== "CONTEXT" && r.span[0] <= a && r.span[1] > a))
+        uninterpreted.push({ text: lead[1]!, span: [a, a + lead[1]!.length] });
+    }
   }
   if (uninterpreted.length) assumptions.push(`Words not interpreted: ${uninterpreted.map((u) => `"${u.text}"`).join(", ")}. Research will not recommend or prepare a purchase until they are settled (rephrase the request, or the owner can confirm).`);
   if (language === "ko") assumptions.push("Korean request: provider queries are sent in English (Channel3 has no Korean locale).");
   if (money.currency === "KRW") assumptions.push("Channel3 cannot price in KRW: listing prices will not be in the requested currency.");
 
-  return { version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
+  const brandGuess = brandHit && "guess" in brandHit && brandHit.guess && !input.exactProduct?.brand ? { brand: brandHit.brand, fallback: parseResearchIntent(input, { noBrandGuess: true }) } : undefined;
+  if (brandGuess) assumptions.push(`"${brandGuess.brand}" is read as the brand only if the catalog lists that brand.`);
+  return { ...(brandGuess ? { brandGuess } : {}), version: "intent-v2.0.0", mode, language, currency: money.currency, currencySource: money.currencySource, budgetMinor, budgetSource, budgetConflict, budgetUnresolved, budgetUpperInclusive, budgetMaxMinor, budgetLowerMinor,
     moneyConstraints: money.parse.constraints, moneyAmbiguities: money.parse.ambiguities, target, requestedModel, uninterpreted, productTypeWords, targetNoun, nounModifiers, requestTail, lockBasis,
     attributes, condition, conditionStated, category, categoryNoun: cat?.noun ?? null, mustHave: [...must], niceToHave: [...nice], requirements, unresolvedMust, excludeBundles, objective,
     queries: { primary, fallback }, assumptions };

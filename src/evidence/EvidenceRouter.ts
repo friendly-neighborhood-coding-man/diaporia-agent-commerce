@@ -106,7 +106,7 @@ export class EvidenceRouter {
    * source, applies the V2 sufficiency rule (EvidenceV2.ts) and returns traceable evidence for each capability.
    * `sellers` = domains that sell any candidate in this session (always retailer-class). Fails closed on limits.
    */
-  async verifyMany(product: CatalogProduct, capabilities: string[], ctx: { userId: string; requestId: string }, o: { sellers?: string[]; maxSearches?: number; broad?: boolean } = {}): Promise<VerifyManyResult> {
+  async verifyMany(product: CatalogProduct, capabilities: string[], ctx: { userId: string; requestId: string }, o: { sellers?: string[]; maxSearches?: number; broad?: boolean; listed?: CatalogProduct[] } = {}): Promise<VerifyManyResult> {
     const steps: RouterStep[] = [];
     const sellers = o.sellers ?? [];
     const brand = product.identity.brand || null;
@@ -137,7 +137,7 @@ export class EvidenceRouter {
     const absorb = (hits: EvidenceSearchResponse["hits"], requestId: string | null, caps: string[]) => {
       let gained = false;
       for (const h of hits) for (const cap of caps) {
-        const st = statementFrom(h, product, cap);
+        const st = statementFrom(h, product, cap, o.listed);
         if (!st || items[cap]!.some((x) => x.url === h.url)) continue;
         const it = classifyItem({ url: h.url, domain: hostOf(h.url), sourceClass: this.registry.classify(h.url, brand, sellers, h.publishedDate), value: st.value, quote: st.quote, publishedDate: h.publishedDate,
           provider: this.search!.name, requestId, observedAt: nowIso }, this.now());
@@ -183,6 +183,38 @@ export class EvidenceRouter {
     }
     if (!this.search && pending().length) steps.push({ provider: "TAVILY", action: "FAILED", capability: pending().join(","), detail: "no independent search provider configured" });
     return { verdicts: v, steps, searchesSent: sent, blockedByLimit: blocked };
+  }
+
+  /**
+   * Obligation kernel (architecture experiment): every search result already retrieved in this research request
+   * (read-only). The kernel binds statements to the recommended product from page-visible text, never from the URL.
+   */
+  requestHits(requestId: string): EvidenceSearchResponse["hits"] { return (this.hitPool.get(requestId) ?? []).map((x) => x.hit); }
+  /**
+   * Obligation kernel: ONE metered, cached search for the recommended product's own pages ("<brand> <model>" specs),
+   * used only when the request's pool has no page bound to that product. Results join the request pool. Fails closed:
+   * a refused or failed call returns null and the kernel treats the obligations as unchecked.
+   */
+  async lookupProductPages(product: CatalogProduct, ctx: { userId: string; requestId: string }, sellers: string[]): Promise<EvidenceSearchResponse["hits"] | null> {
+    if (!this.search) return null;
+    const subject = product.identity.model ? `"${[product.identity.brand, product.identity.model].filter(Boolean).join(" ")}"` : `"${product.title.slice(0, 80)}"`;
+    const req: EvidenceSearchRequest = { query: `${subject} specifications`, maxResults: 10, exactMatch: !!product.identity.model, excludeDomains: [...new Set(sellers)].slice(0, 150), depth: "basic" };
+    const queryKey = createHash("sha256").update(`${this.search.name}|v2|${JSON.stringify(req).toLowerCase()}`).digest("hex");
+    const cached = this.store.db.prepare("SELECT hits_json, observed_at FROM evidence_query_cache WHERE query_key=?").get(queryKey) as { hits_json: string; observed_at: number } | undefined;
+    let resp: EvidenceSearchResponse;
+    if (cached && this.now() - cached.observed_at < EVIDENCE_TTL_MS) resp = JSON.parse(cached.hits_json);
+    else {
+      const r = await this.metered(ctx, "TAVILY", "search", "search", 1, `tavily:${queryKey}`, this.search.provenance,
+        async () => this.search!.searchV2 ? this.search!.searchV2(req) : { hits: (await this.search!.search(req.query)).map((h) => ({ ...h, publishedDate: null, score: null })), requestId: null, credits: 1, responseTimeS: null },
+        (x) => Math.max(1, x.credits));
+      if (!r.ok) return null;
+      resp = r.value;
+      this.store.db.prepare("INSERT OR REPLACE INTO evidence_query_cache(query_key,provider,hits_json,observed_at) VALUES (?,?,?,?)").run(queryKey, this.search.name, JSON.stringify(resp), this.now());
+    }
+    const pool = this.hitPool.get(ctx.requestId) ?? [];
+    if (!this.hitPool.has(ctx.requestId)) this.hitPool.set(ctx.requestId, pool);
+    for (const h of resp.hits) if (!pool.some((x) => x.hit.url === h.url)) pool.push({ hit: h, requestId: resp.requestId });
+    return resp.hits;
   }
 
   static judge(claims: CapabilityClaim[]): Sufficiency {

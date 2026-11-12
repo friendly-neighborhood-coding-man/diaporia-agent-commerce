@@ -265,7 +265,7 @@ export class CommerceGateway {
     const requestId = ps.purchaseSessionId;
     const research = this.research as CommerceResearchAdapter & { resolveVariant?: (id: string, sel: Record<string, string>, loc: { currency?: string | null }) => Promise<{ product: CatalogProduct | null; honored: boolean }> };
     const plan = await runResearchV2(iv, {
-      research: this.research, router: this.config.service?.router ?? null, ctx: { userId, requestId }, now: () => this.now(), weights: this.config.rankingWeights ?? null, limits: this.config.researchLimits ?? {},
+      research: this.research, router: this.config.service?.router ?? null, ctx: { userId, requestId }, requestText: input.request ?? null, now: () => this.now(), weights: this.config.rankingWeights ?? null, limits: this.config.researchLimits ?? {},
       searchPage: (q, token, page) => this.meteredSearchPage(userId, requestId, input.request, q, token, page),
       // V2.17 (PR #15 finding): any identity check that MISMATCHES (look-alike domain, stolen registration, other payee)
       // makes the merchant ineligible, so its listing never prices or ranks a product.
@@ -276,6 +276,13 @@ export class CommerceGateway {
       } } : {}),
     });
     const res = plan.resolution;
+    // Post-submission cycle 1: a lowercase brand guess the catalog did not confirm was researched as discovery.
+    const ivUsed = plan.intent ?? iv;
+    if (ivUsed !== iv && ivUsed.mode === "PRODUCT_DISCOVERY" && intent.mode !== "PRODUCT_DISCOVERY") {
+      Object.assign(intent, routedFromV2(ivUsed));
+      ps = this.sessions.researchAsDiscovery(ps, intent);
+      this.audit.append(ps.purchaseSessionId, userId, "RESEARCH_MODE_CHANGED", { from: "EXACT_PRODUCT_PURCHASE", to: "PRODUCT_DISCOVERY", reason: "lowercase brand guess not listed by the catalog" });
+    }
     if (plan.namedFallback) {
       intent.mode = "PRODUCT_DISCOVERY";
       ps = this.sessions.researchAsDiscovery(ps, intent);
@@ -323,11 +330,11 @@ export class CommerceGateway {
       unknowns.push(`${pid}: "${r.capability}" ${r.sufficiency === "CONTRADICTED" ? "has contradicting independent evidence" : "still needs independent verification (usage limit reached; verification was not skipped)"}`);
     if (plan.trace.stops.some((x) => /limit/.test(x))) unknowns.push(`Research stopped at a limit (${plan.trace.stops.filter((x) => /limit/.test(x)).join("; ")}); unverified requirements stay unverified (verification was not skipped).`);
     unknowns.push(...plan.decision.holdReasons.filter((h) => !unknowns.includes(h)));
-    if (iv.budgetConflict) unknowns.push(`Budget not applied: ${iv.budgetConflict}. Confirm the budget in ${intent.currency}.`);
-    else if (iv.budgetUnresolved) unknowns.push(`Budget not applied: ${iv.budgetUnresolved}. Confirm the amount and currency.`);
+    if (ivUsed.budgetConflict) unknowns.push(`Budget not applied: ${ivUsed.budgetConflict}. Confirm the budget in ${intent.currency}.`);
+    else if (ivUsed.budgetUnresolved) unknowns.push(`Budget not applied: ${ivUsed.budgetUnresolved}. Confirm the amount and currency.`);
     else if (intent.budgetMinor === null) unknowns.push("No budget given; totals will not be filtered by budget.");
     // V2.1: the decision is bound to the session. Later steps read the gate, never the session state alone.
-    const purchaseGate = gateFromDecision(plan.decision, iv.budgetConflict ?? iv.budgetUnresolved ?? null, [...(iv.requirements ?? []), ...uninterpretedStated(iv.uninterpreted)]);
+    const purchaseGate = gateFromDecision(plan.decision, ivUsed.budgetConflict ?? ivUsed.budgetUnresolved ?? null, [...(ivUsed.requirements ?? []), ...uninterpretedStated(ivUsed.uninterpreted)]);
     const researchOut = { identity: identityResult, candidates, unknowns, decision: plan.decision, purchaseGate };
     const holdNeeded = (intent.mode === "EXACT_PRODUCT_PURCHASE" ? !locked : candidates.length === 0) || plan.decision.state === "HOLD";
     ps = this.sessions.updatePurchaseSession(ps, holdNeeded ? "HOLD" : "RESEARCHED", { research: researchOut, lockedIdentity: locked?.identity ?? null, productId: locked?.productId ?? null });
@@ -335,9 +342,9 @@ export class CommerceGateway {
     return {
       purchaseSessionId: ps.purchaseSessionId, state: ps.state, mode: intent.mode,
       intent: { currency: intent.currency, budgetMinor: intent.budgetMinor, budgetSource: intent.budgetSource, mustHave: intent.mustHave, niceToHave: intent.niceToHave, objective: intent.objective, identityHints: intent.identityHints, assumptions: intent.assumptions,
-        v2: { version: iv.version, language: iv.language, category: iv.category, attributes: iv.attributes, condition: iv.condition, conditionStated: iv.conditionStated, excludeBundles: iv.excludeBundles, target: iv.target, queries: iv.queries,
-          requirements: iv.requirements, unresolvedMust: iv.unresolvedMust,
-          money: { statedUpperMinor: iv.budgetMinor, upperInclusive: iv.budgetUpperInclusive, maxMinor: iv.budgetMaxMinor, lowerMinor: iv.budgetLowerMinor, constraints: iv.moneyConstraints, ambiguities: iv.moneyAmbiguities } } },
+        v2: { version: ivUsed.version, language: ivUsed.language, category: ivUsed.category, attributes: ivUsed.attributes, condition: ivUsed.condition, conditionStated: ivUsed.conditionStated, excludeBundles: ivUsed.excludeBundles, target: ivUsed.target, queries: ivUsed.queries,
+          requirements: ivUsed.requirements, unresolvedMust: ivUsed.unresolvedMust,
+          money: { statedUpperMinor: ivUsed.budgetMinor, upperInclusive: ivUsed.budgetUpperInclusive, maxMinor: ivUsed.budgetMaxMinor, lowerMinor: ivUsed.budgetLowerMinor, constraints: ivUsed.moneyConstraints, ambiguities: ivUsed.moneyAmbiguities } } },
       identity: identityResult, candidates, unknowns, decision: plan.decision,
       researchTrace: { queries: plan.trace.queries, catalogCalls: plan.trace.catalogCalls, evidenceSearches: plan.trace.evidenceSearches, stops: plan.trace.stops, locale: plan.trace.locale,
         evidenceSteps: plan.trace.evidenceSteps.slice(0, 40) },
