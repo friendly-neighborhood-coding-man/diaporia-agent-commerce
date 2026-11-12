@@ -1,0 +1,32 @@
+[
+ {"request":"Varnell Okta 3 tent, not the Lite version, under $250",
+  "doc":{"language":"en","item_kind":"STANDALONE","units":[
+   {"span":"Varnell","fine":"IDENTITY","facet":"brand","status":"mandatory","attribute":"brand","operator":"is","value":"Varnell","unit":null,"target":"item","component":null,"resolution":"resolved","en":"brand Varnell","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"Okta 3","fine":"IDENTITY","facet":"model","status":"mandatory","attribute":"model","operator":"is","value":"Okta 3","unit":null,"target":"item","component":null,"resolution":"resolved","en":"model Okta 3","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"tent","fine":"IDENTITY","facet":"product_type","status":"mandatory","attribute":"tent","operator":"is","value":null,"unit":null,"target":"item","component":null,"resolution":"resolved","en":"a tent","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"not the Lite version","fine":"EXCLUSION","facet":"model","status":"forbidden","attribute":"variant","operator":"is","value":"Lite","unit":null,"target":"item","component":null,"resolution":"resolved","en":"not the Lite version","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"under $250","fine":"PURCHASE","facet":"budget","status":"mandatory","attribute":"price","operator":"<","value":250,"unit":"USD","target":"purchase","component":null,"resolution":"resolved","en":"price under 250 USD","brand_latin":null,"brand_latin_alternatives":[]}],
+   "unresolved":[]}},
+ {"request":"rain fly for my Torvik Haldi 2, for a camping trip next month",
+  "doc":{"language":"en","item_kind":"ACCESSORY","units":[
+   {"span":"rain fly","fine":"IDENTITY","facet":"product_type","status":"mandatory","attribute":"rain fly","operator":"is","value":null,"unit":null,"target":"item","component":null,"resolution":"resolved","en":"a rain fly","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"Torvik Haldi 2","fine":"IDENTITY","facet":"host","status":"mandatory","attribute":"host","operator":"is","value":"Torvik Haldi 2","unit":null,"target":"host","component":null,"resolution":"resolved","en":"for the Torvik Haldi 2","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"for my Torvik Haldi 2","fine":"RELATION","facet":"compatibility","status":"mandatory","attribute":"fits","operator":"fits","value":"Torvik Haldi 2","unit":null,"target":"host","component":null,"resolution":"resolved","en":"fits the Torvik Haldi 2","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"for a camping trip next month","fine":"CONTEXT","facet":"background","status":"context","attribute":"occasion","operator":null,"value":null,"unit":null,"target":"other","component":null,"resolution":"resolved","en":"occasion: a camping trip next month","brand_latin":null,"brand_latin_alternatives":[]}],
+   "unresolved":[]}},
+ {"request":"모란솔 KX-40 전기그릴 4인용, 연기 적은 거면 좋겠어요",
+  "doc":{"language":"ko","item_kind":"STANDALONE","units":[
+   {"span":"모란솔","fine":"IDENTITY","facet":"brand","status":"mandatory","attribute":"brand","operator":"is","value":"모란솔","unit":null,"target":"item","component":null,"resolution":"resolved","en":"brand 모란솔","brand_latin":"Moransol","brand_latin_alternatives":["Moranseol","Moran Sol"]},
+   {"span":"KX-40","fine":"IDENTITY","facet":"model","status":"mandatory","attribute":"model","operator":"is","value":"KX-40","unit":null,"target":"item","component":null,"resolution":"resolved","en":"model KX-40","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"전기그릴","fine":"IDENTITY","facet":"product_type","status":"mandatory","attribute":"electric grill","operator":"is","value":null,"unit":null,"target":"item","component":null,"resolution":"resolved","en":"an electric grill","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"4인용","fine":"RELATION","facet":"suitability","status":"mandatory","attribute":"serves people","operator":">=","value":4,"unit":"people","target":"load","component":null,"resolution":"resolved","en":"serves at least 4 people","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"연기 적은 거면 좋겠어요","fine":"PREFERENCE","facet":"feature","status":"preferred","attribute":"low smoke","operator":"has","value":null,"unit":null,"target":"item","component":null,"resolution":"resolved","en":"low smoke would be nice","brand_latin":null,"brand_latin_alternatives":[]}],
+   "unresolved":[]}},
+ {"request":"dehumidifier with a continuous drain hose that holds at least 3 gallons, no wifi, ideally the newer one",
+  "doc":{"language":"en","item_kind":"STANDALONE","units":[
+   {"span":"dehumidifier","fine":"IDENTITY","facet":"product_type","status":"mandatory","attribute":"dehumidifier","operator":"is","value":null,"unit":null,"target":"item","component":null,"resolution":"resolved","en":"a dehumidifier","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"with a continuous drain hose","fine":"REQUIREMENT","facet":"feature","status":"mandatory","attribute":"continuous drain hose","operator":"has","value":null,"unit":null,"target":"item","component":null,"resolution":"resolved","en":"has a continuous drain hose","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"holds at least 3 gallons","fine":"REQUIREMENT","facet":"measure","status":"mandatory","attribute":"tank capacity","operator":">=","value":3,"unit":"gal","target":"item","component":null,"resolution":"resolved","en":"tank holds at least 3 gallons","brand_latin":null,"brand_latin_alternatives":[]},
+   {"span":"no wifi","fine":"EXCLUSION","facet":"feature","status":"forbidden","attribute":"wifi","operator":"has","value":null,"unit":null,"target":"item","component":null,"resolution":"resolved","en":"no wifi","brand_latin":null,"brand_latin_alternatives":[]}],
+   "unresolved":[{"span":"ideally the newer one","issue":"no model or year is named, so \"the newer one\" cannot be resolved to a product condition"}]}}
+]
