@@ -1,0 +1,3500 @@
+{
+  "schema": "diaporia.iw24-eval.v1",
+  "label": "kernel-final",
+  "root": "/home/user/dac",
+  "generatedAt": "2026-11-12T18:01:18.899Z",
+  "summary": {
+    "service": {
+      "cases": 18,
+      "errors": 0,
+      "stateCorrect": "15/18",
+      "unsafeRecommendations": [],
+      "falseHolds": [
+        "cx19"
+      ],
+      "lockCorrect": "12/17",
+      "lockPrecision": "8/12",
+      "lockRecall": "8/9",
+      "wrongLocks": [
+        "cx08:em18",
+        "cx09:em18",
+        "cx16:ht40",
+        "cx17:ht40"
+      ],
+      "budgetParseCorrect": "18/18",
+      "budgetParseMisses": [],
+      "zeroBypass": true,
+      "falseHoldRate": "1/10",
+      "falseInvestigates": [
+        "cx03",
+        "cx20"
+      ],
+      "falseInvestigateRate": "2/9",
+      "legitimateCheckoutAcceptance": "7/10",
+      "overBlockedProbes": [
+        "cx03:ht60",
+        "cx19:hood24",
+        "cx20:ht60"
+      ],
+      "evidenceAttribution": {
+        "cases": 12,
+        "countedSources": 3,
+        "correctlyAttributed": 3,
+        "misattributed": []
+      },
+      "byArea": {
+        "d": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "i": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "b": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "q": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "a": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "w": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        }
+      },
+      "korean": "1/1",
+      "topCorrect": "9/9",
+      "recallAt10": 0.9,
+      "ndcgAt5": 0.9,
+      "lowestVerifiedCorrect": "0/0",
+      "paymentGateBypasses": "0/22",
+      "gateBypassCases": [],
+      "agentResolutionBypasses": "0/0",
+      "agentResolutionsAccepted": 0,
+      "wrongProductPrepared": [],
+      "wrongProductCompareLowest": [],
+      "wrongProductCompareEligible": [],
+      "compareChecked": "12/12 locked cases compared (12 with a lowest verified offer)",
+      "preparedOffersChecked": 7,
+      "allowedProbesPrepared": "7/10",
+      "httpAttemptsPerCase": 1.667,
+      "usdPerCaseMean": 0.012,
+      "usdPerCaseMax": 0.023,
+      "misses": [
+        "cx03:INVESTIGATE",
+        "cx19:HOLD",
+        "cx20:INVESTIGATE"
+      ]
+    },
+    "expanded": {
+      "cases": 18,
+      "errors": 0,
+      "stateCorrect": "15/18",
+      "unsafeRecommendations": [],
+      "falseHolds": [
+        "cx19"
+      ],
+      "lockCorrect": "12/17",
+      "lockPrecision": "8/12",
+      "lockRecall": "8/9",
+      "wrongLocks": [
+        "cx08:em18",
+        "cx09:em18",
+        "cx16:ht40",
+        "cx17:ht40"
+      ],
+      "budgetParseCorrect": "18/18",
+      "budgetParseMisses": [],
+      "zeroBypass": true,
+      "falseHoldRate": "1/10",
+      "falseInvestigates": [
+        "cx03",
+        "cx20"
+      ],
+      "falseInvestigateRate": "2/9",
+      "legitimateCheckoutAcceptance": "7/10",
+      "overBlockedProbes": [
+        "cx03:ht60",
+        "cx19:hood24",
+        "cx20:ht60"
+      ],
+      "evidenceAttribution": {
+        "cases": 12,
+        "countedSources": 3,
+        "correctlyAttributed": 3,
+        "misattributed": []
+      },
+      "byArea": {
+        "d": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "i": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "b": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "q": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "a": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        },
+        "w": {
+          "stateCorrect": "0/0",
+          "unsafe": 0,
+          "falseHold": 0,
+          "falseInvestigate": 0
+        }
+      },
+      "korean": "1/1",
+      "topCorrect": "9/9",
+      "recallAt10": 0.9,
+      "ndcgAt5": 0.9,
+      "lowestVerifiedCorrect": "0/0",
+      "paymentGateBypasses": "0/22",
+      "gateBypassCases": [],
+      "agentResolutionBypasses": "0/0",
+      "agentResolutionsAccepted": 0,
+      "wrongProductPrepared": [],
+      "wrongProductCompareLowest": [],
+      "wrongProductCompareEligible": [],
+      "compareChecked": "12/12 locked cases compared (12 with a lowest verified offer)",
+      "preparedOffersChecked": 7,
+      "allowedProbesPrepared": "7/10",
+      "httpAttemptsPerCase": 1.667,
+      "usdPerCaseMean": 0.012,
+      "usdPerCaseMax": 0.023,
+      "misses": [
+        "cx03:INVESTIGATE",
+        "cx19:HOLD",
+        "cx20:INVESTIGATE"
+      ]
+    }
+  },
+  "results": {
+    "service": [
+      {
+        "id": "cx01",
+        "arm": "service",
+        "tags": [
+          "CX1",
+          "D1",
+          "context-contradicted"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "No listing of this model has color Sand. Available: unspecified."
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 166
+      },
+      {
+        "id": "cx02",
+        "arm": "service",
+        "tags": [
+          "CX2",
+          "cost-control",
+          "context",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht40",
+        "top": "ht40",
+        "locked": "ht40",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40w",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 36
+      },
+      {
+        "id": "cx03",
+        "arm": "service",
+        "tags": [
+          "discovery",
+          "CX3",
+          "CX4",
+          "D2",
+          "conditional-accessory-evidence",
+          "own-page-comparison",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": false,
+        "recommended": null,
+        "top": "ht60",
+        "locked": null,
+        "expectedLock": false,
+        "topOk": true,
+        "lockOk": null,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": true,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "must-have \"unrecognized:at-least-120-kg\" (\"at least 120 kg\") is not verified for this product (no attributable statement found)",
+          "must-have \"uninterpreted:trolley\" (\"trolley\") was not interpreted from the request; research could not check it"
+        ],
+        "gates": [
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": true
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40w",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 2,
+          "tavilyCredits": 2,
+          "httpAttempts": 3,
+          "redirects": 0,
+          "usd": 0.023
+        },
+        "ms": 79
+      },
+      {
+        "id": "cx05",
+        "arm": "service",
+        "tags": [
+          "CX5",
+          "D3",
+          "minimality",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "em18",
+        "top": "em18",
+        "locked": "em18",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "em18",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em18",
+            "group": "em18",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "em18p",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 13
+      },
+      {
+        "id": "cx06",
+        "arm": "service",
+        "tags": [
+          "CX6",
+          "D3",
+          "host-substitution"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "Only standalone listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse)."
+        ],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 11
+      },
+      {
+        "id": "cx07",
+        "arm": "service",
+        "tags": [
+          "CX7",
+          "D1",
+          "fit-lost"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "Only standalone/accessory listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse)."
+        ],
+        "gates": [
+          {
+            "group": "hood24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "em24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 12
+      },
+      {
+        "id": "cx08",
+        "arm": "service",
+        "tags": [
+          "CX8",
+          "D1",
+          "x-only",
+          "spec-line"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": "em18",
+        "locked": "em18",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "em18",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em18",
+            "group": "em18",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "must-have \"uninterpreted:wi-fi-only\" (\"Wi-Fi only\") was not interpreted from the request; research could not check it"
+        ],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 12
+      },
+      {
+        "id": "cx09",
+        "arm": "service",
+        "tags": [
+          "CX9",
+          "D2",
+          "korean-spec-line"
+        ],
+        "lang": "ko",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": "em18",
+        "locked": "em18",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 1,
+          "good": 1,
+          "bad": []
+        },
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "em18",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em18",
+            "group": "em18",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 50
+      },
+      {
+        "id": "cx10",
+        "arm": "service",
+        "tags": [
+          "CX10",
+          "cost-control",
+          "exact",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht40",
+        "top": "ht40",
+        "locked": "ht40",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40w",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 12
+      },
+      {
+        "id": "cx11",
+        "arm": "service",
+        "tags": [
+          "CX11",
+          "K4",
+          "numeric-residual"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": "ht40",
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "must-have \"unrecognized:for-3-kayaks\" (\"for 3 kayaks\") is not verified for this product (no attributable statement found)",
+          "must-have \"uninterpreted:trolley\" (\"trolley\") was not interpreted from the request; research could not check it"
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 2,
+          "tavilyCredits": 2,
+          "httpAttempts": 3,
+          "redirects": 0,
+          "usd": 0.023
+        },
+        "ms": 33
+      },
+      {
+        "id": "cx12",
+        "arm": "service",
+        "tags": [
+          "cost-control",
+          "context",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "em24",
+        "top": "em24",
+        "locked": "em24",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "em24",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em24",
+            "group": "em24",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em24",
+              "group": "em24",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "em24",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/em24",
+              "group": "em24",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "em24p",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 16
+      },
+      {
+        "id": "cx13",
+        "arm": "service",
+        "tags": [
+          "cost-control",
+          "requirement",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht60",
+        "top": "ht60",
+        "locked": "ht60",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 1,
+          "good": 1,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht60",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht60",
+            "group": "ht60",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht60",
+              "group": "ht60",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht60",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/ht60",
+              "group": "ht60",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 23
+      },
+      {
+        "id": "cx14",
+        "arm": "service",
+        "tags": [
+          "cost-control",
+          "exact-tail",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht40w",
+        "top": "ht40w",
+        "locked": "ht40w",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht40w",
+          "lowest": {
+            "listingUrl": "https://cask.example/p/ht40w",
+            "group": "ht40w",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://cask.example/p/ht40w",
+              "group": "ht40w",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht40w",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://cask.example/p/ht40w",
+              "group": "ht40w",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 12
+      },
+      {
+        "id": "cx15",
+        "arm": "service",
+        "tags": [
+          "accessory",
+          "accessory-requested",
+          "cost-control",
+          "part",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": "wheel",
+        "top": "wheel",
+        "locked": "wheel",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 1,
+          "good": 1,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "wheel",
+          "lowest": {
+            "listingUrl": "https://cask.example/p/wheel",
+            "group": "wheel",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://cask.example/p/wheel",
+              "group": "wheel",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "wheel",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://cask.example/p/wheel",
+              "group": "wheel",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 24
+      },
+      {
+        "id": "cx16",
+        "arm": "service",
+        "tags": [
+          "CX3",
+          "D2",
+          "conditional-accessory-evidence",
+          "exact"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": "ht40",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "Every candidate has a known violation of the request.",
+          "Corvane Hauler 40 Kayak Trolley: must-have \"unrecognized:at-least-120-kg\" is false (the product does not have \"at least 120 kg\"; manufacturer)"
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 17
+      },
+      {
+        "id": "cx17",
+        "arm": "service",
+        "tags": [
+          "CX1",
+          "D1",
+          "context-contradicted"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": "ht40",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "Every candidate has a known violation of the request.",
+          "Corvane Hauler 40 Kayak Trolley: must-have \"unrecognized:for-beach-launches\" is false (the product does not have \"for beach launches\"; manufacturer)"
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 29
+      },
+      {
+        "id": "cx19",
+        "arm": "service",
+        "tags": [
+          "cost-control",
+          "exact-part",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": false,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": true,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": true,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": 0,
+        "ndcgAt5": 0,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "Only accessory listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse)."
+        ],
+        "gates": [
+          {
+            "group": "hood24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": true
+          },
+          {
+            "group": "em24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 8
+      },
+      {
+        "id": "cx20",
+        "arm": "service",
+        "tags": [
+          "cost-control",
+          "K4",
+          "family-of-4",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": false,
+        "recommended": null,
+        "top": "ht60",
+        "locked": "ht60",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": true,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht60",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht60",
+            "group": "ht60",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht60",
+              "group": "ht60",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "must-have \"unrecognized:for-a-family-of-4\" (\"for a family of 4\") is not verified for this product (no attributable statement found)"
+        ],
+        "gates": [
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": true
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 24
+      }
+    ],
+    "expanded": [
+      {
+        "id": "cx01",
+        "arm": "expanded",
+        "tags": [
+          "CX1",
+          "D1",
+          "context-contradicted"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "No listing of this model has color Sand. Available: unspecified."
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 15
+      },
+      {
+        "id": "cx02",
+        "arm": "expanded",
+        "tags": [
+          "CX2",
+          "cost-control",
+          "context",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht40",
+        "top": "ht40",
+        "locked": "ht40",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40w",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 19
+      },
+      {
+        "id": "cx03",
+        "arm": "expanded",
+        "tags": [
+          "discovery",
+          "CX3",
+          "CX4",
+          "D2",
+          "conditional-accessory-evidence",
+          "own-page-comparison",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": false,
+        "recommended": null,
+        "top": "ht60",
+        "locked": null,
+        "expectedLock": false,
+        "topOk": true,
+        "lockOk": null,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": true,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "must-have \"unrecognized:at-least-120-kg\" (\"at least 120 kg\") is not verified for this product (no attributable statement found)",
+          "must-have \"uninterpreted:trolley\" (\"trolley\") was not interpreted from the request; research could not check it"
+        ],
+        "gates": [
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": true
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40w",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 2,
+          "tavilyCredits": 2,
+          "httpAttempts": 3,
+          "redirects": 0,
+          "usd": 0.023
+        },
+        "ms": 23
+      },
+      {
+        "id": "cx05",
+        "arm": "expanded",
+        "tags": [
+          "CX5",
+          "D3",
+          "minimality",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "em18",
+        "top": "em18",
+        "locked": "em18",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "em18",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em18",
+            "group": "em18",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "em18p",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 11
+      },
+      {
+        "id": "cx06",
+        "arm": "expanded",
+        "tags": [
+          "CX6",
+          "D3",
+          "host-substitution"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "Only standalone listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse)."
+        ],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 8
+      },
+      {
+        "id": "cx07",
+        "arm": "expanded",
+        "tags": [
+          "CX7",
+          "D1",
+          "fit-lost"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "Only standalone/accessory listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse)."
+        ],
+        "gates": [
+          {
+            "group": "hood24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "em24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 10
+      },
+      {
+        "id": "cx08",
+        "arm": "expanded",
+        "tags": [
+          "CX8",
+          "D1",
+          "x-only",
+          "spec-line"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": "em18",
+        "locked": "em18",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "em18",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em18",
+            "group": "em18",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "must-have \"uninterpreted:wi-fi-only\" (\"Wi-Fi only\") was not interpreted from the request; research could not check it"
+        ],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 11
+      },
+      {
+        "id": "cx09",
+        "arm": "expanded",
+        "tags": [
+          "CX9",
+          "D2",
+          "korean-spec-line"
+        ],
+        "lang": "ko",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": "em18",
+        "locked": "em18",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 1,
+          "good": 1,
+          "bad": []
+        },
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "em18",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em18",
+            "group": "em18",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em18",
+              "group": "em18",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "em18",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 21
+      },
+      {
+        "id": "cx10",
+        "arm": "expanded",
+        "tags": [
+          "CX10",
+          "cost-control",
+          "exact",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht40",
+        "top": "ht40",
+        "locked": "ht40",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40w",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 17
+      },
+      {
+        "id": "cx11",
+        "arm": "expanded",
+        "tags": [
+          "CX11",
+          "K4",
+          "numeric-residual"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": "ht40",
+        "locked": null,
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "must-have \"unrecognized:for-3-kayaks\" (\"for 3 kayaks\") is not verified for this product (no attributable statement found)",
+          "must-have \"uninterpreted:trolley\" (\"trolley\") was not interpreted from the request; research could not check it"
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 2,
+          "tavilyCredits": 2,
+          "httpAttempts": 3,
+          "redirects": 0,
+          "usd": 0.023
+        },
+        "ms": 29
+      },
+      {
+        "id": "cx12",
+        "arm": "expanded",
+        "tags": [
+          "cost-control",
+          "context",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "em24",
+        "top": "em24",
+        "locked": "em24",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "em24",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/em24",
+            "group": "em24",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/em24",
+              "group": "em24",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "em24",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/em24",
+              "group": "em24",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "em24p",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 16
+      },
+      {
+        "id": "cx13",
+        "arm": "expanded",
+        "tags": [
+          "cost-control",
+          "requirement",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht60",
+        "top": "ht60",
+        "locked": "ht60",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 1,
+          "good": 1,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht60",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht60",
+            "group": "ht60",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht60",
+              "group": "ht60",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht60",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://brindle.example/p/ht60",
+              "group": "ht60",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 19
+      },
+      {
+        "id": "cx14",
+        "arm": "expanded",
+        "tags": [
+          "cost-control",
+          "exact-tail",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": true,
+        "recommended": "ht40w",
+        "top": "ht40w",
+        "locked": "ht40w",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht40w",
+          "lowest": {
+            "listingUrl": "https://cask.example/p/ht40w",
+            "group": "ht40w",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://cask.example/p/ht40w",
+              "group": "ht40w",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "ht40w",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://cask.example/p/ht40w",
+              "group": "ht40w",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 15
+      },
+      {
+        "id": "cx15",
+        "arm": "expanded",
+        "tags": [
+          "accessory",
+          "accessory-requested",
+          "cost-control",
+          "part",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "RECOMMEND",
+        "rawState": "RECOMMEND",
+        "expected": [
+          "RECOMMEND",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": "wheel",
+        "top": "wheel",
+        "locked": "wheel",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": {
+          "counted": 1,
+          "good": 1,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "wheel",
+          "lowest": {
+            "listingUrl": "https://cask.example/p/wheel",
+            "group": "wheel",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://cask.example/p/wheel",
+              "group": "wheel",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": true,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [],
+        "gates": [
+          {
+            "group": "wheel",
+            "outcome": "PREPARED",
+            "at": "EXTERNAL_MERCHANT_CHECKOUT",
+            "offer": {
+              "listingUrl": "https://cask.example/p/wheel",
+              "group": "wheel",
+              "condition": "new"
+            },
+            "wrongProduct": false,
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          },
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 8
+      },
+      {
+        "id": "cx16",
+        "arm": "expanded",
+        "tags": [
+          "CX3",
+          "D2",
+          "conditional-accessory-evidence",
+          "exact"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": "ht40",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "Every candidate has a known violation of the request.",
+          "Corvane Hauler 40 Kayak Trolley: must-have \"unrecognized:at-least-120-kg\" is false (the product does not have \"at least 120 kg\"; manufacturer)"
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 21
+      },
+      {
+        "id": "cx17",
+        "arm": "expanded",
+        "tags": [
+          "CX1",
+          "D1",
+          "context-contradicted"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "HOLD",
+          "INVESTIGATE"
+        ],
+        "stateOk": true,
+        "recommended": null,
+        "top": null,
+        "locked": "ht40",
+        "expectedLock": false,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": null,
+        "ndcgAt5": null,
+        "compareCheck": {
+          "lockedGroup": "ht40",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht40",
+            "group": "ht40",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht40",
+              "group": "ht40",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "Every candidate has a known violation of the request.",
+          "Corvane Hauler 40 Kayak Trolley: must-have \"unrecognized:for-beach-launches\" is false (the product does not have \"for beach launches\"; manufacturer)"
+        ],
+        "gates": [
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 22
+      },
+      {
+        "id": "cx19",
+        "arm": "expanded",
+        "tags": [
+          "cost-control",
+          "exact-part",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "HOLD",
+        "rawState": "HOLD",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": false,
+        "recommended": null,
+        "top": null,
+        "locked": null,
+        "expectedLock": true,
+        "topOk": null,
+        "lockOk": false,
+        "unsafe": false,
+        "falseHold": true,
+        "falseInvestigate": false,
+        "attribution": null,
+        "recallAt10": 0,
+        "ndcgAt5": 0,
+        "compareCheck": null,
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": false,
+        "why": [
+          "Only accessory listings of this model were found; DIAPORIA never substitutes a bundle, kit or accessory for the product (or the reverse)."
+        ],
+        "gates": [
+          {
+            "group": "hood24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": true
+          },
+          {
+            "group": "em24",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 0,
+          "tavilyCredits": 0,
+          "httpAttempts": 1,
+          "redirects": 0,
+          "usd": 0.007
+        },
+        "ms": 9
+      },
+      {
+        "id": "cx20",
+        "arm": "expanded",
+        "tags": [
+          "cost-control",
+          "K4",
+          "family-of-4",
+          "positive-control"
+        ],
+        "lang": "en",
+        "state": "INVESTIGATE",
+        "rawState": "INVESTIGATE",
+        "expected": [
+          "RECOMMEND"
+        ],
+        "stateOk": false,
+        "recommended": null,
+        "top": "ht60",
+        "locked": "ht60",
+        "expectedLock": true,
+        "topOk": true,
+        "lockOk": true,
+        "unsafe": false,
+        "falseHold": false,
+        "falseInvestigate": true,
+        "attribution": {
+          "counted": 0,
+          "good": 0,
+          "bad": []
+        },
+        "recallAt10": 1,
+        "ndcgAt5": 1,
+        "compareCheck": {
+          "lockedGroup": "ht60",
+          "lowest": {
+            "listingUrl": "https://brindle.example/p/ht60",
+            "group": "ht60",
+            "condition": "new"
+          },
+          "eligible": [
+            {
+              "listingUrl": "https://brindle.example/p/ht60",
+              "group": "ht60",
+              "condition": "new"
+            }
+          ],
+          "wrongLowest": false,
+          "wrongEligible": [],
+          "ready": false,
+          "error": null
+        },
+        "lowestVerified": null,
+        "budgetParse": {
+          "expected": null,
+          "ok": true,
+          "observedNumbers": [],
+          "observedCurrencies": [
+            "USD"
+          ],
+          "unresolvedMarker": false
+        },
+        "lockedAny": true,
+        "why": [
+          "must-have \"unrecognized:for-a-family-of-4\" (\"for a family of 4\") is not verified for this product (no attributable statement found)"
+        ],
+        "gates": [
+          {
+            "group": "ht60",
+            "outcome": "REFUSED",
+            "at": "prepare:INVALID_STATE",
+            "attempts": [],
+            "mustRefuse": false,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": true
+          },
+          {
+            "group": "ht40",
+            "outcome": "REFUSED",
+            "at": "not-a-candidate",
+            "attempts": [],
+            "mustRefuse": true,
+            "agentResolve": false,
+            "bypass": false,
+            "overBlocked": false
+          }
+        ],
+        "calls": {
+          "channel3Search": 1,
+          "channel3Detail": 0,
+          "channel3Lookup": 0,
+          "tavilySearch": 1,
+          "tavilyCredits": 1,
+          "httpAttempts": 2,
+          "redirects": 0,
+          "usd": 0.015
+        },
+        "ms": 12
+      }
+    ]
+  }
+}

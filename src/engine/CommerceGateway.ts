@@ -287,7 +287,7 @@ export class CommerceGateway {
     const requestId = ps.purchaseSessionId;
     const research = this.research as CommerceResearchAdapter & { resolveVariant?: (id: string, sel: Record<string, string>, loc: { currency?: string | null }) => Promise<{ product: CatalogProduct | null; honored: boolean }> };
     const plan = await runResearchV2(iv, {
-      research: this.research, router: this.config.service?.router ?? null, ctx: { userId, requestId }, now: () => this.now(), weights: this.config.rankingWeights ?? null, limits: this.config.researchLimits ?? {},
+      research: this.research, router: this.config.service?.router ?? null, ctx: { userId, requestId }, requestText: input.request ?? null, now: () => this.now(), weights: this.config.rankingWeights ?? null, limits: this.config.researchLimits ?? {},
       searchPage: (q, token, page) => this.meteredSearchPage(userId, requestId, input.request, q, token, page),
       // V2.17 (PR #15 finding): any identity check that MISMATCHES (look-alike domain, stolen registration, other payee)
       // makes the merchant ineligible, so its listing never prices or ranks a product.
