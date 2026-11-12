@@ -204,7 +204,8 @@ export function createApp(cfg: AppConfig): App {
           const cs = url.pathname === "/paypal/return" ? await gateway.handleBuyerReturn(csId, orderId) : await gateway.handleBuyerCancel(csId, orderId);
           return html(res, 200, page("Payment status", `<p>Server-verified state: <span class="state">${esc(cs.state)}</span></p>
             ${cs.failureCode ? `<p class="muted">${esc(cs.failureCode)}: ${esc(cs.failureReason)}</p>` : ""}
-            <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>`));
+            <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>
+            <p class="muted">Even a COMPLETED payment is only the payment step: no merchant order confirmation or shipment is verified by DIAPORIA.</p>`));
         } catch (e) {
           if (e instanceof NotFoundError) return html(res, 404, page("Not found", "<p>Unknown checkout.</p>"));
           throw e;

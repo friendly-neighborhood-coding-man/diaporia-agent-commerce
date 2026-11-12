@@ -48,7 +48,19 @@ Output: `state`, `stateIsServerVerified: true`, `amount`, `approval {required, a
 
 ## get_purchase_receipt
 
-Output: `paymentResult` (only when `COMPLETED`), `paymentStatusNote` (MOCK vs Sandbox), `merchantOrder.status: "NOT_VERIFIED"`, `purchaseSummary`, `auditTimeline[]`.
+Output: `paymentResult` (only when `COMPLETED`), `paymentStatusNote` (MOCK vs Sandbox), `merchantOrder.status: "NOT_VERIFIED"`, `purchaseSummary`, `auditTimeline[]`, `purchaseOutcome`.
+
+## purchaseOutcome (status and receipt)
+
+Payment completion, merchant order confirmation and fulfillment are three separate layers. `state: COMPLETED` is only the first.
+
+```json
+{ "payment": "PAYMENT_COMPLETED", "merchantOrderConfirmation": "NOT_CONFIRMED", "fulfillment": "NOT_VERIFIED",
+  "merchantPurchaseComplete": false,
+  "statement": "Payment captured (PayPal Sandbox (no real money)). No merchant order confirmation was received and no fulfillment or shipment is verified, so this is not a completed merchant purchase." }
+```
+
+`merchantOrderConfirmation` is always `NOT_CONFIRMED` and `merchantPurchaseComplete` is always `false` in this release, because no merchant order integration exists. AI hosts should relay `statement` instead of saying "your purchase is complete".
 
 
 ## Payment status fields (lifecycle round)

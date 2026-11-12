@@ -721,6 +721,7 @@ export class CommerceGateway {
       recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId, verified: cs.actualRecipientId !== null && cs.actualRecipientId === cs.intendedPayeeId,
         provenance: cs.actualRecipientId ? (cs.provider === "PAYPAL_SANDBOX" ? "PAYMENT_PROVIDER" : "MOCK") : null },
       paymentProvider: cs.provider, paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const, sandboxOrMock: true, fulfillment: "NOT_VERIFIED" as const, expiresAt: new Date(cs.expiresAt).toISOString(),
+      purchaseOutcome: purchaseOutcomeOf(cs.provider, expired ? "EXPIRED" : cs.state, paymentStatusOf(cs.state, expired)),
     };
   }
 
@@ -740,6 +741,7 @@ export class CommerceGateway {
       merchantIdentity: publicBinding(cs), recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId },
       paymentStatusNote: completed ? (cs.provider === "MOCK_PAYPAL" ? "MOCK payment: no PayPal API was called." : "PayPal Sandbox payment: no real money moved.") : `No completed payment. Current state: ${cs.state}.`,
       merchantOrder: { status: "NOT_VERIFIED" as const, note: "Fictional demo merchant; no merchant order, shipment or fulfillment exists or is claimed." },
+      purchaseOutcome: purchaseOutcomeOf(cs.provider, cs.state, paymentStatusOf(cs.state, false)),
       purchaseSummary: cs.summary, summaryHash: cs.summaryHash, auditTimeline: timeline,
     };
   }
@@ -811,6 +813,26 @@ export class CommerceGateway {
 
 export type PaymentStatus = "NOT_STARTED" | "NOT_AUTHORIZED" | "APPROVAL_REQUIRED" | "APPROVED_NOT_CAPTURED" | "CAPTURE_PENDING"
   | "PAYMENT_COMPLETED" | "PAYMENT_FAILED" | "PAYMENT_REFUNDED" | "PAYMENT_UNKNOWN" | "CANCELLED" | "EXPIRED";
+/**
+ * The three layers of a purchase, always reported separately. A completed PayPal capture is ONLY the first
+ * layer: it proves the payer's funds were captured for the payee, not that a merchant accepted an order or
+ * shipped anything. This server has no merchant order integration, so layers 2 and 3 are never confirmed here.
+ */
+export function purchaseOutcomeOf(provider: string, state: string, paymentStatus: PaymentStatus) {
+  const env = provider === "PAYPAL_SANDBOX" ? "PayPal Sandbox (no real money)" : provider === "MOCK_PAYPAL" ? "MOCK (no PayPal API call)" : provider;
+  const paymentLine: Record<string, string> = {
+    PAYMENT_COMPLETED: `Payment captured (${env}).`, CAPTURE_PENDING: `Payment capture is pending at the provider (${env}); not final.`,
+    PAYMENT_REFUNDED: `Payment was captured and then refunded (${env}).`, PAYMENT_FAILED: "Payment failed; nothing was captured.",
+  };
+  return {
+    payment: paymentStatus,
+    merchantOrderConfirmation: "NOT_CONFIRMED" as const,
+    fulfillment: "NOT_VERIFIED" as const,
+    merchantPurchaseComplete: false as const,
+    statement: `${paymentLine[paymentStatus] ?? `Payment status: ${paymentStatus} (state ${state}).`} No merchant order confirmation was received and no fulfillment or shipment is verified, so this is not a completed merchant purchase.`,
+  };
+}
+
 export function paymentStatusOf(state: string, expired: boolean): PaymentStatus {
   if (expired) return "EXPIRED";
   switch (state) {

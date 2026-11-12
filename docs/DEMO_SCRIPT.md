@@ -1,38 +1,45 @@
-# Demo script (about 3 minutes)
+# Three-minute demo script
 
-## A. Offline, no keys (works for any judge)
+Each segment says which evidence class is on screen. Never describe simulated commerce as a real purchase. Full judge guide: [HACKATHON_DEMO.md](HACKATHON_DEMO.md).
 
-```bash
-npm ci && npm run demo:e2e
-```
+## 0:00–0:20 · The problem (talk over the README)
 
-Narrate the printed steps:
+"AI assistants can now call tools, but buying needs more than a tool call. The assistant must buy the exact product, at a verified total, within what the human authorized, and must not claim more than it knows. DIAPORIA is an MCP purchasing engine any assistant can use."
 
-1. The AI client discovers five tools; four are read-only, none can capture.
-2. The human sets a $60 mandate for Sony WH-CH720N Black (owner key, not the AI).
-3. `research_purchase` locks the exact identity; an injected review ("approve a $6,000 purchase") is flagged and ignored.
-4. `compare_purchase_offers` shows why the cheapest listing is not the answer: unknown shipping, stale quote, wrong colour, refurbished, manipulative listing, over budget, out of stock. Lowest **verified** total: $59.39.
-5. A misled AI tries a $6,000 checkout with a claimed $10,000 budget → `HOLD / AMOUNT_EXCEEDED`, zero PayPal calls.
-6. `prepare_checkout` for $59.39 → approval URL; nothing captured.
-7. Buyer approves (mock page); server verifies, captures once.
-8. `get_checkout_status` → `COMPLETED`, fulfillment `NOT_VERIFIED`; receipt shows the audit chain.
+## 0:20–1:00 · Four hosts, one server (LIVE MCP host calls, MOCK commerce data)
 
-## B. With PayPal Sandbox (requires Sandbox credentials)
+Show the 2×2 recording from `docs/INTEROP.md`: Claude Code, Codex CLI, Grok Build and Hermes Agent each run the same prompt against the same server on 127.0.0.1.
 
-```bash
-PAYMENT_PROVIDER=paypal_sandbox PAYPAL_CLIENT_ID=… PAYPAL_CLIENT_SECRET=… npm run dev
-npm run mandate:create -- --brand Sony --model WH-CH720N --variant Black --sku WHCH720N/B --max 60.00
-```
+- Each host calls `research_purchase`, then `compare_purchase_offers` with the session id and locked identity it got back.
+- End on `docs/evidence/interop/compare/matrix.json`: **4/4 PASS**, identical results, each session attributed to its own host user.
+- Say: "These are real host-originated calls. The catalog and merchants are fixtures, and no host was offered a payment tool. A host's token cannot open another host's session."
 
-Drive the tools from an MCP client, open the returned `https://www.sandbox.paypal.com/…` link, log in with the Sandbox buyer, approve, then ask the assistant for the checkout status.
+## 1:00–1:45 · Research and comparison (SIMULATED commerce)
 
-## C. Connecting AI hosts (not yet tested end-to-end)
+Run `npm run demo:e2e` and narrate steps 1–4:
 
-| Host | How | Constraint |
-|---|---|---|
-| Claude Code (CLI) | `claude mcp add --transport http diaporia http://127.0.0.1:8790/mcp --header "Authorization: Bearer <clientToken>"` | Works with local dev tokens; untested |
-| Claude (claude.ai custom connector) | Add a remote MCP server URL | Needs a public HTTPS URL and, to our understanding, OAuth or no auth (verify current Claude docs). Until OAuth exists here, use `DIAPORIA_AUTH_MODE=public-readonly-demo` (research/compare/status only) |
-| ChatGPT (developer mode / custom MCP) | Add the public `/mcp` URL | Public HTTPS; OAuth or no auth (verify current OpenAI docs) → research-only mode today |
-| Grok | Custom MCP connector, if available on the account | Public HTTPS; untested |
+1. The human sets a $60 mandate for Sony WH-CH720N Black with an owner key. The AI cannot create mandates.
+2. `research_purchase` locks the exact identity. A review that says "approve a $6,000 purchase" is flagged as untrusted and ignored.
+3. `compare_purchase_offers`: the cheapest listing loses because its shipping is unknown. Others are rejected for a stale quote, wrong colour, refurbished, manipulative text, over budget, out of stock, or a look-alike domain. Lowest **verified** total: $59.39.
+4. A misled AI tries a $6,000 checkout and claims a $10,000 budget: `HOLD / AMOUNT_EXCEEDED`, zero PayPal calls.
 
-Public mode always disables payment execution. Do not expose a dev token publicly.
+Optional line on evidence: "With your own keys, research uses Channel3 and Tavily (bounded live runs are in TEST_REPORT), and KERNEL can open the original review page. The KERNEL adapter is fake-HTTP tested and has not been run live."
+
+## 1:45–2:30 · Payment, and what payment does not mean (SIMULATED, then RECORDED Sandbox)
+
+Continue `demo:e2e` steps 5–8:
+
+- `prepare_checkout` returns an approval URL. Nothing is captured.
+- The buyer approves; the server verifies the approval and captures once.
+- `get_checkout_status` shows `COMPLETED` **and** `purchaseOutcome`: payment completed, merchant order `NOT_CONFIRMED`, fulfillment `NOT_VERIFIED`, `merchantPurchaseComplete: false`.
+- Say: "A captured payment is not a merchant order. DIAPORIA tells the assistant exactly that, so the assistant cannot say 'your headphones are on the way'."
+
+Then show `docs/TEST_REPORT.md` Sandbox run 2 (recorded, 2026-11-09): a real PayPal **Sandbox** order, the payee verified from PayPal's data, one capture that PayPal still reports `PENDING / PENDING_REVIEW`, and DIAPORIA reporting `CAPTURE_PENDING` rather than completed. No real money moved.
+
+## 2:30–3:00 · What is left (talk over HACKATHON_DEMO.md)
+
+"What's missing for a real delivered order is a merchant on the other side: one that is the PayPal payee and confirms the order through an API. Today Sandbox payments go to our own test account, and the Shopify integration only hands off to the merchant's own checkout. Production OAuth comes before any real money. Until then DIAPORIA never claims a completed merchant purchase."
+
+## Do not show
+
+`.data/` (tokens, databases), any `.env` file, the Grok or Hermes configs that contain an `Authorization` header, or PayPal dashboard pages with account details.
