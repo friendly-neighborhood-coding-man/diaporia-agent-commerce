@@ -99,3 +99,28 @@ The kernel-off IW-24 run reproduces the independent evaluator's `f17a8c5` number
 ## 9. What decides the question
 
 Only the sealed IW-27 evaluation can say whether this generalizes. It runs on arms A `4bc7dcc`, B `f17a8c5`, C kernel, D typed adapter, E typed adapter plus kernel. Predictions P1 to P14 were frozen before any kernel code was written, and will be scored once.
+
+## 10. IW-27 result (independent, sealed, scored once; now SEEN)
+
+Service arm, 279 cases:
+
+| | A 4bc7dcc | B f17a8c5 | C B+kernel | D typed | E typed+kernel |
+|---|---:|---:|---:|---:|---:|
+| Correct | 164 | 177 | 173 | 172 | 172 |
+| Unsafe | 10 | 5 | 3 | 11 | 3 |
+| Must-refuse bypass /308 | 10 | 4 | 2 | 11 | 3 |
+| Legit prepared /186 | 66 | 79 | 76 | 78 | 76 |
+
+With the kernel off, C reproduces B and E reproduces D on every case. The pre-registered predictions scored 6 hits and 8 misses:
+- **Hits:** P3, P4, P9, P11, P12, P13.
+- **Misses:** P1, P2, P5, P6, P7, P8, P10, P14.
+
+**Unexpected outcomes and rejected hypotheses:**
+- **The exposure law is refuted for the TS loop on this set.** B is safer than the frozen engine. The law holds for the typed adapter, which exposes evidence-attribution weaknesses that the loop's rules had masked.
+- **The kernel's effect does carry across interpreters.** It removed 8 of 11 unsafe outcomes on the typed adapter and 2 of 5 on the loop build. The safety thresholds (≤ 1 unsafe) were too optimistic.
+- **Every residual unsafe outcome takes route D2, evidence attribution and negation.** Examples: an accessory-page conditional, "X, not Y" contrast, "not rated for Y". So the kernel's D2 checks are incomplete.
+- **Every kernel false refusal is the same defect pointing the other way.** A sibling or accessory sentence was bound to the candidate. Subject binding is therefore the shared failing component.
+- **"No readable page passes as UNCHECKED" let one forbidden product stay payable** in the typed+kernel arm. That design change was wrong for non-recommended products.
+- **A requirement that crossed the interface as a key gave the kernel no obligation to check.** This is representation loss inside the kernel itself.
+
+**Direction change:** the next step is a single subject-binding function used by both credit and contradiction (E4.1). It needs a fresh holdout and predictions frozen first. It should not be more kernel rules. Case-level scoring is kept outside this public repository.
