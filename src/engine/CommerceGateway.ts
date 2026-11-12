@@ -28,6 +28,7 @@ import { BillingUnavailableError, periodSummaryFrom } from "../billing/Billing.j
 import { createHash as hashForKeys } from "node:crypto";
 import { parseWebhookEvent, type WebhookHeaders, type WebhookSignatureVerifier } from "../payment/PayPalWebhook.js";
 import { parseResearchIntent, type ResearchIntentV2 } from "../intent/ResearchIntentV2.js";
+import { applySemanticIntent, escalationSignals, type HybridInterpreter } from "../intent/hybrid/SemanticIntent.js";
 import type { RoutedIntent } from "../intent/PurchaseIntentRouter.js";
 import { canonicalVariant } from "../identity/ProductIdentityExtractor.js";
 import { runResearchV2, type PlannerLimits } from "../research/ResearchPlannerV2.js";
@@ -57,6 +58,11 @@ export interface GatewayConfig {
   webhookVerifier?: WebhookSignatureVerifier | null;
   /** Usage metering, evidence routing, deployment mode and service billing. Optional: absent = legacy behaviour. */
   service?: ServicePlane | null;
+  /**
+   * EXPERIMENT (experiment/haiku55-json-parser): a semantic interpreter merged into the TypeScript intent by the
+   * constraint-preserving hybrid adapter (src/intent/hybrid). Absent = TypeScript only (arm A, unchanged behaviour).
+   */
+  interpreter?: HybridInterpreter | null;
   /** Read-only provider retries during reconciliation (attempts, base backoff). */
   readRetry?: { attempts: number; baseDelayMs: number };
   /**
@@ -255,9 +261,22 @@ export class CommerceGateway {
     };
   }
 
+  /** Hybrid experiment: TypeScript parse, then (arm B always / arm C when escalation signals fire) the interpreter merge. */
+  private interpretIntent(input: PurchaseRequestInput): ResearchIntentV2 {
+    const ts = parseResearchIntent(input);
+    const it = this.config.interpreter;
+    if (!it || it.mode === "TS_ONLY") return ts;
+    const signals = escalationSignals(ts, input.request);
+    const escalate = it.mode === "ALWAYS" || signals.length > 0;
+    const raw = escalate ? it.interpret(input.request) : null;
+    const { intent, trace } = applySemanticIntent(ts, raw, input, it.mode, (i) => parseResearchIntent(i), { escalate, signals });
+    it.log?.push({ request: input.request, trace });
+    return intent;
+  }
+
   /** Research V2 (see ResearchPlannerV2 / DecisionEngine). Session, audit and output shape stay V1-compatible; `decision` is added. */
   private async researchPurchaseV2(userId: string, input: PurchaseRequestInput, ctx: { requestId: string | null }) {
-    const iv = parseResearchIntent(input);
+    const iv = this.interpretIntent(input);
     const intent = routedFromV2(iv);
     let ps = this.sessions.createPurchaseSession(userId, input.request, intent);
     ctx.requestId = ps.purchaseSessionId;

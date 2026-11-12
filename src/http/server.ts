@@ -53,6 +53,8 @@ export interface AppConfig {
   readRetry?: { attempts: number; baseDelayMs: number };
   /** Metering, evidence routing, community/managed mode and service billing. */
   service?: import("../engine/ServicePlane.js").ServicePlane | null;
+  /** EXPERIMENT (experiment/haiku55-json-parser): hybrid semantic interpreter; absent = TypeScript only. */
+  interpreter?: import("../intent/hybrid/SemanticIntent.js").HybridInterpreter | null;
   /**
    * R-A: the protected human-confirmation boundary for research-hold proposals (src/auth/OwnerConfirmation.ts). Absent
    * = unavailable: no research hold can be confirmed (fail closed).
@@ -100,7 +102,7 @@ export function createApp(cfg: AppConfig): App {
   const gateway = new CommerceGateway(store, research, payments, { baseUrl: cfg.baseUrl, paymentExecutionEnabled, ownerConfirmation, serviceIsolation: cfg.serviceIsolation ?? null,
     ...(cfg.merchantIdentity ? { merchantIdentity: cfg.merchantIdentity } : {}), sandboxPlatformPayeeId: cfg.sandboxPlatformPayeeId ?? null,
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
-    ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service }, now);
+    ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service, ...(cfg.interpreter ? { interpreter: cfg.interpreter } : {}) }, now);
   const base = new URL(cfg.baseUrl);
   // Every human-facing page names the real payment environment. MOCK is never labelled Sandbox.
   const envBanner = payments.name === "PAYPAL_SANDBOX" ? "PayPal Sandbox: test accounts and test money only. No real money moves."
