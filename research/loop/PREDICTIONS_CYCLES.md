@@ -260,3 +260,28 @@ Brackwell Spindra 16 VS"), a30 RECOMMEND bowl30 (a spare bowl whose page says it
 - Negative controls: "Osterby Kneadwell 30 spare bowl" (no fit relation word) gets no fit requirement; "gift for my
   <model>" and "something for the <model>" get none (target not ACCESSORY); a STANDALONE request is unchanged; a
   model without a compare word parses exactly as before.
+
+### Cycle 6b/6c addendum (written after the 6a code and before any 6b/6c code; the 6a seen-set run had not finished)
+
+Observed so far on 6a (not a prediction): a30 HOLD; a18 locks the chuck but INVESTIGATEs, because its page lists the
+fitting hosts after a colon ("fits every Spindra lathe: the Spindra 12, Spindra 16 and Spindra 16 VS") and the fit
+reader stops at the colon. Dev split d06 ("replacement ear pads for Contoso CX-500") went from RECOMMEND to INVESTIGATE
+under I6 (frozen also INVESTIGATEs it): its only fit statement is the listing title, which never counts.
+
+Input from the Haiku diagnosis thread (IW-23, seen): d25 prepared GR-3 because its manufacturer page line
+"온도 조절: 없음" ("temperature control: none") verified the must-have "온도 조절". Reproduced: the evidence clause splitter
+splits "label: value" at the colon unless the value is English yes/no/none, so "온도 조절" alone becomes a positive
+clause. Also "온도 조절: 지원 안 함" verifies, because "안 함" is not a negation word.
+
+- **I8 A spec line is read whole.** "<label>: <value>" is never split when the value is a short value (at most four
+  words); Korean value negations (없음, 미지원, 불가, 아니오, 해당 없음, 안 함/안 됨) are negations.
+- **6b (fit lists):** a fit verb whose object ends at a colon reads the list after the colon; each item still has to
+  name the exact host (the same item rule as before).
+
+- P6.5 d25-style probes: "온도 조절: 없음" and "온도 조절: 지원 안 함" no longer verify; "온도 조절: 있음" and "온도 조절: 3단계"
+  still verify; English "Bluetooth: no" unchanged (not verified).
+- P6.6 a18 becomes RECOMMEND of the chuck with 6b. IW-24 legit prepared ≥ 95/185 after 6a+6b+6c.
+- P6.7 Seen IW-1..IW-22 stay at 0 unsafe / 0 bypass; I8 removes at most 3 legit preparations on seen sets (a spec line
+  whose label alone verified a requirement and whose value is not a negation is still read as a positive whole line).
+- d06 stays INVESTIGATE (accepted cost of I6; the listing title is not fit evidence). The dev accuracy test threshold is
+  not lowered; if 6a+6b+6c leaves dev accuracy below 0.9 this is recorded and resolved by evidence, not by the threshold.
