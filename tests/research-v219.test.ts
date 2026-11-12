@@ -32,6 +32,11 @@ describe("V2.19 negated or excluded evidence never verifies", () => {
     const p: any = { productId: "x", title: t, identity: { ...extractIdentity(t, "Abrin"), variant: null }, description: null, capabilities: [], offers: [] };
     expect(statementFrom({ title: "Abrin P1 Above Ground Pool Pump specifications", snippet: "The Abrin P1 Above Ground Pool Pump has a 1 HP motor. It is for in-ground pools as well. It is not for in-ground pools." }, p, id)).toMatchObject({ value: false });
   });
+  it("a sibling named after own-name removal is about the sibling", () => {
+    const t = "Abrin Vanta 1000W Power Inverter";
+    const p: any = { productId: "x", title: t, identity: { ...extractIdentity(t, "Abrin"), variant: null }, description: null, capabilities: [], offers: [] };
+    expect(statementFrom({ title: "Abrin Vanta 1000W vs Vanta 2000W", snippet: "Unlike the Abrin Vanta 1000W, the Abrin Vanta 2000W delivers 2,000 W." }, p, "unrecognized:at-least-1500-watts")).not.toMatchObject({ value: true });
+  });
   it("a plain positive statement still verifies", () => {
     expect(clauseStatement("The Toska T4 Espresso Machine has a steel boiler and is not programmable.", "unrecognized:steel-boiler")).toBe(true);
   });
@@ -41,6 +46,11 @@ describe("V2.19 fitment for-phrases", () => {
   it("an article-less fitment target is a checked requirement", () => {
     const i = intent("Mirelle crossbar mount for bare roof rails");
     expect(i.unresolvedMust.some((u: string) => /for-bare-roof-rails/.test(u))).toBe(true);
+  });
+  it("a room, home or family use stays context; a terrain is checked", () => {
+    expect(intent("Corvan baby gate for the twins' room").unresolvedMust.some((u: string) => /room/.test(u))).toBe(false);
+    expect(intent("Mirelle tent for the family").unresolvedMust.some((u: string) => /family/.test(u))).toBe(false);
+    expect(intent("snowshoes for backcountry").unresolvedMust).toContain("unrecognized:for-backcountry");
   });
   it("personal use stays context", () => {
     expect(intent("Corvan backpack for my commute").unresolvedMust.some((u: string) => /commute/.test(u))).toBe(false);

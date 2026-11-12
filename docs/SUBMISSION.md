@@ -88,7 +88,7 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 | **IW-18 first scored run (independent, on e337baa)** | **116/180 at both caps; legitimate checkouts 51/117; lock precision 59/76** | **6** | **5/230** | Fresh cases, sealed before the run. Recorded unchanged. Fitment "for" phrases were background, one model name on two product types locked the wrong one, a part kit was read as a bundle, "only" was dropped, and lowercase units were not identity |
 | IW-18 after the V2.18 fixes (now seen) | 124/180; legitimate checkouts 54/117; lock precision 63/68; 0 wrong-product prepared, compare-eligible or lowest | 0 | 0/230 | seen, regression only (123/180 on V2.19) |
 | **IW-19 first scored run (independent, on 21fd52b)** | **117/188 at both caps; legitimate checkouts 49/122; lock precision 70/76** | **12** | **12/235** | Fresh cases, sealed before the run. Recorded unchanged. Negated manufacturer sentences ("It is not for the top of stairs.", "A lid is not included.") verified the requirement, article-less fitment phrases ("for bare roof rails") were background, and "check valve for the <model>" locked the host |
-| IW-19 after the V2.19 fixes (now seen) | 119/188; legitimate checkouts 49/122; 0 wrong-product prepared | 0 | 0/235 | seen, regression only. Negated, hedged or "sold separately" evidence never verifies, and a denial anywhere on a page wins. A clean measurement of V2.19 needs a new unseen set (IW-20) |
+| IW-19 after the V2.19 fixes (now seen) | 118/188; legitimate checkouts 48/122; 0 wrong-product prepared | 0 | 0/235 | seen, regression only. Negated, hedged or "sold separately" evidence never verifies, and a denial anywhere on a page wins. A clean measurement of V2.19 needs a new unseen set (IW-20) |
 
 ## Open risks (not fixed, stated plainly)
 
@@ -103,7 +103,7 @@ Measured on a fresh clone in the build container, with a warm npm cache: clone, 
 
 - [x] One-command reproducible demo with a verified trace (`npm run demo:full`)
 - [x] README quick start and an honest status table
-- [x] Automated tests pass (1031) and the typecheck is clean
+- [x] Automated tests pass (1033) and the typecheck is clean
 - [x] Secret scan clean (`npm run scan:secrets`)
 - [x] Fresh independent IW-5 scored once on e397ef9 (26/39, 1 bypass in 46; result recorded unchanged above)
 - [x] Fresh independent IW-6 scored once on 5e37f7f (24/45, 2 unsafe, 2 bypasses in 55; result recorded unchanged above)

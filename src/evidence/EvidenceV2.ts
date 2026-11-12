@@ -256,6 +256,9 @@ export function statementFrom(hit: { title: string; snippet: string }, product: 
     const own = capability.startsWith(PROPOSITION_PREFIX)
       ? [product.identity.brand, product.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), clause)
       : clause;
+    // V2.19 (IW-19 d26): a name word of this model that is still on the clause after its own name was removed belongs to
+    // a sibling ("Unlike the Vanta 1000W, the Vanta 2000W delivers 2,000 W"): the clause is about that sibling.
+    if (own !== clause && model && model.split(/\s+/).some((w) => /^[a-z]{3,}$/i.test(w) && new RegExp(`(?<![\\p{L}])${w}(?![\\p{L}])`, "iu").test(own))) continue;
     const v = clauseStatement(own, capability);
     if (v === false) return { value: v, quote: clause.trim().slice(0, 300) };
     if (v === true) firstTrue ??= { value: v, quote: clause.trim().slice(0, 300) };
