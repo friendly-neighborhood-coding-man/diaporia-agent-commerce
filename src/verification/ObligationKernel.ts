@@ -17,6 +17,13 @@
  *  K3 contradict no bound manufacturer statement about R negates any stated phrase (MUST, NICE, CONTEXT) or the fit to
  *                a named host; spec lines "<label>: none/없음/…" are read with a frozen negative-value list.
  *  K4 numbers    a number in the request that nothing consumed must appear in R's title.
+ *
+ * E4.1 (v0.2.0): K2 and K3 read pages through one shared subject binder (./SubjectBinding.ts): every claim has a subject
+ * (base product, variant, accessory, or unknown) and an optional condition, contrasts ("A, not B") become denials, and a
+ * claim credits or contradicts R only when it is about R without a condition. Context requirements and request segments
+ * nothing interpreted are contradiction-only obligations. Every gateable product is checked, and a product other than
+ * the recommendation is not payable while a MUST is neither verified through the binder nor readable on a page about it
+ * (unless the engine already blocks that MUST). Ablations: DIAPORIA_E41_BINDER / _OBLIGATIONS / _UNCHECKED = off.
  */
 import type { CatalogProduct, MerchantOffer } from "../domain/types.js";
 import type { Decision } from "../decision/DecisionEngine.js";
@@ -26,10 +33,13 @@ import type { EvidenceRouter } from "../evidence/EvidenceRouter.js";
 import { hostOf } from "../evidence/SourceRegistry.js";
 import { clauseStatement, fitKey } from "../research/capabilities.js";
 import { GENERIC_WORDS } from "../identity/ProductIdentityExtractor.js";
+import { claimsOf, statementFor, claimsAbout, describe, pageSubject, BINDER_VERSION } from "./SubjectBinding.js";
 
-export const KERNEL_VERSION = "obligation-kernel-v0.1.0";
+export const KERNEL_VERSION = "obligation-kernel-v0.2.0-e41";
+/** E4.1 ablation switches (each "off" restores the v0.1 behaviour of that part only). */
+const E41 = () => ({ binder: process.env.DIAPORIA_E41_BINDER !== "off", obligations: process.env.DIAPORIA_E41_OBLIGATIONS !== "off", unchecked: process.env.DIAPORIA_E41_UNCHECKED !== "off" });
 export interface KernelCheck { id: "K1a" | "K1b" | "K1c" | "K2" | "K3" | "K4"; pass: boolean; detail: string }
-export interface KernelLog { version: string; applied: boolean; demoted: boolean; productId: string | null; checks: KernelCheck[]; pageLookups: number; others?: Array<{ productId: string; failed: string[] }> }
+export interface KernelLog { version: string; binder?: string; e41?: { binder: boolean; obligations: boolean; unchecked: boolean }; applied: boolean; demoted: boolean; productId: string | null; checks: KernelCheck[]; pageLookups: number; others?: Array<{ productId: string; failed: string[] }> }
 export interface KernelInput {
   intent: ResearchIntentV2; requestText: string | null;
   /** The planner's evidence-search budget still allows one lookup (the kernel never exceeds the per-request cap). */
@@ -152,7 +162,7 @@ function conditional(sentence: string, r: CatalogProduct): boolean {
 const checkKey = (key: string) => (key.startsWith("context:") ? `unrecognized:${key.slice("context:".length)}` : key);
 
 export async function applyObligationKernel(inp: KernelInput, deps: KernelDeps): Promise<KernelLog> {
-  const log: KernelLog = { version: KERNEL_VERSION, applied: false, demoted: false, productId: null, checks: [], pageLookups: 0, others: [] };
+  const log: KernelLog = { version: KERNEL_VERSION, binder: BINDER_VERSION, e41: E41(), applied: false, demoted: false, productId: null, checks: [], pageLookups: 0, others: [] };
   if (process.env.DIAPORIA_OBLIGATION_KERNEL === "off") return log;
   const d = inp.decision;
   LISTED = inp.products;
@@ -160,15 +170,15 @@ export async function applyObligationKernel(inp: KernelInput, deps: KernelDeps):
   // Every product the payment gate could prepare is checked (the recommendation first), not only the recommendation.
   const recId = d.state === "RECOMMEND" && d.recommendation ? d.recommendation.productId : null;
   const gateable = d.ranking.filter((x) => x.eligible && !x.disqualifiers.length).map((x) => x.productId);
-  const order = [...new Set([...(recId ? [recId] : []), ...gateable])].filter((id) => byId.has(id)).slice(0, 4);
+  const order = [...new Set([...(recId ? [recId] : []), ...gateable])].filter((id) => byId.has(id)).slice(0, E41().unchecked ? Infinity : 4);
   if (!order.length) return log;
   log.applied = true; log.productId = recId;
   for (const pid of order) {
     const r = byId.get(pid)!;
     // Only the recommendation may trigger a page lookup; other gateable products are checked against the pool.
-    const checks = await checkProduct(r, pid === recId ? inp : { ...inp, lookupAllowed: false }, deps, log);
+    const checks = await checkProduct(r, pid === recId ? inp : { ...inp, lookupAllowed: false }, deps, log, pid === recId);
     const failed = checks.filter((c) => !c.pass);
-    if (pid === recId) log.checks = checks; else log.others!.push({ productId: pid, failed: failed.map((c) => c.id) });
+    if (pid === recId) log.checks = checks; else log.others!.push({ productId: pid, failed: failed.map((c) => `${c.id}: ${c.detail.slice(0, 160)}`) });
     if (!failed.length) continue;
     const rk = d.ranking.find((x) => x.productId === pid);
     if (rk) {
@@ -190,7 +200,8 @@ export async function applyObligationKernel(inp: KernelInput, deps: KernelDeps):
   return log;
 }
 
-async function checkProduct(r: CatalogProduct, inp: KernelInput, deps: KernelDeps, log: KernelLog): Promise<KernelCheck[]> {
+async function checkProduct(r: CatalogProduct, inp: KernelInput, deps: KernelDeps, log: KernelLog, isRec = true): Promise<KernelCheck[]> {
+  const flags = E41();
   const out: KernelCheck[] = [];
   const d = inp.decision;
   const it = inp.intent; const target = it.target;
@@ -257,6 +268,8 @@ async function checkProduct(r: CatalogProduct, inp: KernelInput, deps: KernelDep
   let pool = deps.router && typeof deps.router.requestHits === "function" ? deps.router.requestHits(deps.ctx.requestId) : [];
 
   // K2 subject + condition binding of counted manufacturer evidence
+  const confirmed = new Set<string>();
+  if (process.env.DIAPORIA_KERNEL_DEBUG) console.error("[kernel-rk]", JSON.stringify({ r: r.productId, state: d.state, rk: d.ranking.find((x) => x.productId === r.productId), reqs: it.requirements.map((x) => [x.key, x.polarity, (x as any).strength]) }));
   {
     const fails: string[] = [];
     const rk = d.ranking.find((x) => x.productId === r.productId);
@@ -267,6 +280,16 @@ async function checkProduct(r: CatalogProduct, inp: KernelInput, deps: KernelDep
       if (!items.length) continue;
       const ok = items.some((e) => {
         const hit = pool.find((h) => h.url === e.url);
+        // E4.1: the shared binder re-reads the counted page. The credit stands only if a claim whose subject is R and that
+        // carries no condition affirms the key, and no claim about R denies it (the same reading K3 uses).
+        if (flags.binder && hit) {
+          // Every pool hit of the counted URL is read (one page can come back as several snippets).
+          const same = pool.filter((h) => h.url === e.url);
+          // The counted quote is page-visible text of that page too (a pool may keep another snippet of the same URL).
+          const cl = [...same, ...(same.some((h) => h.snippet.includes(e.quote)) ? [] : [{ title: hit.title, snippet: e.quote }])].flatMap((h) => claimsOf(h, inp.products)); const st = statementFor(cl, r.productId, s.key);
+          if (st.value !== true && process.env.DIAPORIA_KERNEL_DEBUG) console.error("[kernel-k2b]", JSON.stringify({ r: [r.productId, r.title, r.identity.model], key: s.key, quote: e.quote.slice(0, 160), title: hit.title, claims: cl.map((c) => [describe(c.subject), c.condition, c.text.slice(0, 100)]) }));
+          return st.value === true;
+        }
         if (hit && !titleBindsTo(hit.title, r, inp.products)) return false;
         if (conditional(e.quote, r) || aboutOtherViaComparison(e.quote, r)) return false;
         if (!hit && inp.products.some((o) => o.productId !== r.productId && namesOther(e.quote, o, r) && !/\b(compared with|unlike|than)\b/i.test(e.quote))) return false;
@@ -274,16 +297,49 @@ async function checkProduct(r: CatalogProduct, inp: KernelInput, deps: KernelDep
       });
       if (!ok && process.env.DIAPORIA_KERNEL_DEBUG) console.error("[kernel-k2]", JSON.stringify({ r: r.title, key: s.key, items: items.map((e) => { const h = pool.find((x) => x.url === e.url); return [e.url, e.quote.slice(0, 140), h?.title ?? null, h ? titleBindsTo(h.title, r, inp.products) : null, conditional(e.quote, r), aboutOtherViaComparison(e.quote, r)]; }) }));
       if (!ok) fails.push(`"${s.key}" is verified only by statements about another product or under a condition`);
+      else confirmed.add(checkKey(s.key));
     }
+    for (const s of rk?.satisfied ?? []) if (s.basis !== "MANUFACTURER") confirmed.add(checkKey(s.key));
     add("K2", fails.length === 0, fails.length ? fails.join("; ") : "verified requirements are bound to the product");
   }
 
   // K3 non-contradiction of every stated phrase and of the fit to a named host
   {
-    const obligations: Array<{ key: string; text: string; fit: boolean }> = it.requirements.filter((x) => x.polarity === "REQUIRED").map((x) => ({ key: checkKey(x.key), text: x.text, fit: false }));
+    const obligations: Array<{ key: string; text: string; fit: boolean; contradictOnly?: boolean }> = it.requirements.filter((x) => x.polarity === "REQUIRED").map((x) => ({ key: checkKey(x.key), text: x.text, fit: false, contradictOnly: (x as { strength?: string }).strength !== "MUST" }));
     if (target && target.kind === "ACCESSORY" && target.model) obligations.push({ key: fitKey(target.model), text: target.model, fit: true });
+    // E4.1: every other stated phrase is an obligation too. Context requirements and request segments nothing interpreted
+    // (D1) are contradiction-only: they block when a claim about R denies them, never because they are unverified.
+    if (flags.obligations) {
+      for (const x of it.requirements) if (x.polarity !== "REQUIRED" && x.polarity !== "EXCLUDED" && !obligations.some((o) => o.key === checkKey(x.key))) obligations.push({ key: checkKey(x.key), text: x.text, fit: false, contradictOnly: true });
+      for (const sp of orphanSpans(req, consumed, r, inp)) if (!obligations.some((o) => o.key === sp.key)) obligations.push({ ...sp, fit: false, contradictOnly: true });
+    }
     if (!obligations.length) add("K3", true, "no stated phrase to check");
-    else {
+    else if (flags.binder) {
+      const negValue = (o: { text: string; fit: boolean }) => (t: string) => {
+        if (o.fit) return false;
+        const m = NEG_VALUE.exec(t); if (!m) return false;
+        const label = words(m[1]!); const ow = content(o.text).filter((w) => w !== "only");
+        return ow.length > 0 && ow.every((w) => label.some((l) => l === w || (w.length >= 2 && (l.startsWith(w) || w.startsWith(l)) && Math.min(l.length, w.length) >= 2)));
+      };
+      const readPages = () => manu(pool).map((h) => ({ h, claims: claimsOf(h, inp.products) })).filter((p) => claimsAbout(p.claims, r.productId) > 0);
+      let pages = readPages();
+      const needsLookup = obligations.some((o) => o.fit || !confirmed.has(o.key));
+      if (!pages.length && needsLookup && inp.lookupAllowed !== false && deps.router && typeof deps.router.lookupProductPages === "function") { log.pageLookups++; await deps.router.lookupProductPages(r, deps.ctx, sellers); pool = deps.router.requestHits(deps.ctx.requestId); pages = readPages(); }
+      const found: string[] = [];
+      for (const p of pages) for (const o of obligations) {
+        const st = statementFor(p.claims, r.productId, o.key, negValue(o));
+        if (st.value === false && process.env.DIAPORIA_KERNEL_DEBUG) console.error("[kernel-k3b]", JSON.stringify({ r: r.productId, title: p.h.title, listed: inp.products.map((x) => [x.productId, x.title, x.identity.model]) }));
+        if (st.value === false) found.push(`"${o.text}" is denied for ${describe(pageSubject(p.h.title, inp.products))} on ${hostOf(p.h.url)}: "${st.claim!.sentence.slice(0, 120)}"`);
+      }
+      // A MUST the engine already blocks on this product (unverified, owner-confirmable) is already not payable as is: the
+      // kernel adds no second gate for it and leaves the existing owner-confirmation rule unchanged.
+      const engineBlocked = (key: string) => (d.ranking.find((x) => x.productId === r.productId)?.blockers ?? []).some((b) => b.detail.includes(`"${key}"`) || b.detail.includes(`"${key.replace(/^unrecognized:/, "")}"`));
+      const unchecked = obligations.filter((o) => !o.contradictOnly && !confirmed.has(o.key) && !engineBlocked(o.key));
+      if (found.length) add("K3", false, [...new Set(found)].join("; "));
+      else if (!pages.length && flags.unchecked && !isRec && unchecked.length) add("K3", false, `UNCHECKED: no page about this product was readable and nothing bound verifies ${unchecked.map((o) => `"${o.text}"`).join(", ")} (not payable)`);
+      else if (!pages.length) add("K3", true, "UNCHECKED: no manufacturer page for this product was readable");
+      else add("K3", true, `no claim about this product denies a stated phrase (${obligations.length} obligations, ${pages.length} pages)`);
+    } else {
       let pages = manu(bound(pool));
       // One lookup only when some phrase is not already a MUST the engine verified (its evidence was negation-checked).
       const verifiedKeys = new Set((d.ranking.find((x) => x.productId === r.productId)?.satisfied ?? []).map((x) => checkKey(x.key)));
@@ -322,5 +378,24 @@ async function checkProduct(r: CatalogProduct, inp: KernelInput, deps: KernelDep
     add("K4", stray.length === 0, stray.length ? `numbers in the request that nothing interpreted: ${stray.join(", ")}` : "every number is accounted for");
   }
 
+  return out;
+}
+
+/**
+ * E4.1 (D1): request segments (split at commas, semicolons and "and") that nothing interpreted: none of their content
+ * words is part of the identity, a requirement, money, an attribute or the listing's own name. Each becomes a
+ * contradiction-only obligation keyed as a proposition ("Cellaro 46 Dual, built-in" → "unrecognized:built-in").
+ */
+function orphanSpans(req: string, consumed: Set<string>, r: CatalogProduct, inp: KernelInput): Array<{ key: string; text: string }> {
+  const first = req.split(/(?<=[.!?])\s+/)[0] ?? req;
+  const t = inp.intent.target;
+  const known = new Set([...consumed, ...tokset(`${t?.brand ?? ""} ${t?.model ?? ""} ${t?.accessoryNoun ?? ""} ${r.title} ${r.category ?? ""} ${r.research?.categoryTitle ?? ""}`)]);
+  const out: Array<{ key: string; text: string }> = [];
+  for (const seg of first.split(/\s*[,;]\s*|\s+and\s+/i)) {
+    const cw = content(seg).filter((w) => !hasDigit(w));
+    if (!cw.length || cw.some((w) => known.has(w))) continue;
+    const slug = norm(seg).replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "");
+    if (slug) out.push({ key: `unrecognized:${slug}`, text: seg.trim() });
+  }
   return out;
 }
