@@ -267,7 +267,9 @@ export class CommerceGateway {
     const plan = await runResearchV2(iv, {
       research: this.research, router: this.config.service?.router ?? null, ctx: { userId, requestId }, now: () => this.now(), weights: this.config.rankingWeights ?? null, limits: this.config.researchLimits ?? {},
       searchPage: (q, token, page) => this.meteredSearchPage(userId, requestId, input.request, q, token, page),
-      merchantIneligible: async (offer) => (await this.verifyMerchant(offer)).legalEntity === "MISMATCH",
+      // V2.17 (PR #15 finding): any identity check that MISMATCHES (look-alike domain, stolen registration, other payee)
+      // makes the merchant ineligible, so its listing never prices or ranks a product.
+      merchantIneligible: async (offer) => { const a = await this.verifyMerchant(offer); return a.overall === "MISMATCH" || a.legalEntity === "MISMATCH"; },
       ...(typeof research.resolveVariant === "function" ? { resolveVariant: async (pid: string, sel: Record<string, string>, currency: string | null) => {
         const r = await this.meteredCatalogCall(userId, requestId, "detail", `${pid}|${JSON.stringify(sel)}|${currency}`, () => research.resolveVariant!(pid, sel, { currency }));
         return r.honored ? r.product : null;
