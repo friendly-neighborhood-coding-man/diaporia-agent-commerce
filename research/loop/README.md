@@ -31,4 +31,4 @@ Avoid overclaiming: a targeted new failure-class set can provide evidence for me
 
 Target the still-open semantic mechanisms: F2 (activity/audience fitment), F3 (postposed part request), F4 (quantity threshold vs exact variant), F1/F5 (cross-product evidence and identity tail). The goal is not merely to eliminate unsafe recommendations, but to maintain or improve legitimate checkouts and reduce unexplained INVESTIGATE/HOLD decisions.
 
-**Current implementation status:** Protocol, immutable prediction register, offline diagnostic probes and verification script are prepared. **No post-submission repair or independent IW-21 score has been executed yet.**
+**Current implementation status (2026-11-12):** Cycles 1–3 (F5/F3, F4/F2, F3) are implemented with tests (1070 passing) and regression-measured on the seen sets only; see `CHANGE_JOURNAL.md` and `SEEN_RESULTS_C3.md`. Per-cycle predictions are in `PREDICTIONS_CYCLES.md`. The candidate is frozen at the cycle-3 head for an independent IW-21. **No independent IW-21 score exists yet.**
