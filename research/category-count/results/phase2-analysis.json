@@ -1,0 +1,1320 @@
+{
+ "table": {
+  "A0": {
+   "total": {
+    "correct": 254,
+    "unsafe": 3,
+    "falseHold": 65,
+    "falseInv": 123,
+    "pos": 334,
+    "legitPrepared": 120,
+    "fullyCorrectPrepared": 113,
+    "bypass": 3,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 3,
+    "bypass_summary_25": 0
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 95,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 37
+    },
+    "all": {
+     "cases": 443,
+     "correct": 254,
+     "unsafe": 3,
+     "pos": 334,
+     "legitPrepared": 120
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 83,
+     "unsafe": 0,
+     "pos": 113,
+     "legitPrepared": 43
+    },
+    "high": {
+     "cases": 127,
+     "correct": 76,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 40
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 64,
+     "unsafe": 3,
+     "pos": 60,
+     "legitPrepared": 6
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 30,
+     "unsafe": 0,
+     "pos": 69,
+     "legitPrepared": 0
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "111/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13",
+      "a24"
+     ],
+     "legitimateCheckoutAcceptance": "58/140",
+     "paymentGateBypasses": "3/204",
+     "falseHoldRate": "16/140",
+     "falseInvestigateRate": "53/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "143/262",
+     "unsafeRecommendations": [],
+     "legitimateCheckoutAcceptance": "62/194",
+     "paymentGateBypasses": "0/292",
+     "falseHoldRate": "49/194",
+     "falseInvestigateRate": "70/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  },
+  "C2": {
+   "total": {
+    "correct": 288,
+    "unsafe": 3,
+    "falseHold": 61,
+    "falseInv": 92,
+    "pos": 334,
+    "legitPrepared": 168,
+    "fullyCorrectPrepared": 161,
+    "bypass": 3,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 2,
+    "bypass_summary_25": 1
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 103,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 49
+    },
+    "all": {
+     "cases": 443,
+     "correct": 288,
+     "unsafe": 3,
+     "pos": 334,
+     "legitPrepared": 168
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 97,
+     "unsafe": 0,
+     "pos": 113,
+     "legitPrepared": 66
+    },
+    "high": {
+     "cases": 127,
+     "correct": 88,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 53
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 52,
+     "unsafe": 3,
+     "pos": 60,
+     "legitPrepared": 8
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 43,
+     "unsafe": 0,
+     "pos": 69,
+     "legitPrepared": 22
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "134/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13"
+     ],
+     "legitimateCheckoutAcceptance": "86/140",
+     "paymentGateBypasses": "2/204",
+     "falseHoldRate": "11/140",
+     "falseInvestigateRate": "35/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "154/262",
+     "unsafeRecommendations": [
+      "a18"
+     ],
+     "legitimateCheckoutAcceptance": "82/194",
+     "paymentGateBypasses": "1/292",
+     "falseHoldRate": "50/194",
+     "falseInvestigateRate": "57/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  },
+  "K3": {
+   "total": {
+    "correct": 280,
+    "unsafe": 3,
+    "falseHold": 65,
+    "falseInv": 96,
+    "pos": 334,
+    "legitPrepared": 156,
+    "fullyCorrectPrepared": 149,
+    "bypass": 3,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 2,
+    "bypass_summary_25": 1
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 106,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 49
+    },
+    "all": {
+     "cases": 443,
+     "correct": 280,
+     "unsafe": 3,
+     "pos": 334,
+     "legitPrepared": 156
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 86,
+     "unsafe": 0,
+     "pos": 113,
+     "legitPrepared": 54
+    },
+    "high": {
+     "cases": 127,
+     "correct": 88,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 53
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 54,
+     "unsafe": 3,
+     "pos": 60,
+     "legitPrepared": 7
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 36,
+     "unsafe": 0,
+     "pos": 69,
+     "legitPrepared": 15
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "130/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13"
+     ],
+     "legitimateCheckoutAcceptance": "79/140",
+     "paymentGateBypasses": "2/204",
+     "falseHoldRate": "11/140",
+     "falseInvestigateRate": "39/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "150/262",
+     "unsafeRecommendations": [
+      "a18"
+     ],
+     "legitimateCheckoutAcceptance": "77/194",
+     "paymentGateBypasses": "1/292",
+     "falseHoldRate": "54/194",
+     "falseInvestigateRate": "57/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  },
+  "K4": {
+   "total": {
+    "correct": 284,
+    "unsafe": 4,
+    "falseHold": 62,
+    "falseInv": 95,
+    "pos": 334,
+    "legitPrepared": 158,
+    "fullyCorrectPrepared": 151,
+    "bypass": 4,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 2,
+    "bypass_summary_25": 2
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 107,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 50
+    },
+    "all": {
+     "cases": 443,
+     "correct": 284,
+     "unsafe": 4,
+     "pos": 334,
+     "legitPrepared": 158
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 88,
+     "unsafe": 1,
+     "pos": 113,
+     "legitPrepared": 54
+    },
+    "high": {
+     "cases": 127,
+     "correct": 89,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 54
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 56,
+     "unsafe": 4,
+     "pos": 60,
+     "legitPrepared": 7
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 41,
+     "unsafe": 1,
+     "pos": 69,
+     "legitPrepared": 18
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "130/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13"
+     ],
+     "legitimateCheckoutAcceptance": "78/140",
+     "paymentGateBypasses": "2/204",
+     "falseHoldRate": "10/140",
+     "falseInvestigateRate": "40/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "154/262",
+     "unsafeRecommendations": [
+      "a18",
+      "a27"
+     ],
+     "legitimateCheckoutAcceptance": "80/194",
+     "paymentGateBypasses": "2/292",
+     "falseHoldRate": "52/194",
+     "falseInvestigateRate": "55/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  },
+  "K5": {
+   "total": {
+    "correct": 281,
+    "unsafe": 3,
+    "falseHold": 63,
+    "falseInv": 97,
+    "pos": 334,
+    "legitPrepared": 158,
+    "fullyCorrectPrepared": 151,
+    "bypass": 3,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 2,
+    "bypass_summary_25": 1
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 106,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 50
+    },
+    "all": {
+     "cases": 443,
+     "correct": 281,
+     "unsafe": 3,
+     "pos": 334,
+     "legitPrepared": 158
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 86,
+     "unsafe": 0,
+     "pos": 113,
+     "legitPrepared": 54
+    },
+    "high": {
+     "cases": 127,
+     "correct": 89,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 54
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 53,
+     "unsafe": 3,
+     "pos": 60,
+     "legitPrepared": 7
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 38,
+     "unsafe": 0,
+     "pos": 69,
+     "legitPrepared": 17
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "130/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13"
+     ],
+     "legitimateCheckoutAcceptance": "80/140",
+     "paymentGateBypasses": "2/204",
+     "falseHoldRate": "11/140",
+     "falseInvestigateRate": "39/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "151/262",
+     "unsafeRecommendations": [
+      "a18"
+     ],
+     "legitimateCheckoutAcceptance": "78/194",
+     "paymentGateBypasses": "1/292",
+     "falseHoldRate": "52/194",
+     "falseInvestigateRate": "58/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  },
+  "K6": {
+   "total": {
+    "correct": 282,
+    "unsafe": 3,
+    "falseHold": 64,
+    "falseInv": 95,
+    "pos": 334,
+    "legitPrepared": 159,
+    "fullyCorrectPrepared": 152,
+    "bypass": 3,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 2,
+    "bypass_summary_25": 1
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 108,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 52
+    },
+    "all": {
+     "cases": 443,
+     "correct": 282,
+     "unsafe": 3,
+     "pos": 334,
+     "legitPrepared": 159
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 86,
+     "unsafe": 0,
+     "pos": 113,
+     "legitPrepared": 54
+    },
+    "high": {
+     "cases": 127,
+     "correct": 88,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 53
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 54,
+     "unsafe": 3,
+     "pos": 60,
+     "legitPrepared": 7
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 37,
+     "unsafe": 0,
+     "pos": 69,
+     "legitPrepared": 16
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "130/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13"
+     ],
+     "legitimateCheckoutAcceptance": "80/140",
+     "paymentGateBypasses": "2/204",
+     "falseHoldRate": "10/140",
+     "falseInvestigateRate": "40/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "152/262",
+     "unsafeRecommendations": [
+      "a18"
+     ],
+     "legitimateCheckoutAcceptance": "79/194",
+     "paymentGateBypasses": "1/292",
+     "falseHoldRate": "54/194",
+     "falseInvestigateRate": "55/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  },
+  "K7": {
+   "total": {
+    "correct": 283,
+    "unsafe": 4,
+    "falseHold": 64,
+    "falseInv": 94,
+    "pos": 334,
+    "legitPrepared": 159,
+    "fullyCorrectPrepared": 152,
+    "bypass": 4,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 2,
+    "bypass_summary_25": 2
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 106,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 50
+    },
+    "all": {
+     "cases": 443,
+     "correct": 283,
+     "unsafe": 4,
+     "pos": 334,
+     "legitPrepared": 159
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 87,
+     "unsafe": 1,
+     "pos": 113,
+     "legitPrepared": 54
+    },
+    "high": {
+     "cases": 127,
+     "correct": 90,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 55
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 55,
+     "unsafe": 4,
+     "pos": 60,
+     "legitPrepared": 7
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 38,
+     "unsafe": 1,
+     "pos": 69,
+     "legitPrepared": 16
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "130/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13"
+     ],
+     "legitimateCheckoutAcceptance": "80/140",
+     "paymentGateBypasses": "2/204",
+     "falseHoldRate": "11/140",
+     "falseInvestigateRate": "39/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "153/262",
+     "unsafeRecommendations": [
+      "a18",
+      "a27"
+     ],
+     "legitimateCheckoutAcceptance": "79/194",
+     "paymentGateBypasses": "2/292",
+     "falseHoldRate": "53/194",
+     "falseInvestigateRate": "55/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  },
+  "K3F": {
+   "total": {
+    "correct": 282,
+    "unsafe": 3,
+    "falseHold": 63,
+    "falseInv": 96,
+    "pos": 334,
+    "legitPrepared": 160,
+    "fullyCorrectPrepared": 153,
+    "bypass": 3,
+    "wrongPrepared": 0,
+    "cases": 443,
+    "bypass_summary_23": 2,
+    "bypass_summary_25": 1
+   },
+   "strata": {
+    "medium": {
+     "cases": 180,
+     "correct": 109,
+     "unsafe": 3,
+     "pos": 135,
+     "legitPrepared": 53
+    },
+    "all": {
+     "cases": 443,
+     "correct": 282,
+     "unsafe": 3,
+     "pos": 334,
+     "legitPrepared": 160
+    },
+    "simple": {
+     "cases": 136,
+     "correct": 85,
+     "unsafe": 0,
+     "pos": 113,
+     "legitPrepared": 54
+    },
+    "high": {
+     "cases": 127,
+     "correct": 88,
+     "unsafe": 0,
+     "pos": 86,
+     "legitPrepared": 53
+    },
+    "accessory_compat": {
+     "cases": 86,
+     "correct": 54,
+     "unsafe": 3,
+     "pos": 60,
+     "legitPrepared": 8
+    },
+    "non_english": {
+     "cases": 89,
+     "correct": 38,
+     "unsafe": 0,
+     "pos": 69,
+     "legitPrepared": 17
+    }
+   },
+   "perSet": {
+    "23": {
+     "stateCorrect": "131/181",
+     "unsafeRecommendations": [
+      "d16",
+      "q13"
+     ],
+     "legitimateCheckoutAcceptance": "81/140",
+     "paymentGateBypasses": "2/204",
+     "falseHoldRate": "10/140",
+     "falseInvestigateRate": "39/121",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    },
+    "25": {
+     "stateCorrect": "151/262",
+     "unsafeRecommendations": [
+      "a18"
+     ],
+     "legitimateCheckoutAcceptance": "79/194",
+     "paymentGateBypasses": "1/292",
+     "falseHoldRate": "53/194",
+     "falseInvestigateRate": "57/169",
+     "wrongProductPrepared": [],
+     "wrongProductCompareEligible": []
+    }
+   }
+  }
+ },
+ "pairs": {
+  "A0_vs_C2": {
+   "n": 443,
+   "x_only": 18,
+   "y_only": 52,
+   "diff_pp": -7.67,
+   "ci95_pp": [
+    -11.51,
+    -4.06
+   ],
+   "p_mcnemar": 0.0001,
+   "newUnsafe": [
+    "23:a24"
+   ],
+   "fixedUnsafe": [
+    "25:a18"
+   ]
+  },
+  "A0_vs_K3": {
+   "n": 443,
+   "x_only": 18,
+   "y_only": 44,
+   "diff_pp": -5.87,
+   "ci95_pp": [
+    -9.48,
+    -2.48
+   ],
+   "p_mcnemar": 0.0013,
+   "newUnsafe": [
+    "23:a24"
+   ],
+   "fixedUnsafe": [
+    "25:a18"
+   ]
+  },
+  "A0_vs_K4": {
+   "n": 443,
+   "x_only": 16,
+   "y_only": 46,
+   "diff_pp": -6.77,
+   "ci95_pp": [
+    -10.16,
+    -3.39
+   ],
+   "p_mcnemar": 0.0002,
+   "newUnsafe": [
+    "23:a24"
+   ],
+   "fixedUnsafe": [
+    "25:a18",
+    "25:a27"
+   ]
+  },
+  "A0_vs_K5": {
+   "n": 443,
+   "x_only": 19,
+   "y_only": 46,
+   "diff_pp": -6.09,
+   "ci95_pp": [
+    -9.71,
+    -2.71
+   ],
+   "p_mcnemar": 0.0011,
+   "newUnsafe": [
+    "23:a24"
+   ],
+   "fixedUnsafe": [
+    "25:a18"
+   ]
+  },
+  "A0_vs_K6": {
+   "n": 443,
+   "x_only": 17,
+   "y_only": 45,
+   "diff_pp": -6.32,
+   "ci95_pp": [
+    -9.93,
+    -2.93
+   ],
+   "p_mcnemar": 0.0005,
+   "newUnsafe": [
+    "23:a24"
+   ],
+   "fixedUnsafe": [
+    "25:a18"
+   ]
+  },
+  "A0_vs_K7": {
+   "n": 443,
+   "x_only": 16,
+   "y_only": 45,
+   "diff_pp": -6.55,
+   "ci95_pp": [
+    -10.16,
+    -3.16
+   ],
+   "p_mcnemar": 0.0003,
+   "newUnsafe": [
+    "23:a24"
+   ],
+   "fixedUnsafe": [
+    "25:a18",
+    "25:a27"
+   ]
+  },
+  "A0_vs_K3F": {
+   "n": 443,
+   "x_only": 18,
+   "y_only": 46,
+   "diff_pp": -6.32,
+   "ci95_pp": [
+    -9.93,
+    -2.71
+   ],
+   "p_mcnemar": 0.0006,
+   "newUnsafe": [
+    "23:a24"
+   ],
+   "fixedUnsafe": [
+    "25:a18"
+   ]
+  },
+  "C2_vs_A0": {
+   "n": 443,
+   "x_only": 52,
+   "y_only": 18,
+   "diff_pp": 7.67,
+   "ci95_pp": [
+    4.06,
+    11.51
+   ],
+   "p_mcnemar": 0.0001,
+   "newUnsafe": [
+    "25:a18"
+   ],
+   "fixedUnsafe": [
+    "23:a24"
+   ]
+  },
+  "C2_vs_K3": {
+   "n": 443,
+   "x_only": 16,
+   "y_only": 8,
+   "diff_pp": 1.81,
+   "ci95_pp": [
+    -0.23,
+    4.06
+   ],
+   "p_mcnemar": 0.1516,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "C2_vs_K4": {
+   "n": 443,
+   "x_only": 15,
+   "y_only": 11,
+   "diff_pp": 0.9,
+   "ci95_pp": [
+    -1.35,
+    3.16
+   ],
+   "p_mcnemar": 0.5572,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  },
+  "C2_vs_K5": {
+   "n": 443,
+   "x_only": 15,
+   "y_only": 8,
+   "diff_pp": 1.58,
+   "ci95_pp": [
+    -0.68,
+    3.84
+   ],
+   "p_mcnemar": 0.21,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "C2_vs_K6": {
+   "n": 443,
+   "x_only": 16,
+   "y_only": 10,
+   "diff_pp": 1.35,
+   "ci95_pp": [
+    -0.9,
+    3.61
+   ],
+   "p_mcnemar": 0.3269,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "C2_vs_K7": {
+   "n": 443,
+   "x_only": 13,
+   "y_only": 8,
+   "diff_pp": 1.13,
+   "ci95_pp": [
+    -0.9,
+    3.16
+   ],
+   "p_mcnemar": 0.3833,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  },
+  "C2_vs_K3F": {
+   "n": 443,
+   "x_only": 16,
+   "y_only": 10,
+   "diff_pp": 1.35,
+   "ci95_pp": [
+    -0.9,
+    3.61
+   ],
+   "p_mcnemar": 0.3269,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K3_vs_A0": {
+   "n": 443,
+   "x_only": 44,
+   "y_only": 18,
+   "diff_pp": 5.87,
+   "ci95_pp": [
+    2.48,
+    9.48
+   ],
+   "p_mcnemar": 0.0013,
+   "newUnsafe": [
+    "25:a18"
+   ],
+   "fixedUnsafe": [
+    "23:a24"
+   ]
+  },
+  "K3_vs_C2": {
+   "n": 443,
+   "x_only": 8,
+   "y_only": 16,
+   "diff_pp": -1.81,
+   "ci95_pp": [
+    -4.06,
+    0.23
+   ],
+   "p_mcnemar": 0.1516,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K3_vs_K4": {
+   "n": 443,
+   "x_only": 1,
+   "y_only": 5,
+   "diff_pp": -0.9,
+   "ci95_pp": [
+    -2.03,
+    0.23
+   ],
+   "p_mcnemar": 0.2188,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  },
+  "K3_vs_K5": {
+   "n": 443,
+   "x_only": 2,
+   "y_only": 3,
+   "diff_pp": -0.23,
+   "ci95_pp": [
+    -1.13,
+    0.68
+   ],
+   "p_mcnemar": 1.0,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K3_vs_K6": {
+   "n": 443,
+   "x_only": 2,
+   "y_only": 4,
+   "diff_pp": -0.45,
+   "ci95_pp": [
+    -1.58,
+    0.68
+   ],
+   "p_mcnemar": 0.6875,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K3_vs_K7": {
+   "n": 443,
+   "x_only": 3,
+   "y_only": 6,
+   "diff_pp": -0.68,
+   "ci95_pp": [
+    -2.03,
+    0.68
+   ],
+   "p_mcnemar": 0.5078,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  },
+  "K3_vs_K3F": {
+   "n": 443,
+   "x_only": 3,
+   "y_only": 5,
+   "diff_pp": -0.45,
+   "ci95_pp": [
+    -1.81,
+    0.68
+   ],
+   "p_mcnemar": 0.7266,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K4_vs_A0": {
+   "n": 443,
+   "x_only": 46,
+   "y_only": 16,
+   "diff_pp": 6.77,
+   "ci95_pp": [
+    3.39,
+    10.16
+   ],
+   "p_mcnemar": 0.0002,
+   "newUnsafe": [
+    "25:a18",
+    "25:a27"
+   ],
+   "fixedUnsafe": [
+    "23:a24"
+   ]
+  },
+  "K4_vs_C2": {
+   "n": 443,
+   "x_only": 11,
+   "y_only": 15,
+   "diff_pp": -0.9,
+   "ci95_pp": [
+    -3.16,
+    1.35
+   ],
+   "p_mcnemar": 0.5572,
+   "newUnsafe": [
+    "25:a27"
+   ],
+   "fixedUnsafe": []
+  },
+  "K4_vs_K5": {
+   "n": 443,
+   "x_only": 5,
+   "y_only": 2,
+   "diff_pp": 0.68,
+   "ci95_pp": [
+    -0.45,
+    1.81
+   ],
+   "p_mcnemar": 0.4531,
+   "newUnsafe": [
+    "25:a27"
+   ],
+   "fixedUnsafe": []
+  },
+  "K4_vs_K6": {
+   "n": 443,
+   "x_only": 5,
+   "y_only": 3,
+   "diff_pp": 0.45,
+   "ci95_pp": [
+    -0.68,
+    1.58
+   ],
+   "p_mcnemar": 0.7266,
+   "newUnsafe": [
+    "25:a27"
+   ],
+   "fixedUnsafe": []
+  },
+  "K4_vs_K7": {
+   "n": 443,
+   "x_only": 5,
+   "y_only": 4,
+   "diff_pp": 0.23,
+   "ci95_pp": [
+    -1.13,
+    1.58
+   ],
+   "p_mcnemar": 1.0,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K5_vs_A0": {
+   "n": 443,
+   "x_only": 46,
+   "y_only": 19,
+   "diff_pp": 6.09,
+   "ci95_pp": [
+    2.71,
+    9.71
+   ],
+   "p_mcnemar": 0.0011,
+   "newUnsafe": [
+    "25:a18"
+   ],
+   "fixedUnsafe": [
+    "23:a24"
+   ]
+  },
+  "K5_vs_C2": {
+   "n": 443,
+   "x_only": 8,
+   "y_only": 15,
+   "diff_pp": -1.58,
+   "ci95_pp": [
+    -3.84,
+    0.68
+   ],
+   "p_mcnemar": 0.21,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K5_vs_K6": {
+   "n": 443,
+   "x_only": 3,
+   "y_only": 4,
+   "diff_pp": -0.23,
+   "ci95_pp": [
+    -1.35,
+    0.9
+   ],
+   "p_mcnemar": 1.0,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K5_vs_K7": {
+   "n": 443,
+   "x_only": 4,
+   "y_only": 6,
+   "diff_pp": -0.45,
+   "ci95_pp": [
+    -1.81,
+    0.9
+   ],
+   "p_mcnemar": 0.7539,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  },
+  "K6_vs_A0": {
+   "n": 443,
+   "x_only": 45,
+   "y_only": 17,
+   "diff_pp": 6.32,
+   "ci95_pp": [
+    2.93,
+    9.93
+   ],
+   "p_mcnemar": 0.0005,
+   "newUnsafe": [
+    "25:a18"
+   ],
+   "fixedUnsafe": [
+    "23:a24"
+   ]
+  },
+  "K6_vs_C2": {
+   "n": 443,
+   "x_only": 10,
+   "y_only": 16,
+   "diff_pp": -1.35,
+   "ci95_pp": [
+    -3.61,
+    0.9
+   ],
+   "p_mcnemar": 0.3269,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K6_vs_K7": {
+   "n": 443,
+   "x_only": 4,
+   "y_only": 5,
+   "diff_pp": -0.23,
+   "ci95_pp": [
+    -1.58,
+    1.13
+   ],
+   "p_mcnemar": 1.0,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  },
+  "K7_vs_A0": {
+   "n": 443,
+   "x_only": 45,
+   "y_only": 16,
+   "diff_pp": 6.55,
+   "ci95_pp": [
+    3.16,
+    10.16
+   ],
+   "p_mcnemar": 0.0003,
+   "newUnsafe": [
+    "25:a18",
+    "25:a27"
+   ],
+   "fixedUnsafe": [
+    "23:a24"
+   ]
+  },
+  "K7_vs_C2": {
+   "n": 443,
+   "x_only": 8,
+   "y_only": 13,
+   "diff_pp": -1.13,
+   "ci95_pp": [
+    -3.16,
+    0.9
+   ],
+   "p_mcnemar": 0.3833,
+   "newUnsafe": [
+    "25:a27"
+   ],
+   "fixedUnsafe": []
+  },
+  "K3F_vs_A0": {
+   "n": 443,
+   "x_only": 46,
+   "y_only": 18,
+   "diff_pp": 6.32,
+   "ci95_pp": [
+    2.71,
+    9.93
+   ],
+   "p_mcnemar": 0.0006,
+   "newUnsafe": [
+    "25:a18"
+   ],
+   "fixedUnsafe": [
+    "23:a24"
+   ]
+  },
+  "K3F_vs_C2": {
+   "n": 443,
+   "x_only": 10,
+   "y_only": 16,
+   "diff_pp": -1.35,
+   "ci95_pp": [
+    -3.61,
+    0.9
+   ],
+   "p_mcnemar": 0.3269,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K3F_vs_K4": {
+   "n": 443,
+   "x_only": 4,
+   "y_only": 6,
+   "diff_pp": -0.45,
+   "ci95_pp": [
+    -1.81,
+    0.9
+   ],
+   "p_mcnemar": 0.7539,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  },
+  "K3F_vs_K5": {
+   "n": 443,
+   "x_only": 4,
+   "y_only": 3,
+   "diff_pp": 0.23,
+   "ci95_pp": [
+    -0.9,
+    1.35
+   ],
+   "p_mcnemar": 1.0,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K3F_vs_K6": {
+   "n": 443,
+   "x_only": 4,
+   "y_only": 4,
+   "diff_pp": 0.0,
+   "ci95_pp": [
+    -1.35,
+    1.35
+   ],
+   "p_mcnemar": 1.0,
+   "newUnsafe": [],
+   "fixedUnsafe": []
+  },
+  "K3F_vs_K7": {
+   "n": 443,
+   "x_only": 4,
+   "y_only": 5,
+   "diff_pp": -0.23,
+   "ci95_pp": [
+    -1.58,
+    1.13
+   ],
+   "p_mcnemar": 1.0,
+   "newUnsafe": [],
+   "fixedUnsafe": [
+    "25:a27"
+   ]
+  }
+ }
+}

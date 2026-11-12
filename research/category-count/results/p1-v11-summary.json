@@ -1,0 +1,155 @@
+{
+ "K3": {
+  "correct": [
+   44,
+   47,
+   48
+  ],
+  "recall": [
+   131,
+   150
+  ],
+  "errors": {
+   "KIND": 74,
+   "HOST_MISS": 9,
+   "INVENTED": 22,
+   "MODEL_MISS": 29,
+   "NUMERIC": 12,
+   "CLASSIFICATION_CONFLICT": 2,
+   "CONTEXT_TIGHTENED": 4,
+   "LOOSENED": 6,
+   "DROPPED": 1
+  },
+  "stable": 69,
+  "meanOut": 1310.7583333333334,
+  "medianMs": 6335.0
+ },
+ "K4": {
+  "correct": [
+   45,
+   44,
+   49
+  ],
+  "recall": [
+   128,
+   150
+  ],
+  "errors": {
+   "KIND": 75,
+   "HOST_MISS": 9,
+   "INVENTED": 17,
+   "MODEL_MISS": 26,
+   "LOOSENED": 10,
+   "CLASSIFICATION_CONFLICT": 3,
+   "DROPPED": 3,
+   "NUMERIC": 9,
+   "CONTEXT_TIGHTENED": 2
+  },
+  "stable": 69,
+  "meanOut": 1301.6,
+  "medianMs": 6135.0
+ },
+ "K5": {
+  "correct": [
+   46,
+   44,
+   45
+  ],
+  "recall": [
+   127,
+   150
+  ],
+  "errors": {
+   "KIND": 75,
+   "CONTEXT_TIGHTENED": 2,
+   "MODEL_MISS": 32,
+   "INVENTED": 19,
+   "LOOSENED": 9,
+   "HOST_MISS": 9,
+   "NUMERIC": 13,
+   "CLASSIFICATION_CONFLICT": 2,
+   "PREF": 1,
+   "DROPPED": 1
+  },
+  "stable": 66,
+  "meanOut": 1238.6291666666666,
+  "medianMs": 6083.5
+ },
+ "K6": {
+  "correct": [
+   48,
+   49,
+   46
+  ],
+  "recall": [
+   127,
+   150
+  ],
+  "errors": {
+   "MODEL_MISS": 24,
+   "INVENTED": 15,
+   "KIND": 71,
+   "NUMERIC": 11,
+   "CONTEXT_TIGHTENED": 4,
+   "LOOSENED": 11,
+   "DROPPED": 1,
+   "HOST_MISS": 9,
+   "CLASSIFICATION_CONFLICT": 2,
+   "PREF": 1
+  },
+  "stable": 66,
+  "meanOut": 1257.8333333333333,
+  "medianMs": 6210.5
+ },
+ "K7": {
+  "correct": [
+   47,
+   44,
+   46
+  ],
+  "recall": [
+   130,
+   150
+  ],
+  "errors": {
+   "KIND": 77,
+   "LOOSENED": 9,
+   "MODEL_MISS": 27,
+   "DROPPED": 4,
+   "INVENTED": 19,
+   "HOST_MISS": 9,
+   "NUMERIC": 7,
+   "CONTEXT_TIGHTENED": 3,
+   "CLASSIFICATION_CONFLICT": 2,
+   "PREF": 1
+  },
+  "stable": 67,
+  "meanOut": 1235.2291666666667,
+  "medianMs": 5968.0
+ },
+ "K3F": {
+  "correct": [
+   44,
+   48,
+   47
+  ],
+  "recall": [
+   122,
+   150
+  ],
+  "errors": {
+   "KIND": 71,
+   "HOST_MISS": 8,
+   "LOOSENED": 7,
+   "MODEL_MISS": 24,
+   "INVENTED": 17,
+   "DROPPED": 13,
+   "CLASSIFICATION_CONFLICT": 11,
+   "NUMERIC": 8,
+   "CONTEXT_TIGHTENED": 2
+  },
+  "stable": 66,
+  "meanOut": 1292.0791666666667,
+  "medianMs": 6346.0
+ }
+}

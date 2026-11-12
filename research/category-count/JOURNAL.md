@@ -16,3 +16,9 @@
 - One new example, "Varnell Okta 3 footprint", inserted identically into every arm.
 - Schema fields unchanged. The version label is bumped to v1.1.0 to mark the prompt change.
 - Every arm reruns all trials under v1.1. Round-1 numbers stay as recorded above.
+
+## Round 2: prompt v1.1, 2026-11-12 20:10–20:35Z
+- Downstream (trial 1): K3 280, K4 284, K5 281, K6 282, K7 283, K3F 282. Unsafe: 3, 4, 3, 3, 4, 3. The selection rule gives K3 (selected), K3F (best) and K7 (largest) as finalists. Frozen at a929a44, IW-29 preregistered.
+- Phase 1 kind errors rose under v1.1, because brand+model requests with no product noun are now read as UNKNOWN. Tolerant scoring is reported alongside, defined after seeing outputs.
+- Repeat trial (second generation, finalists only, scored after the freeze): K3 282 / 3 unsafe, K3F 278 / 4 (a27), K7 281 / 3. A one-case unsafe difference is within generation noise.
+- IW-29 evaluator requested via coordinator, about 20:50Z.
