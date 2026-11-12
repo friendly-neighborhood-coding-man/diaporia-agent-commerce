@@ -4,6 +4,7 @@ import type { CommerceGateway } from "../engine/CommerceGateway.js";
 import { CommerceError } from "../engine/errors.js";
 import { SCOPES, type Principal } from "../auth/devAuth.js";
 import { redact } from "../security/redact.js";
+import { mcpAppHtml } from "../panel/routes.js";
 
 export const SERVER_INFO = { name: "diaporia-agent-commerce", version: "0.8.0" };
 
@@ -189,6 +190,12 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
   }
 
   const panel = opts.panel;
+  // MCP Apps (second target; unverified in a real host): a small view that receives the tool result and asks the host
+  // to open panelUrl. Hosts without MCP Apps ignore _meta.ui and use panelUrl from the text result.
+  const PANEL_UI = "ui://diaporia/buy-panel.html";
+  if (panel && can(SCOPES.RESEARCH)) server.registerResource("diaporia-buy-panel", PANEL_UI,
+    { title: "DIAPORIA Buy panel", description: "Opens the DIAPORIA Buy browser panel for a purchase session.", mimeType: "text/html;profile=mcp-app" },
+    async () => ({ contents: [{ uri: PANEL_UI, mimeType: "text/html;profile=mcp-app", text: mcpAppHtml(), _meta: { ui: { prefersBorder: true } } }] }));
   const PANEL_OUT = z.looseObject({ runId: z.string(), state: z.string(), panelUrl: z.string(), openIn: z.array(z.string()), paymentEffect: z.literal("NONE") });
   if (panel && can(SCOPES.RESEARCH)) server.registerTool("start_shopping_panel", {
     title: "Research a purchase in the DIAPORIA Buy panel",
@@ -203,7 +210,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     },
     outputSchema: PANEL_OUT,
     annotations: { title: "Research a purchase in the DIAPORIA Buy panel", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT" },
+    _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT", ui: { resourceUri: PANEL_UI } },
   }, async (args) => run(SCOPES.RESEARCH, () => panel.start(principal, args))());
 
   if (panel && can(SCOPES.RESEARCH)) server.registerTool("open_shopping_panel", {
@@ -212,7 +219,7 @@ export function createCommerceMcpServer(gateway: CommerceGateway, principal: Pri
     inputSchema: { purchaseSessionId: idString("ps") },
     outputSchema: PANEL_OUT,
     annotations: { title: "Open the DIAPORIA Buy panel", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT" },
+    _meta: { "diaporia/effect": "NO_PAYMENT_EFFECT", ui: { resourceUri: PANEL_UI } },
   }, async (args) => run(SCOPES.RESEARCH, () => panel.open(principal, args.purchaseSessionId))());
 
   if (panel && can(SCOPES.READ)) server.registerTool("get_shopping_panel", {

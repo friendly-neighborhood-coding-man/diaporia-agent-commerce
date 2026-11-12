@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DIAPORIA Buy</title>
+<style>
+body{font:14px/1.45 system-ui,sans-serif;margin:0;padding:.75rem;color:#1b1f24}
+.env{font-size:11px;font-weight:700;padding:.1rem .4rem;border-radius:4px;background:#fff4ce;border:1px solid #e0b400}
+.btn{display:block;width:100%;font:inherit;font-weight:600;padding:.55rem;border-radius:8px;border:1px solid #0b57d0;background:#0b57d0;color:#fff;cursor:pointer;margin:.6rem 0}
+.muted{color:#5f6b7a;font-size:12px}code{overflow-wrap:anywhere}
+</style></head>
+<body>
+<p><b>DIAPORIA Buy</b> <span class="env">MOCK · no money moves</span></p>
+<p id="msg">Waiting for the research result…</p>
+<button id="open" class="btn" hidden>Open the DIAPORIA Buy panel</button>
+<p class="muted" id="url"></p>
+<p class="muted">The full panel (progress, candidates, evidence, verified offers, checkout handoff, receipt) opens in a browser. Payment approval always happens on the owner page.</p>
+<script>
+/* MCP Apps view (second target). It receives the start_shopping_panel / open_shopping_panel tool result from the host
+   and asks the host to open panelUrl (ui/open-link). It never calls the DIAPORIA API itself and holds no other secret.
+   UNVERIFIED in a real MCP Apps host in this slice. */
+(function () {
+  var id = 0, pending = {}, url = null;
+  var msg = document.getElementById("msg"), btn = document.getElementById("open"), urlEl = document.getElementById("url");
+  function send(m) { window.parent.postMessage(m, "*"); }
+  function request(method, params) { var i = ++id; send({ jsonrpc: "2.0", id: i, method: method, params: params }); return new Promise(function (r) { pending[i] = r; }); }
+  function show(result) {
+    var sc = result && result.structuredContent;
+    if (!sc || typeof sc.panelUrl !== "string" || !/^https?:\/\//.test(sc.panelUrl)) { msg.textContent = "No panel link in this result."; return; }
+    url = sc.panelUrl;
+    msg.textContent = sc.state === "RESEARCHING" ? "Research is running. Open the panel to watch it live." : "Research is ready. Open the panel to compare and check out.";
+    btn.hidden = false;
+    urlEl.textContent = "If nothing opens, copy this link into a browser: " + url;
+  }
+  window.addEventListener("message", function (ev) {
+    if (ev.source !== window.parent) return;
+    var m = ev.data; if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id && pending[m.id]) { pending[m.id](m.result); delete pending[m.id]; return; }
+    if (m.method === "ui/notifications/tool-result") show(m.params);
+  });
+  btn.addEventListener("click", function () { if (url) request("ui/open-link", { url: url }); });
+  request("ui/initialize", { protocolVersion: "2025-06-18", appInfo: { name: "diaporia-buy", version: "0.1.0" }, appCapabilities: {} })
+    .then(function () { send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} }); });
+})();
+</script>
+</body></html>

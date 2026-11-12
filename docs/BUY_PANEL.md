@@ -12,7 +12,7 @@ MOCK development only in this slice: no provider calls in the dev world, MOCK Pa
 | Codex Desktop | The assistant opens `panelUrl` in the right-side Browser tab | **Unverified** (no Codex Desktop session was driven) |
 | CLI hosts | Open `panelUrl` in a separate browser window when the host can; always print it as a clickable link | Link fallback only |
 | Other hosts | Clickable `panelUrl` in a normal browser on the same machine | Works (headless Chromium, 360 px) |
-| MCP Apps hosts | Not implemented in this slice | Planned: a `ui://` resource that loads the same frontend |
+| MCP Apps hosts | `start_shopping_panel` / `open_shopping_panel` declare `_meta.ui.resourceUri = ui://diaporia/buy-panel.html`; that small view receives the tool result and asks the host to open `panelUrl` (`ui/open-link`) | Resource + metadata tested over MCP; **unverified** in a real MCP Apps host |
 
 DIAPORIA never assumes a host can open or dock a panel. The MCP tool result always carries `panelUrl` plus `openIn`
 hints per host; when the host cannot open it programmatically, the assistant shows the link.

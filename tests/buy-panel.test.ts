@@ -257,6 +257,19 @@ describe("DIAPORIA Buy panel", () => {
     expect(["READY", "INTERRUPTED"]).toContain(i.runState);
   }, 60_000);
 
+  it("offers an MCP Apps view (ui:// resource) linked from the panel tools", async () => {
+    const h = await start();
+    const c = await mcp(h.url);
+    const t = (await c.listTools()).tools.find((x) => x.name === "start_shopping_panel")!;
+    expect((t._meta as any)?.ui?.resourceUri).toBe("ui://diaporia/buy-panel.html");
+    const res = await c.readResource({ uri: "ui://diaporia/buy-panel.html" });
+    const content = res.contents[0] as any;
+    expect(content.mimeType).toBe("text/html;profile=mcp-app");
+    expect(content.text).toMatch(/ui\/open-link/);
+    expect(content.text).not.toMatch(/dpl_|dct_|dok_/);
+    await c.close();
+  });
+
   it("serves one static frontend with a strict CSP and no secret in the page", async () => {
     const h = await start();
     const r = await fetch(`${h.url}/buy/`);

@@ -35,6 +35,8 @@ function asset(name: string): string {
   for (const d of STATIC_DIRS) { const p = join(d, name); if (existsSync(p)) return readFileSync(p, "utf8"); }
   throw new Error(`panel asset missing: ${name}`);
 }
+/** The MCP Apps view (ui://diaporia/buy-panel.html). */
+export function mcpAppHtml(): string { return asset("mcp-app.html"); }
 const TYPES: Record<string, string> = { "panel.js": "text/javascript; charset=utf-8", "panel.css": "text/css; charset=utf-8", "index.html": "text/html; charset=utf-8" };
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
