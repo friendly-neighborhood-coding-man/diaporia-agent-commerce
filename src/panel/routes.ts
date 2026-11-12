@@ -61,7 +61,7 @@ export function createPanelRoutes(d: PanelRouteDeps) {
       res.end(file(name)); return true;
     }
 
-    const m = /^\/buy\/api\/runs\/(br_[0-9a-f-]{36})(?:\/(events|select|compare|prepare|candidates\/([A-Za-z0-9_.:%\-]{1,240})))?$/.exec(p);
+    const m = /^\/buy\/api\/runs\/(br_[0-9a-f-]{36})(?:\/(events|select|compare|prepare|reset|candidates\/([A-Za-z0-9_.:%\-]{1,240})))?$/.exec(p);
     if (!m) return json(res, 404, { error: { code: "NOT_FOUND", message: "Not found" } });
     const site = header(req, "sec-fetch-site");
     const origin = header(req, "origin");
@@ -98,6 +98,7 @@ export function createPanelRoutes(d: PanelRouteDeps) {
         }
         return json(res, 200, await d.panel.compare(run, destination));
       }
+      if (action === "reset") return json(res, 200, d.panel.reset(run));
       if (action === "prepare") {
         if (typeof body.offerId !== "string" || !body.offerId || body.offerId.length > 80) return json(res, 400, { error: { code: "INVALID_INPUT", message: "offerId is required" } });
         // Only an offer id crosses from the browser. Price, identity, quantity and the limit come from the server's records.

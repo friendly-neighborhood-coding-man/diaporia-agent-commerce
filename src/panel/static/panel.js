@@ -173,7 +173,7 @@
         el("div", { class: "row" }, [el("span", { class: "pos", text: "#" + c.position }), el("span", { class: "title", text: c.title })]),
         el("div", { class: "row" }, [statusChip(c.status), c.recommended ? chip("Recommended", "rec") : null, sel === c.productId ? chip("Selected", "ok") : null]),
         el("div", { class: "row" }, [el("span", { class: "price", text: money(c.listingPrice.lowestListingMinor, c.listingPrice.currency) }),
-          el("span", { class: "muted", text: "listing price" + (c.listingPrice.merchantDomain ? " at " + c.listingPrice.merchantDomain : "") + ", not a total" })]),
+          el("span", { class: "muted", text: "lowest search-time listing" + (c.listingPrice.merchantDomain ? " (" + c.listingPrice.merchantDomain + ", merchant not yet verified)" : "") + "; not a checkout total" })]),
         el("div", { class: "muted", text: "Requirements verified: " + c.mustHave.verified + "/" + c.mustHave.total }),
         c.openItems.length ? el("ul", { class: "open" }, c.openItems.map(function (o) { return el("li", { text: o }); })) : null,
       ]);
@@ -262,7 +262,7 @@
         prepareButton(o, c),
       ]));
     });
-    if ((c.ineligibleOffers || []).length) kids.push(el("details", null, [el("summary", { class: "muted", text: c.ineligibleOffers.length + " offers rejected" }),
+    if ((c.ineligibleOffers || []).length) kids.push(el("details", null, [el("summary", { class: "muted", text: c.ineligibleOffers.length + (c.ineligibleOffers.length === 1 ? " offer rejected" : " offers rejected") }),
       el("div", null, c.ineligibleOffers.map(function (o) { return el("div", { class: "ev" }, [el("b", { text: o.merchantName + " · " + o.merchantDomain }), el("div", { class: "muted", text: (o.issues || []).join("; ") })]); }))]));
     var open = [].concat(c.holdReasons || []).filter(function (x, i, a) { return a.indexOf(x) === i; });
     if (open.length) kids.push(el("div", { class: "box warn" }, [el("b", { text: "Not ready for checkout" }), el("ul", { class: "open" }, open.map(function (h) { return el("li", { text: h }); })),
@@ -304,6 +304,8 @@
     } else if (st && !{ COMPLETED: 1, FAILED: 1, CANCELLED: 1, EXPIRED: 1, REFUNDED: 1 }[st.state]) {
       kids.push(el("p", { class: "muted", text: "Waiting for the payment backend to verify the result…" }));
     }
+    if (st && { CANCELLED: 1, FAILED: 1, EXPIRED: 1 }[st.state]) kids.push(el("button", { class: "btn block sec", type: "button", disabled: ui.busy, text: "Back to offers (fresh quotes)",
+      onclick: function () { act("/reset", {}); } }));
     if (ck.status && ck.status.purchaseOutcome) kids.push(el("p", { class: "muted", text: ck.status.purchaseOutcome.statement }));
     return el("div", null, kids);
   }

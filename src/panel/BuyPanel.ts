@@ -231,7 +231,7 @@ export class BuyPanel {
     return redact({
       productId, title: c.title, identity: c.identity, rank: rk?.rank ?? null, status: statusOf(c, rk),
       listingPrice: { ...c.listingPrice, merchantDomain: rk?.price?.merchantDomain ?? null, offersConsidered: rk?.price?.offersConsidered ?? null },
-      validated: [...(c.mustHave ?? []).map((m) => ({ ...m, strength: "MUST" })), ...(c.niceToHave ?? []).map((m) => ({ ...m, strength: "NICE" }))],
+      validated: validatedRows(c),
       satisfiedBy: rk?.satisfied ?? [],
       evidence: (c.evidence ?? []).map((e) => ({ capability: e.capability, status: e.status, basis: e.basis, items: (e.items ?? []).slice(0, 5) })),
       disqualifiers: rk?.disqualifiers ?? [], blockers: rk?.blockers ?? [],
@@ -280,6 +280,22 @@ export class BuyPanel {
     const out = await this.gateway.prepareCheckout(run.userId, { purchaseSessionId: ps.purchaseSessionId, offerId, maximumApprovedTotalMinor: total, currency: ps.intent.currency, quantity: 1 },
       `BUY_PANEL:${run.runId}:${run.mintedBy}`) as Record<string, unknown>;
     this.update(run.runId, { checkoutSessionId: typeof out.checkoutSessionId === "string" ? out.checkoutSessionId : null, prepare: pickPrepare(out) });
+    return this.view(this.reload(run.runId));
+  }
+
+  /**
+   * After the checkout ended without payment (CANCELLED, FAILED, EXPIRED), go back to offer comparison. Only the panel's
+   * pointer is cleared; the checkout record and its audit stay. Fresh quotes are required (the comparison is cleared), and
+   * a new prepare is still decided by the gateway's own one-payment-per-session rules.
+   */
+  reset(run: PanelRun) {
+    if (!run.checkoutSessionId && !run.prepare) throw new CommerceError("INVALID_STATE", "There is no checkout to leave.");
+    if (run.checkoutSessionId) {
+      const st = this.gateway.getCheckoutStatus(run.userId, run.checkoutSessionId);
+      if (!["CANCELLED", "FAILED", "EXPIRED"].includes(st.state)) throw new CommerceError("INVALID_STATE", `The checkout is ${st.state}; it can only be left after it was cancelled, failed or expired.`);
+    }
+    this.gateway.audit.append(run.purchaseSessionId ?? run.runId, run.userId, "BUY_PANEL_CHECKOUT_LEFT", { runId: run.runId, checkoutSessionId: run.checkoutSessionId });
+    this.update(run.runId, { checkoutSessionId: null, prepare: null, compare: null });
     return this.view(this.reload(run.runId));
   }
 
@@ -334,10 +350,25 @@ export function topCandidates(research: ResearchRecord) {
     return {
       position: idx + 1, productId: c.productId, title: c.title, identity: c.identity, rank: rk?.rank ?? null, status, recommended: recommended === c.productId,
       listingPrice: { lowestListingMinor: c.listingPrice?.lowestListingMinor ?? null, currency: c.listingPrice?.currency, merchantDomain: rk?.price?.merchantDomain ?? null, note: "Search-time listing price, not a checkout total." },
-      mustHave: { verified: must.filter((m) => m.status === "VERIFIED_TRUE").length, total: must.length },
+      mustHave: requirementCount(c),
       openItems: [...(rk?.blockers ?? []).map((b) => b.detail), ...must.filter((m) => m.status !== "VERIFIED_TRUE").map((m) => `${m.capability}: ${m.status}`)].slice(0, 3),
     };
   });
+}
+
+/**
+ * Requirement rows: the V1-shaped must/nice capability list plus every requirement the V2 evidence ledger checked
+ * (e.g. a requirement the parser could not map to a known capability), so the card count matches the detail.
+ */
+function validatedRows(c: Candidate) {
+  const rows = [...(c.mustHave ?? []).map((m) => ({ ...m, strength: "MUST" })), ...(c.niceToHave ?? []).map((m) => ({ ...m, strength: "NICE" }))];
+  for (const e of c.evidence ?? []) if (!rows.some((r) => r.capability === e.capability))
+    rows.push({ capability: e.capability, status: e.status === "UNVERIFIED" ? "UNKNOWN" : e.status, evidence: null, strength: "MUST" });
+  return rows;
+}
+function requirementCount(c: Candidate) {
+  const must = validatedRows(c).filter((r) => r.strength === "MUST");
+  return { verified: must.filter((m) => m.status === "VERIFIED_TRUE").length, total: must.length };
 }
 
 function pickPrepare(out: Record<string, unknown>) {

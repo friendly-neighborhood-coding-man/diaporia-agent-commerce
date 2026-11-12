@@ -278,6 +278,34 @@ describe("DIAPORIA Buy panel", () => {
     await c.close();
   }, 60_000);
 
+  it("after the owner cancels, the panel shows CANCELLED and can go back to fresh offers; leaving a live checkout is refused", async () => {
+    const h = await start();
+    const { l } = await researched(h);
+    const v = (await api(h, l)).body;
+    expect(v.candidates[0].mustHave.total).toBeGreaterThanOrEqual(3);          // includes the evidence-ledger requirement (lanyard loop)
+    await api(h, l, "/select", { productId: v.candidates[0].productId });
+    const cmp = (await api(h, l, "/compare", { destination: DEST })).body;
+    const p = (await api(h, l, "/prepare", { offerId: cmp.comparison.lowestVerifiedEligibleOffer.offerId })).body;
+    expect((await api(h, l, "/reset", {})).status).toBe(409);                   // APPROVAL_REQUIRED: cannot leave
+    // The simulated owner cancels on the existing owner page.
+    const url = p.checkout.handoff.url;
+    const r1 = await fetch(url, form(h.url, { action: "review", ownerKey: OWNER })); const h1 = await r1.text();
+    const cookie = r1.headers.get("set-cookie")!.split(";")[0]!; const csrf = /name="csrf" value="([^"]+)"/.exec(h1)![1]!;
+    expect((await fetch(url, form(h.url, { action: "cancel", csrf }, cookie))).status).toBe(200);
+    const after = (await api(h, l)).body;
+    expect(after.checkout.status.state).toBe("CANCELLED");
+    expect(after.receipt).toBeNull();
+    const back = (await api(h, l, "/reset", {})).body;
+    expect(back.checkout).toBeNull();
+    expect(back.comparison).toBeNull();
+    const again = (await api(h, l, "/compare", { destination: DEST })).body;
+    expect(again.comparison.state).toBe("OFFER_VERIFIED");
+    const p2 = await api(h, l, "/prepare", { offerId: again.comparison.lowestVerifiedEligibleOffer.offerId });
+    expect(p2.status).toBe(200);
+    expect(p2.body.checkout.status.checkoutSessionId).not.toBe(p.checkout.status.checkoutSessionId);
+    expect(p2.body.checkout.status.state).toBe("APPROVAL_REQUIRED");
+  }, 60_000);
+
   it("offers an MCP Apps view (ui:// resource) linked from the panel tools", async () => {
     const h = await start();
     const c = await mcp(h.url);

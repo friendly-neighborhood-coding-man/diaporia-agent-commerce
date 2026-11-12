@@ -89,3 +89,20 @@ For the real server: `DIAPORIA_BUY_PANEL=1 npm run dev`.
 | POST | `/buy/api/runs/:run/select` | `{ productId }` |
 | POST | `/buy/api/runs/:run/compare` | `{ destination?: { country, region?, postalCode? } }` |
 | POST | `/buy/api/runs/:run/prepare` | `{ offerId }` |
+| POST | `/buy/api/runs/:run/reset` | `{}`: leave a CANCELLED / FAILED / EXPIRED checkout and compare again (fresh quotes) |
+
+## Validation record (2026-11-12)
+
+- Linux CI and the cloud container: full suite green; `tests/buy-panel.test.ts` covers the slice, access control, the
+  prepare scope, three cards, expiry, owner cancel → back to offers, live stream, restart/resume, CSP, MCP Apps resource.
+- Headless Chromium at 360 px (cloud): full flow through receipt, refresh, bad link; no page errors.
+- **Claude Desktop Browser pane** on Eric's Windows PC (MOCK server on 127.0.0.1:8795): two- and three-card results,
+  detail, select, compare (look-alike merchant rejected), prepare, owner page limit → MOCK buyer approval → receipt only
+  after server verification, owner cancel shown live, server restart with automatic reconnect, reload resume, 360 px
+  without horizontal overflow, and the refusals (panel key on the owner page and the MOCK buyer step, wrong key, key in
+  the query, foreign Origin, text/plain, unknown product, made-up offer with a price attached).
+- **Codex Desktop** (installed on that PC, OpenAI.Codex 26.1103.7773.0): not driven; its Browser tab is unverified.
+- **MCP Apps**: resource and tool metadata tested over MCP only; unverified in a real MCP Apps host.
+- Known, outside the panel: in the demo world the decision engine can rank a product first by its search-time listing
+  (from a merchant that comparison later rejects) above a product whose verified total is lower. The panel labels that
+  number as a search-time listing from an unverified merchant; the ranking itself belongs to the research engine.
