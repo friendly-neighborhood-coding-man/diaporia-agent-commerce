@@ -43,6 +43,18 @@ export function factsOf(p: CatalogProduct): ProductFacts {
 
 const eqAttr = (axis: AttributeAxis, a: string, b: string) => normalizeKey(axis === "color" && /^gr[ae]y$/i.test(a) ? "gray" : a) === normalizeKey(axis === "color" && /^gr[ae]y$/i.test(b) ? "gray" : b);
 const nounKey = (n: string | null) => (n ?? "").toLowerCase().replace(/\s+/g, "").replace(/s$/, "");
+/**
+ * The listing is the accessory asked for: same accessory noun, or (V2.9) a listing the parse only knows as an
+ * accessory/part whose title states the requested noun ("Spinlo T3 Replacement Belt" for "T3 belt").
+ */
+function accessoryNounMatches(f: ProductFacts, want: string | null): boolean {
+  if (nounKey(f.accessoryNoun) === nounKey(want)) return true;
+  if (!want) return false;
+  const head = want.trim().split(/\s+/).at(-1)!;
+  if (f.accessoryNoun && nounKey(f.accessoryNoun.trim().split(/\s+/).at(-1)!) === nounKey(head)) return true;
+  if (f.accessoryNoun && !/^(?:accessory|part|parts)$/i.test(f.accessoryNoun)) return false;
+  return nounRe(head).test(f.product.title.normalize("NFKC"));
+}
 
 export type ResolutionV2 =
   | { status: "LOCKED"; productId: string; identity: ProductIdentity; facts: ProductFacts; conditionConfirmed: boolean; duplicates: string[]; assumptions: string[]; excluded: Exclusion[] }
@@ -54,7 +66,15 @@ export interface Exclusion { productId: string; title: string; reason: string }
 
 /** V2.8: everyday synonyms for a product noun (the title may use either). */
 const NOUN_SYNONYMS: string[][] = [["walkie talkie", "walkie-talkie", "two-way radio", "radio"], ["earbuds", "earphones"], ["headphones", "headset"],
-  ["laptop", "notebook"], ["tv", "television"], ["fridge", "refrigerator"], ["couch", "sofa"], ["vacuum", "vacuum cleaner"], ["cellphone", "smartphone", "phone"]];
+  ["laptop", "notebook"], ["tv", "television"], ["fridge", "refrigerator"], ["couch", "sofa"], ["vacuum", "vacuum cleaner"], ["cellphone", "smartphone", "phone"],
+  // V2.9 (IW-10 fix order item 4): synonyms of product nouns.
+  ["record player", "turntable"], ["quadcopter", "drone"], ["digital piano", "keyboard", "piano"], ["action camera", "action cam", "camera"],
+  ["e-scooter", "electric scooter", "scooter"], ["bread maker", "bread machine"], ["electric blanket", "heated blanket"]];
+/**
+ * V2.9: nouns that name what a product IS. When the request names one ("Kestra A5 drone") and the listing's title names
+ * another ("Kestra A5 Action Camera"), the listing is not the requested product even if no category is known.
+ */
+const KIND_NOUN = /(?<![a-z])(?:headphones?|headsets?|earbuds?|earphones?|speakers?|soundbars?|laptops?|notebooks?|tablets?|smartphones?|phones?|cameras?|camcorders?|drones?|quadcopters?|scooters?|bikes?|bicycles?|monitors?|tvs?|televisions?|projectors?|printers?|routers?|keyboards?|pianos?|turntables?|record players?|mice|mouse|smartwatch(?:es)?|watch(?:es)?|kettles?|blenders?|toasters?|fryers?|cookers?|microwaves?|vacuums?|flossers?|toothbrush(?:es)?|heaters?|fans?|lamps?|purifiers?|humidifiers?|dehumidifiers?|blankets?|chairs?|desks?|tents?|backpacks?|bottles?|batter(?:y|ies)|chargers?|belts?|pans?|housings?|cases?|covers?|cables?|straps?|filters?|tips|binoculars|telescopes?|detectors?|radios?|monitors?|bread (?:makers?|machines?))(?![a-z])/gi;
 const nounRe = (n: string) => new RegExp(`(?<![a-z])${n.split(/[\s-]+/).map((w) => w.replace(/(?:es|s)$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s-]*")}e?s?(?![a-z])`, "i");
 /**
  * V2.8: is a listing the product noun the request wrote after the model? YES when its title states the noun (or a
@@ -69,7 +89,12 @@ export function targetNounMatch(p: CatalogProduct, noun: string | null | undefin
   if (forms.some((x) => nounRe(x).test(title))) return "YES";
   const rc = requestCategory(noun); const pc = productCategory(p);
   if (rc && pc && rc.id === pc) return "YES";
-  return rc ? "NO" : "UNKNOWN";
+  if (rc) return "NO";
+  if (new RegExp(`^(?:${KIND_NOUN.source})$`, "i").test(head)) {
+    const named = [p.identity.brand, p.identity.model].filter((x): x is string => !!x).reduce((t, n) => t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]*"), "gi"), " "), title);
+    if ((named.match(KIND_NOUN) ?? []).length) return "NO";
+  }
+  return "UNKNOWN";
 }
 export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attributes" | "condition" | "conditionStated"> & { targetNoun?: string | null; requestTail?: string[] }, products: CatalogProduct[],
   offersOf: (productId: string) => MerchantOffer[]): ResolutionV2 {
@@ -130,7 +155,7 @@ export function resolveExactV2(intent: Pick<ResearchIntentV2, "target" | "attrib
   // The noun names an accessory of the model when only accessory listings state it ("Delvix MD-7 Headphones").
   const nounIsAccessory = !!tn && t.kind === "STANDALONE" && typed.every((f) => f.kind === "ACCESSORY") && typed.some((f) => targetNounMatch(f.product, tn) === "YES");
   const kindOk = typed.filter((f) => {
-    const ok = (f.kind === t.kind || (nounIsAccessory && f.kind === "ACCESSORY")) && (t.kind !== "ACCESSORY" || nounKey(f.accessoryNoun) === nounKey(t.accessoryNoun));
+    const ok = (f.kind === t.kind || (nounIsAccessory && f.kind === "ACCESSORY")) && (t.kind !== "ACCESSORY" || accessoryNounMatches(f, t.accessoryNoun));
     if (!ok) excluded.push({ productId: f.product.productId, title: f.product.title, reason: f.kind === "STANDALONE" ? `standalone product, not the requested ${t.kind.toLowerCase()}` : `${f.kind.toLowerCase()}${f.accessoryNoun ? ` (${f.accessoryNoun})` : ""}, not the requested ${t.kind === "ACCESSORY" ? t.accessoryNoun ?? "accessory" : "standalone product"}` });
     return ok;
   });

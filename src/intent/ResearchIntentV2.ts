@@ -92,7 +92,12 @@ const BUY_EN = /\b(buy|purchase|order|checkout|get me|i want to buy|pick up)\b/i
 const BUY_KO = /구매|구입|사줘|사 줘|주문|결제|사고\s*싶|살래|사려고/;
 /** V2.4: words that compare or substitute a named product ("like the X", "X or Y", "cheaper than X"): no exact lock. */
 const COMPARE_WORDS = /\b(?:like|similar|alternatives?|instead|vs\.?|versus|compar\w*|than|except|rather|upgrade|successor|or|비슷한|대신|대체)\b/i;
-const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_NOUN.source}|${ACCESSORY_NOUN.source.replace(/^\\b|\\b$/g, "")}))s?\\s+(?:for|that fits?|compatible with|to fit)\\s+(?:(?:my|the|a|an|our|your)\\s+)?$`, "i");
+/**
+ * V2.9: part nouns that a REQUEST names after (or before "for") a model: "Skyrell X4 battery", "Spinlo T3 Belt",
+ * "dive housing for the Kestra A5". Request side only: a listing titled "… Frying Pan" is still a standalone pan.
+ */
+const REQUEST_PART_NOUN = /^(?:batter(?:y|ies)|belts?|pans?|bread pans?|housings?|dive housings?|blades?|bulbs?|tips?|nozzles?|wheels?|tires?|tyres?|chargers?|straps?|cases?|covers?|lids?|pads?|filters?|brush(?:es)?|mounts?|propellers?|props?)$/i;
+const ACC_LEAD = new RegExp(`(?:^|\\s)((?:replacement\\s+|spare\\s+)?(?:${PART_NOUN.source}|${ACCESSORY_NOUN.source.replace(/^\\b|\\b$/g, "")}|${REQUEST_PART_NOUN.source.replace(/^\^\(\?:|\)\$$/g, "")}))s?\\s+(?:for|that fits?|compatible with|to fit)\\s+(?:(?:my|the|a|an|our|your)\\s+)?$`, "i");
 const NICE = /\b(ideally|would be nice|nice to have|nice-to-have|preferably|prefer(?:red)?|bonus|if possible|optional(?:ly)?|a plus)\b|있으면 좋|선호|가능하면/i;
 /** Common words that are capitalized only because they start a sentence: never a brand. */
 /** V2.8: words that describe a product but never name its type ("wireless", "black", "refurbished"). */
@@ -199,15 +204,20 @@ export function parseResearchIntent(input: PurchaseRequestInput): ResearchIntent
     const from = Math.max(from0, segStart <= brandHit.index ? segStart : 0);
     const clause = text.slice(from).split(/,\s*(?:but|and|only|if|under|budget|ideally|must|with)\b|[.!?](?:\s|$)|\s+(?:but|only if|under|below|less than|budget|with(?:out)?|money)\b|\s+\d[\d,]*\s*(?:달러|만\s*원|원)/i)[0]!;
     const ex = extractIdentity(clause.replace(/\b(?:the|a|an|used|new|refurbished|renewed|standalone)\b/gi, " ").replace(/\s+/g, " ").trim(), brandHit.brand, { request: true });
-    const model = input.exactProduct?.model ?? ex.model;
+    let model = input.exactProduct?.model ?? ex.model;
+    // V2.9: a part noun the parse kept at the end of the model ("Spinlo T3 Belt") is the part asked for, not a name.
+    if (model && !input.exactProduct?.model && ex.kind === "STANDALONE") {
+      const ws = model.split(/\s+/);
+      if (ws.length >= 2 && /\d/.test(ws.slice(0, -1).join(" ")) && REQUEST_PART_NOUN.test(ws.at(-1)!)) model = ws.slice(0, -1).join(" ");
+    }
     if (model) {
       // V2.2 WP-3: "Ostra AP-400 replacement filter" asks for the filter, not the purifier. An accessory noun that ends
       // the product phrase after the model (or "replacement"/"spare" right after it) makes the request an accessory.
       let kind = ex.kind; let accessoryNoun = ex.accessoryNoun;
       if (kind === "STANDALONE" && ex.model) {
-        const at = clause.toLowerCase().indexOf(ex.model.toLowerCase());
-        const tail = at >= 0 ? clause.slice(at + ex.model.length).split(/[,;]|\s+(?:with|for|that|which|it|must|should|needs?|has|have)\b/i)[0]!.trim() : "";
-        const end = new RegExp(`(?:^|\\s)(${ACCESSORY_NOUN.source.replace(/^\\b\(|\)\\b$/g, "")})e?s?\\s*$`, "i").exec(tail);
+        const at = clause.toLowerCase().indexOf(model.toLowerCase());
+        const tail = at >= 0 ? clause.slice(at + model.length).split(/[,;]|\s+(?:with|for|that|which|it|must|should|needs?|has|have)\b/i)[0]!.trim() : "";
+        const end = new RegExp(`(?:^|\\s)(${ACCESSORY_NOUN.source.replace(/^\\b\(|\)\\b$/g, "")}|${REQUEST_PART_NOUN.source.replace(/^\^\(\?:|\)\$$/g, "")})e?s?\\s*$`, "i").exec(tail);
         if (tail && (end || /^(?:replacement|spare)\b/i.test(tail))) { kind = "ACCESSORY"; accessoryNoun = (end?.[1] ?? ACCESSORY_NOUN.exec(tail)?.[1] ?? "part").toLowerCase().replace(/\s+/g, " "); }
       }
       // V2.4: "replacement ear tips for my Sonara Hush 2" asks for the part, named before the product it fits.

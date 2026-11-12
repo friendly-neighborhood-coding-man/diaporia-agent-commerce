@@ -88,3 +88,22 @@ describe("V2.9 a weight is not money", () => {
     expect(i.budgetMinor ?? i.budget?.amountMinor).toBe(3000);
   });
 });
+
+describe("V2.9 a part noun after or before the model asks for the part", () => {
+  it("'<model> battery', '<model> Belt' and 'dive housing for <model>' are accessory requests", () => {
+    expect(intent("Corvan Q8 battery").target).toMatchObject({ model: "Q8", kind: "ACCESSORY", accessoryNoun: "battery" });
+    expect(intent("Mirelle T5 Belt").target).toMatchObject({ model: "T5", kind: "ACCESSORY" });
+    expect(intent("dive housing for the Pellan A5").target).toMatchObject({ model: "A5", kind: "ACCESSORY", accessoryNoun: "dive housing" });
+    expect(intent("Pellan 10-inch frying pan under $40").target).toBeNull();
+  });
+  it("the part listing is locked, never the product it fits", () => {
+    const listings = [product("drone", "Corvan Q8 Drone", "Corvan"), product("batt", "Replacement Battery for Corvan Q8 Drone", "Corvan")];
+    const r: any = resolveExactV2(intent("Corvan Q8 battery"), listings, offers);
+    expect(r.status).toBe("LOCKED");
+    expect(r.productId).toBe("batt");
+  });
+  it("a listing of another kind is never the noun the request names", () => {
+    const r: any = resolveExactV2(intent("Pellan A5 drone"), [product("cam", "Pellan A5 Action Camera", "Pellan")], offers);
+    expect(r.status).toBe("NOT_FOUND");
+  });
+});
