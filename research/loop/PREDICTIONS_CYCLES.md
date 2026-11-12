@@ -171,3 +171,48 @@ gift, present, wedding, birthday, anniversary, graduation, weekend, event).
 - Negative controls: "Drift 15 2024" still strips its year; "for heavy use" stays context; "pickup only" is still not a
   requirement; "Coffer 60L with at least 50 liters" still locks the 60L; a request naming the host only ("Merewell Tessel
   4000 pond pump") still locks the host.
+
+## Cycle 5: general invariants after IW-22 (IW-22 is SEEN from here on; registered before the engine change)
+
+IW-22 (independent, sealed 3b2c3f2b…7116) was scored once on c40edb1, 94e13ca and 4bc7dcc: 138/136/127 of 221, unsafe
+8/7/7, bypass 7/6/6 of 249, legit 68/64/58 of 160. **The cycle-4 safety gain on the seen sets did not carry over**: the
+sibling-page fix closed the route it was built for, and a new route (an accessory's conditional sentence, d15) produced
+a new unsafe case. Reproduced locally: c40edb1 138/221, frozen engine 127/221.
+
+Method lesson recorded before repairing: cycles 1–4 repaired surface phrases of a family. This cycle states each repair
+as an invariant that must hold for every wording, and diagnoses the IW-22 cases only to find where the invariant is broken.
+
+### Invariants, and where each is broken (established by probe or code reading)
+
+- **I1 Evidence names exactly the candidate.** `statementFrom` judges one product alone and never sees what else is
+  listed. Three heuristics (digit-less model, part title words, variant runs) stand in for "is this page about another
+  listed product". d29: "Crucible 18 Glass" counts as a mention of "Crucible 18". d15: on the "Kerfmaster 14in Riser
+  Block" page, "With the riser block, the Kerfmaster 14in resaws up to 12 in" counts for the bare saw (a configuration
+  statement about saw + accessory). Repair: the planner passes the listed products of the research; a mention of P counts
+  only where no other listed product's longer name covers it; on a page whose subject is another listed product, a
+  clause that also names that product's distinguishing words does not count for P.
+- **I2 Context covers the whole phrase.** `PURPOSE_FOR` is a prefix test: "for winter camping" is context because "for
+  winter" is (d01, q01). Repair: a "for" phrase that is not about a person is context only if every word is an
+  occasion/use word or modifier and the phrase ends in an occasion/use noun.
+- **I3 No request word is dropped without an interpretation.** "이상" and "이하" are stop words and "N인용" is skipped by a
+  blanket rule, so "10인용 이상" vanishes (d23). Repair: a Korean number+unit followed by 이상/이하 is a threshold must-have.
+- **I4 Every product noun the request states must be the candidate's.** In "annex room for the Tarrock Skyloft 3P" the
+  leading noun phrase is taken as the product type and then ignored once a target is named, so the host is locked and
+  recommended (a01, a03). Repair: a noun phrase written before "for (the|my|a) <named product>" is the requested part.
+  The part path decides; if no part locks, the host may not be locked either (NOT_FOUND).
+- **I5 Variant minimality.** `pickVariant` treats an unknown product noun ("Beehive") as a name word and the descriptor
+  "Insulated" as nothing, so "Hollin 10-Frame" locks "Hollin 10-Frame Insulated Beehive" (w10; also b17, q42). Repair:
+  among equally matching same-model listings, a title whose words are a strict superset of another's is never kept.
+
+### Predictions
+
+- P5.1 IW-22 unsafe 8 → at most 1. d15, d29 (I1); d01, q01 (I2); d23 (I3); a01, a03 (I4); w10 (I5) each stop being
+  unsafe. Lowest confidence: d15, whose clause names the saw with no listed-product name inside it except "riser block".
+- P5.2 IW-22 must-refuse bypass 7/249 → at most 1/249.
+- P5.3 IW-22 legit prepared does not fall below 66/160 (I2 and I1 can only remove verifications or add must-haves;
+  I4/I5 can add correct locks: a01 and w10/b17/q42 may now prepare).
+- P5.4 Seen IW-1..IW-21: 0 unsafe, 0 bypass; newly failed ≤ 6, mostly false INVESTIGATE from I2 (a context phrase that
+  ends in a non-listed noun) and I1 (a legitimate statement whose subject phrase extends the model).
+- Negative controls: "for heavy use", "for camping trips", "for my long commute", "for the weekend" stay context; a page
+  that names only the candidate still counts; "Floska F2" still locks the plain F2 beside "F2 Cordless"; "check valve
+  for the Delve 1/3HP" unchanged; "6인용 밥솥" unchanged.
