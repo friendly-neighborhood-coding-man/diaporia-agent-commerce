@@ -257,6 +257,27 @@ describe("DIAPORIA Buy panel", () => {
     expect(["READY", "INTERRUPTED"]).toContain(i.runState);
   }, 60_000);
 
+  it("shows three cards when three products qualify, and reports an expired purchase session as a failure state", async () => {
+    const h = await start();
+    const c = await mcp(h.url);
+    const out = await tool(c, "start_shopping_panel", { request: "wireless headphones under $250 with multipoint", currency: "USD" });
+    await h.app.panel!.settled(out.runId);
+    const l = link(out.panelUrl);
+    const v = (await api(h, l)).body;
+    expect(v.candidates.map((x: any) => x.position)).toEqual([1, 2, 3]);
+    expect(v.candidates.filter((x: any) => x.status === "ELIGIBLE").length).toBeGreaterThanOrEqual(2);
+    // Eligible cards come before investigable ones.
+    const order = v.candidates.map((x: any) => x.status);
+    expect(order.indexOf("NEEDS_VERIFICATION") === -1 || order.lastIndexOf("ELIGIBLE") < order.indexOf("NEEDS_VERIFICATION")).toBe(true);
+    await api(h, l, "/select", { productId: v.candidates[0].productId });
+    h.clock.offsetMs = 31 * 60_000;     // purchase sessions live 30 minutes
+    const cmp = await api(h, l, "/compare", { destination: DEST });
+    expect(cmp.status).toBe(409);
+    expect(cmp.body.error.code).toBe("SESSION_EXPIRED");
+    expect((await api(h, l)).body.session.expired).toBe(true);
+    await c.close();
+  }, 60_000);
+
   it("offers an MCP Apps view (ui:// resource) linked from the panel tools", async () => {
     const h = await start();
     const c = await mcp(h.url);

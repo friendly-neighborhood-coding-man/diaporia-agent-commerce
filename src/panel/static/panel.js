@@ -21,6 +21,12 @@
   // Keep the capability out of the address bar, screenshots and history once it is stored.
   if (runId && key) { try { history.replaceState(null, "", "/buy/#run=" + runId); } catch (e) {} }
 
+  // A host that re-navigates an already open panel tab to a new link only changes the #fragment: load that link.
+  window.addEventListener("hashchange", function () {
+    var n = new URLSearchParams(location.hash.slice(1));
+    if (n.get("run") && (n.get("run") !== runId || n.get("k"))) location.reload();
+  });
+
   var snap = null;          // last server snapshot
   var ui = { detail: null, detailData: null, busy: false, dest: { country: "US", region: "CA" } };
   var stopped = false;
