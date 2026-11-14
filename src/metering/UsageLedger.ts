@@ -48,7 +48,21 @@ export interface Limits {
 }
 
 export class UsageLimitError extends Error {
-  constructor(readonly code: "REQUEST_COST_LIMIT" | "MONTHLY_BILLING_LIMIT" | "REQUEST_CALL_LIMIT" | "UNPRICED_PROVIDER_WITHOUT_CALL_CAP", message: string) { super(message); }
+  constructor(readonly code: "REQUEST_COST_LIMIT" | "MONTHLY_BILLING_LIMIT" | "REQUEST_CALL_LIMIT" | "UNPRICED_PROVIDER_WITHOUT_CALL_CAP" | "ENTITLEMENT_DENIED", message: string,
+    /** For ENTITLEMENT_DENIED: the machine-readable reason (e.g. NO_SUBSCRIPTION, ALLOWANCE_EXHAUSTED). */
+    readonly reason?: string) { super(message); }
+}
+
+/**
+ * Optional hook run INSIDE the ledger's IMMEDIATE transaction for every billable reservation, after the
+ * ledger's own caps. It must be synchronous and throw a UsageLimitError("ENTITLEMENT_DENIED") to refuse.
+ * Because it runs in the same transaction as the reservation insert, concurrent requests cannot both pass
+ * a check that only one of them fits under. Managed subscription billing installs one; community never does.
+ */
+export interface EntitlementGuard {
+  check(ctx: { userId: string; provider: Provider; operation: string; logicalKey: string;
+    /** DIAPORIA service price for this operation; undefined = not in the price book (UNKNOWN). */
+    servicePriceMinor: number | undefined; at: number; ledger: UsageLedger }): void;
 }
 
 export interface UsageRecord {
@@ -67,6 +81,14 @@ export interface BeginInput {
 }
 
 export class UsageLedger {
+  private guard: EntitlementGuard | null = null;
+  /** Installs the managed-mode entitlement guard (see EntitlementGuard). One guard per ledger. */
+  useEntitlementGuard(guard: EntitlementGuard): void {
+    if (this.guard && this.guard !== guard) throw new Error("An entitlement guard is already installed on this ledger");
+    this.guard = guard;
+  }
+  get hasEntitlementGuard(): boolean { return this.guard !== null; }
+
   constructor(private readonly store: Store, readonly pricing: PricingBook = PLACEHOLDER_PRICING,
     readonly limits: Limits = { perRequestSupplierMicro: 200_000, monthlyBillableMinor: 500 }, private readonly now: () => number = Date.now) {
     const cols = store.db.prepare("PRAGMA table_info(usage_records)").all() as Array<{ name: string; notnull: number }>;
@@ -121,7 +143,10 @@ export class UsageLedger {
         if (spent + est > this.limits.perRequestSupplierMicro)
           throw new UsageLimitError("REQUEST_COST_LIMIT", `Estimated supplier cost would exceed the per-request limit (${this.limits.perRequestSupplierMicro} µUSD)`);
       }
-      const price = input.billable ? (this.pricing.serviceMinorPerOperation[`${input.provider}:${input.operation}`] ?? 0) : 0;
+      const listed = this.pricing.serviceMinorPerOperation[`${input.provider}:${input.operation}`];
+      if (input.billable && this.guard)
+        this.guard.check({ userId: input.userId, provider: input.provider, operation: input.operation, logicalKey: input.logicalKey, servicePriceMinor: listed, at: this.now(), ledger: this });
+      const price = input.billable ? (listed ?? 0) : 0;
       if (price > 0 && this.monthCommittedMinor(input.userId) + price > this.limits.monthlyBillableMinor)
         throw new UsageLimitError("MONTHLY_BILLING_LIMIT", `Monthly billable usage would exceed the limit (${this.limits.monthlyBillableMinor} cents)`);
       const t = this.now();

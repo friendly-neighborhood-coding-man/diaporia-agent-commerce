@@ -98,6 +98,8 @@ export interface CheckoutSession {
   /** Last time the capture status was read from the payment provider (authoritative). */
   providerVerifiedAt: number | null;
   providerPendingReason: string | null;
+  /** When DIAPORIA first sent a capture request for this order (null = never; then no capture can exist). */
+  captureRequestedAt: number | null;
 }
 
 const PURCHASE_TTL_MS = 30 * 60_000;
@@ -141,7 +143,7 @@ export class CheckoutSessionManager {
 
   createCheckout(input: Omit<CheckoutSession, "checkoutSessionId" | "summary" | "summaryHash" | "state" | "version" | "mandateId" | "reservedMinor" |
     "providerOrderId" | "approvalUrl" | "captureId" | "captureStatus" | "createKey" | "captureKey" | "failureCode" | "failureReason" | "createdAt" | "updatedAt" |
-    "merchantIdentity" | "intendedPayeeId" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason"> & {
+    "merchantIdentity" | "intendedPayeeId" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason" | "captureRequestedAt"> & {
     merchantName: string; merchantDomain: string; checkoutPath: string; disclosure: string; checkoutSessionId?: string; merchantIdentity?: MerchantIdentityBinding | null }): CheckoutSession {
     const id = input.checkoutSessionId ?? newCheckoutSessionId();
     const mi = input.merchantIdentity ?? null;
@@ -203,6 +205,12 @@ export class CheckoutSessionManager {
       .map((r) => this.toCheckout(r));
   }
 
+  /** UNKNOWN checkouts with a provider order but no known capture id (capture call outcome unknown). */
+  listUnknownWithoutCapture(): CheckoutSession[] {
+    return (this.store.db.prepare("SELECT * FROM checkout_sessions WHERE state = 'UNKNOWN' AND capture_id IS NULL AND provider_order_id IS NOT NULL ORDER BY created_at").all() as Row[])
+      .map((r) => this.toCheckout(r));
+  }
+
   /** Records an authoritative provider read that did not change the state (compare-and-set on version). */
   recordProviderVerification(cs: CheckoutSession, captureStatus: string, pendingReason: string | null): CheckoutSession {
     const r = this.store.db.prepare(`UPDATE checkout_sessions SET provider_verified_at=?, capture_status=?, provider_pending_reason=?, version=version+1, updated_at=?
@@ -213,14 +221,14 @@ export class CheckoutSessionManager {
 
   /** Compare-and-set transition. Throws StaleStateError when another request moved the session first. */
   transition(cs: CheckoutSession, to: PurchaseState, patch: Partial<Pick<CheckoutSession, "mandateId" | "reservedMinor" | "providerOrderId" | "approvalUrl" |
-    "captureId" | "captureStatus" | "failureCode" | "failureReason" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason">> = {}): CheckoutSession {
+    "captureId" | "captureStatus" | "failureCode" | "failureReason" | "actualRecipientId" | "providerVerifiedAt" | "providerPendingReason" | "captureRequestedAt">> = {}): CheckoutSession {
     assertTransition("checkout", cs.state, to);
     const n = { ...cs, ...patch };
     const r = this.store.db.prepare(`UPDATE checkout_sessions SET state=?, version=version+1, mandate_id=?, reserved_minor=?, provider_order_id=?,
-      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, actual_recipient_id=?, provider_verified_at=?, provider_pending_reason=?, updated_at=?
+      approval_url=?, capture_id=?, capture_status=?, failure_code=?, failure_reason=?, actual_recipient_id=?, provider_verified_at=?, provider_pending_reason=?, capture_requested_at=?, updated_at=?
       WHERE id=? AND user_id=? AND state=? AND version=?`).run(
       to, n.mandateId, n.reservedMinor, n.providerOrderId, n.approvalUrl, n.captureId, n.captureStatus, n.failureCode, n.failureReason, n.actualRecipientId,
-      n.providerVerifiedAt, n.providerPendingReason, this.now(),
+      n.providerVerifiedAt, n.providerPendingReason, n.captureRequestedAt, this.now(),
       cs.checkoutSessionId, cs.userId, cs.state, cs.version);
     if (r.changes !== 1) throw new StaleStateError(`Checkout ${cs.checkoutSessionId} changed concurrently (expected ${cs.state} v${cs.version})`);
     return this.getCheckout(cs.checkoutSessionId, cs.userId);
@@ -242,6 +250,7 @@ export class CheckoutSessionManager {
       actualRecipientId: r.actual_recipient_id == null ? null : String(r.actual_recipient_id),
       providerVerifiedAt: r.provider_verified_at == null ? null : Number(r.provider_verified_at),
       providerPendingReason: r.provider_pending_reason == null ? null : String(r.provider_pending_reason),
+      captureRequestedAt: r.capture_requested_at == null ? null : Number(r.capture_requested_at),
     };
   }
 }

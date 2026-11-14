@@ -5,7 +5,7 @@ import { ProductIdentityResolver, identityEquals } from "../identity/ProductIden
 import type { CommerceResearchAdapter } from "../research/CommerceResearchAdapter.js";
 import { MerchantOfferVerifier, type VerifiedOffer } from "../merchant/MerchantOfferVerifier.js";
 import { PurchasePolicyEngine, type PolicyDecision } from "../policy/PurchasePolicyEngine.js";
-import { MandateRepository } from "../policy/PurchaseMandate.js";
+import { MandateRepository, type PurchaseMandate } from "../policy/PurchaseMandate.js";
 import { CheckoutSessionManager, NotFoundError, StaleStateError, type CheckoutSession, type PurchaseSession } from "../checkout/CheckoutSessionManager.js";
 import { TERMINAL } from "../checkout/stateMachine.js";
 import { PurchaseAuditJournal } from "../audit/PurchaseAuditJournal.js";
@@ -65,7 +65,18 @@ export function defaultMockMerchantIdentityVerifier(now: () => number = Date.now
 
 export type CapabilityStatus = "VERIFIED_TRUE" | "VERIFIED_FALSE" | "LISTING_CLAIM_ONLY" | "UNKNOWN";
 const CHECKOUT_TTL_MS = 15 * 60_000;
-const DISCLOSURE = "PayPal Sandbox demonstration. The merchant is a fictional DIAPORIA demo merchant paid through DIAPORIA's own Sandbox account; this is not a retail purchase and no goods will ship.";
+/** A CAPTURE_PENDING row without a capture id older than this cannot have a provider call in flight (timeout 20 s). */
+const STUCK_CAPTURE_MS = 5 * 60_000;
+
+/**
+ * Shown to the host and the user in every checkout summary. It must name the environment that will actually run:
+ * before 2026-11-10 MOCK checkouts said "PayPal Sandbox demonstration", and a host repeated it (Scenario I run 2).
+ */
+function disclosureFor(provider: string): string {
+  return provider === "PAYPAL_SANDBOX"
+    ? "PayPal Sandbox demonstration (no real money). The merchant is a fictional DIAPORIA demo merchant paid through DIAPORIA's own Sandbox account; this is not a retail purchase and no goods will ship."
+    : "MOCK demonstration: no PayPal API is called and no money moves (not PayPal Sandbox). The merchant is a fictional DIAPORIA demo merchant; this is not a retail purchase and no goods will ship.";
+}
 
 export class CommerceGateway {
   readonly router = new PurchaseIntentRouter();
@@ -251,7 +262,10 @@ export class CommerceGateway {
     if (svc.mode !== "managed") return { mode: svc.mode, usage, billing: { status: "NOT_APPLICABLE_COMMUNITY", note: "Community mode: no DIAPORIA billing; provider costs are the operator's own." } };
     let billingAuthorization: unknown = null;
     try { billingAuthorization = svc.billing ? await svc.billing.getAuthorization(userId) : null; } catch { billingAuthorization = { status: "UNKNOWN", note: "billing provider unavailable" }; }
-    return { mode: svc.mode, simulation: svc.managedSimulation === true, usage, billing: { billingAuthorization, periodSummary: periodSummaryFrom(usage),
+    // Subscription billing reports a period statement (billed amount, service price, supplier cost kept apart); the legacy mock reports a draft summary.
+    const statementOf = (svc.billing as { statement?: (u: string) => unknown } | null)?.statement;
+    const periodView = typeof statementOf === "function" ? { subscriptionStatement: statementOf.call(svc.billing, userId) } : { periodSummary: periodSummaryFrom(usage) };
+    return { mode: svc.mode, simulation: svc.managedSimulation === true, usage, billing: { billingAuthorization, ...periodView,
       separation: "Service billing is independent of purchase mandates: it never authorizes a merchandise purchase, and a purchase mandate never authorizes service charges." } };
   }
 
@@ -308,6 +322,9 @@ export class CommerceGateway {
     const inFlight = this.sessions.findPaymentInFlightOrDone(userId, ps.purchaseSessionId);
     if (inFlight && !(inFlight.offerId === input.offerId && inFlight.quantity === input.quantity))
       throw new CommerceError("INVALID_STATE", `A payment for this purchase session is ${inFlight.state}; a new payment attempt is prohibited until it is final.`, { checkoutSessionId: inFlight.checkoutSessionId });
+    // A repeated identical prepare after the payment completed returns that checkout: one purchase
+    // session buys at most once. A new purchase needs a new research session (and new authorization).
+    if (inFlight && inFlight.state === "COMPLETED") { this.audit.append(inFlight.checkoutSessionId, userId, "PREPARE_DEDUPLICATED", { after: "COMPLETED" }); return this.prepareResult(inFlight, null, true); }
     const dup = this.sessions.findActiveDuplicate(userId, ps.purchaseSessionId, input.offerId, input.quantity);
     if (dup) { this.audit.append(dup.checkoutSessionId, userId, "PREPARE_DEDUPLICATED", {}); return this.prepareResult(this.expireIfNeeded(dup), null, true); }
 
@@ -341,7 +358,7 @@ export class CommerceGateway {
       userId, purchaseSessionId: ps.purchaseSessionId, offerId: offer.offerId, merchantId: offer.merchantId, quoteId: quote.quoteId, identity: ps.lockedIdentity,
       quantity: input.quantity, currency: ps.intent.currency, cost: v.cost, totalMinor: v.cost.totalMinor, clientMaxMinor: input.maximumApprovedTotalMinor,
       provider: this.payments.name, expiresAt: Math.min(Date.parse(quote.expiresAt), Date.parse(bound.binding.attestationExpiresAt), this.now() + (this.config.checkoutTtlMs ?? CHECKOUT_TTL_MS)),
-      merchantName: offer.merchantName, merchantDomain: offer.merchantDomain, checkoutPath: v.checkoutPath, disclosure: DISCLOSURE,
+      merchantName: offer.merchantName, merchantDomain: offer.merchantDomain, checkoutPath: v.checkoutPath, disclosure: disclosureFor(this.payments.name),
     });
     this.audit.append(cs.checkoutSessionId, userId, "CHECKOUT_PREPARED", { totalMinor: cs.totalMinor, currency: cs.currency, summaryHash: cs.summaryHash });
     this.audit.append(cs.checkoutSessionId, userId, "MERCHANT_IDENTITY_BOUND", { attestationId: bound.binding.attestationId, intendedPayeeId: bound.binding.intendedPayeeId,
@@ -379,14 +396,7 @@ export class CommerceGateway {
     if (cs.state === "PREPARED" || cs.state === "HOLD") cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor, failureCode: null, failureReason: null });
     else cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { mandateId, reservedMinor: cs.totalMinor });
     try {
-      const order = await this.payments.createOrder({
-        checkoutSessionId: cs.checkoutSessionId, amount: { currency: cs.currency, amountMinor: cs.totalMinor },
-        description: `DIAPORIA Sandbox demo: ${cs.identity.brand} ${cs.identity.model} ${cs.identity.variant ?? ""} x${cs.quantity}`.trim(),
-        returnUrl: `${this.config.baseUrl}/paypal/return?checkout=${encodeURIComponent(cs.checkoutSessionId)}`,
-        cancelUrl: `${this.config.baseUrl}/paypal/cancel?checkout=${encodeURIComponent(cs.checkoutSessionId)}`,
-        idempotencyKey: cs.createKey,
-        payeeMerchantId: cs.intendedPayeeId,
-      });
+      const order = await this.payments.createOrder(this.createOrderInput(cs));
       cs = this.sessions.transition(cs, "APPROVAL_REQUIRED", { providerOrderId: order.orderId, approvalUrl: order.approvalUrl });
       this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_CREATED", { provider: this.payments.name, orderId: order.orderId });
     } catch (e) {
@@ -401,14 +411,108 @@ export class CommerceGateway {
     return { checkout: cs, decision };
   }
 
+  /** The exact create-order request for a checkout. Replaying it carries the same idempotency key (PayPal-Request-Id). */
+  private createOrderInput(cs: CheckoutSession) {
+    return {
+      checkoutSessionId: cs.checkoutSessionId, amount: { currency: cs.currency, amountMinor: cs.totalMinor },
+      description: `DIAPORIA ${cs.provider === "PAYPAL_SANDBOX" ? "Sandbox" : "MOCK"} demo: ${cs.identity.brand} ${cs.identity.model} ${cs.identity.variant ?? ""} x${cs.quantity}`.trim(),
+      returnUrl: `${this.config.baseUrl}/paypal/return?checkout=${encodeURIComponent(cs.checkoutSessionId)}`,
+      cancelUrl: `${this.config.baseUrl}/paypal/cancel?checkout=${encodeURIComponent(cs.checkoutSessionId)}`,
+      idempotencyKey: cs.createKey,
+      payeeMerchantId: cs.intendedPayeeId,
+    };
+  }
+
+  /**
+   * DF-4 review F1. A create-order timeout leaves the checkout UNKNOWN with no provider order id, so nothing could
+   * read it back. Replay the SAME create request (same idempotency key): the provider returns the order it already
+   * made, or makes the one order this checkout was always going to have. It is never a second order and never a
+   * capture. Any failure keeps UNKNOWN and the reservation (an uncertain outcome never releases authority).
+   */
+  private async recoverTimedOutCreate(cs: CheckoutSession): Promise<CheckoutSession> {
+    if (cs.state !== "UNKNOWN" || cs.providerOrderId || cs.captureId || cs.failureCode !== "CREATE_ORDER_TIMEOUT") return cs;
+    try {
+      const order = await this.payments.createOrder(this.createOrderInput(cs));
+      cs = this.sessions.transition(cs, "UNKNOWN", { providerOrderId: order.orderId, approvalUrl: order.approvalUrl });
+      this.audit.append(cs.checkoutSessionId, cs.userId, "PROVIDER_ORDER_RECOVERED", { provider: this.payments.name, orderId: order.orderId });
+    } catch (e) {
+      this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_PROVIDER_UNAVAILABLE", { step: "RECOVER_CREATE", reason: errorText(e) });
+    }
+    return cs;
+  }
+
   /** Owner-authenticated page: creates a mandate bound to exactly this checkout, then starts payment. */
   async authorizeCheckoutAsOwner(ownerUserId: string, checkoutSessionId: string, maximumTotalMinor: number) {
-    const cs = this.expireIfNeeded(this.sessions.getCheckout(checkoutSessionId, ownerUserId));
     if (!isMinor(maximumTotalMinor) || maximumTotalMinor <= 0) throw new CommerceError("INVALID_INPUT", "Maximum must be a positive amount");
-    const mandate = this.mandates.create({ userId: ownerUserId, productIdentity: cs.identity, currency: cs.currency, maximumTotalMinor, maximumQuantity: cs.quantity,
-      maximumTransactions: 1, ttlSeconds: 1800, allowedMerchantIds: [cs.merchantId], createdVia: "OWNER_APPROVAL_PAGE" });
-    this.audit.append(cs.checkoutSessionId, ownerUserId, "MANDATE_CREATED_BY_OWNER", { mandateId: mandate.mandateId, maximumTotalMinor });
-    return { mandate, ...(await this.startPayment(cs, mandate.mandateId)) };
+    // DF-4. Eligibility and creation of spending authority happen in ONE synchronous BEGIN IMMEDIATE transaction:
+    // the checkout is re-read (and expired if due) inside it, so a concurrent or repeated submit, or another
+    // process on the same database, cannot create a second authorization. The partial unique index
+    // mandates_one_live_per_bound_checkout is the database-level backstop. The mandate is CHECKOUT_BOUND: it
+    // authorizes this checkout only (policy BOUND_TO_OTHER_CHECKOUT) and is never selected for a new checkout.
+    type Claim = { ok: true; cs: CheckoutSession; mandate: PurchaseMandate } | { ok: false; cs: CheckoutSession; reason: string };
+    const claim: Claim = this.store.transaction((): Claim => {
+      const cs = this.expireIfNeeded(this.sessions.getCheckout(checkoutSessionId, ownerUserId));
+      if (!["PREPARED", "APPROVAL_REQUIRED", "HOLD"].includes(cs.state)) return { ok: false, cs, reason: "NOT_PAYABLE" };
+      if (cs.providerOrderId || cs.mandateId) return { ok: false, cs, reason: "ALREADY_AUTHORIZED" };
+      let mandate: PurchaseMandate;
+      try {
+        mandate = this.mandates.create({ userId: ownerUserId, productIdentity: cs.identity, currency: cs.currency, maximumTotalMinor, maximumQuantity: cs.quantity,
+          maximumTransactions: 1, ttlSeconds: 1800, allowedMerchantIds: [cs.merchantId], createdVia: "OWNER_APPROVAL_PAGE", boundCheckoutSessionId: cs.checkoutSessionId });
+      } catch (e) {
+        if (/UNIQUE constraint failed/i.test(errorText(e))) return { ok: false, cs, reason: "ALREADY_AUTHORIZED" };
+        throw e;
+      }
+      this.audit.append(cs.checkoutSessionId, ownerUserId, "MANDATE_CREATED_BY_OWNER", { mandateId: mandate.mandateId, maximumTotalMinor, scope: mandate.scope, boundCheckoutSessionId: cs.checkoutSessionId });
+      return { ok: true, cs, mandate };
+    });
+    if (!claim.ok) {
+      this.audit.append(claim.cs.checkoutSessionId, ownerUserId, "OWNER_AUTHORIZATION_REFUSED", { state: claim.cs.state, reason: claim.reason });
+      throw new CommerceError("INVALID_STATE", `Checkout is ${claim.cs.state} (${claim.reason}); no new spending limit was created.`);
+    }
+    const { cs, mandate } = claim;
+    // If no payment starts, withdraw the page's own authorization. Once reserved (payment started, or outcome
+    // UNKNOWN after a create timeout) it is left to the reservation logic: it stays bound to this checkout;
+    // reconcile() recovers a timed-out create by idempotent replay, then capture consumes it or expiry/cancel
+    // releases it (release revokes a bound mandate).
+    const revokeUnused = (why: string) => {
+      const m = this.mandates.get(mandate.mandateId, ownerUserId);
+      if (!m || m.authorizationStatus !== "ACTIVE" || m.reservedMinor > 0 || m.transactionsUsed > 0) return;
+      try { this.mandates.revoke(mandate.mandateId, ownerUserId); this.audit.append(cs.checkoutSessionId, ownerUserId, "MANDATE_REVOKED_UNUSED", { mandateId: mandate.mandateId, why }); }
+      catch { /* raced with a reservation: the reservation logic owns it */ }
+    };
+    let out;
+    try { out = await this.startPayment(cs, mandate.mandateId); }
+    catch (e) { revokeUnused(e instanceof CommerceError ? e.code : "ERROR"); throw e; }
+    if (!out.decision.allowed) revokeUnused(out.decision.code);
+    return { mandate: this.mandates.get(mandate.mandateId, ownerUserId) ?? mandate, ...out };
+  }
+
+  /**
+   * The owner withdraws a checkout before any capture. Allowed only while nothing can have been
+   * captured: PREPARED, HOLD, or APPROVAL_REQUIRED when the provider still reports the order as not
+   * approved. If the provider says the buyer already approved (or the read fails), the checkout is
+   * left alone and the reason is returned: cancelling then could race a capture.
+   */
+  async cancelCheckoutAsOwner(ownerUserId: string, checkoutSessionId: string): Promise<{ checkout: CheckoutSession; cancelled: boolean; reason: string }> {
+    let cs = this.expireIfNeeded(this.sessions.getCheckout(checkoutSessionId, ownerUserId));
+    if (!["PREPARED", "HOLD", "APPROVAL_REQUIRED"].includes(cs.state)) return { checkout: cs, cancelled: false, reason: `NOT_CANCELLABLE_IN_${cs.state}` };
+    if (cs.state === "APPROVAL_REQUIRED" && cs.providerOrderId) {
+      try {
+        const order = await this.payments.getOrder(cs.providerOrderId);
+        if (order.status === "APPROVED" || order.status === "COMPLETED") {
+          this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCEL_REFUSED", { providerStatus: order.status });
+          return { checkout: cs, cancelled: false, reason: "BUYER_ALREADY_APPROVED_AT_PROVIDER" };
+        }
+      } catch (e) {
+        this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCEL_CHECK_FAILED", { reason: errorText(e) });
+        return { checkout: cs, cancelled: false, reason: "PROVIDER_STATE_UNKNOWN" };
+      }
+    }
+    const reserved = cs.reservedMinor;
+    cs = this.sessions.transition(cs, "CANCELLED", { reservedMinor: 0, failureCode: "OWNER_CANCELLED", failureReason: "The owner cancelled this checkout before payment" });
+    if (cs.mandateId && reserved > 0) this.policy.release(cs.mandateId, cs.userId, reserved, cs.checkoutSessionId);
+    this.audit.append(cs.checkoutSessionId, ownerUserId, "OWNER_CANCELLED", { releasedMinor: reserved });
+    return { checkout: cs, cancelled: true, reason: "OWNER_CANCELLED" };
   }
 
   // ---------------------------------------------------------------- provider return / cancel / reconcile
@@ -421,10 +525,22 @@ export class CommerceGateway {
     if (cs.state === "APPROVAL_REQUIRED") {
       let order;
       try { order = await this.payments.getOrder(providerOrderId); }
-      catch (e) { this.audit.append(cs.checkoutSessionId, cs.userId, "APPROVAL_CHECK_FAILED", { reason: errorText(e) }); return cs; }
+      catch (e) {
+        this.audit.append(cs.checkoutSessionId, cs.userId, "APPROVAL_CHECK_FAILED", { reason: errorText(e) });
+        return this.expireFresh(cs); // no capture was ever requested in APPROVAL_REQUIRED; past expiry it closes
+      }
       const mismatch = order.customId !== cs.checkoutSessionId || !order.amount || order.amount.currency !== cs.currency || order.amount.amountMinor !== cs.totalMinor;
       if (mismatch) return this.fail(cs, "PROVIDER_ORDER_MISMATCH", "PayPal order amount, currency or ownership differs from the checkout summary");
       if (order.status === "COMPLETED") return this.reconcile(cs.userId, cs.checkoutSessionId);
+      // Expiry hardening (1): an approval that arrives after the checkout expired never starts a capture. In
+      // APPROVAL_REQUIRED DIAPORIA has never requested a capture (captureRequestedAt is null), so no capture can
+      // exist and releasing the reservation is safe. The provider's order state is recorded as evidence.
+      if (cs.expiresAt <= this.now()) {
+        const after = this.expireFresh(cs);
+        if (after.state === "EXPIRED" && after.version === cs.version + 1)
+          this.audit.append(cs.checkoutSessionId, cs.userId, "BUYER_APPROVAL_AFTER_EXPIRY", { providerStatus: order.status, providerCaptures: order.captures.length, captureRequested: false });
+        return after;
+      }
       if (order.status !== "APPROVED") { this.audit.append(cs.checkoutSessionId, cs.userId, "APPROVAL_NOT_VERIFIED", { providerStatus: order.status }); return cs; }
       try { cs = this.sessions.transition(cs, "APPROVED"); }
       catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
@@ -434,18 +550,70 @@ export class CommerceGateway {
   }
 
   private async capture(cs: CheckoutSession): Promise<CheckoutSession> {
+    // A replay (a capture for this order was already requested once) must never end in FAILED or release the
+    // reservation on its own errors: the first request may still land. Its pre-gate refusals keep UNKNOWN.
+    const replay = this.captureEverRequested(cs);
+    // Review G1: a refusal acts only on the exact APPROVED version this call started from, re-deciding "replay" on
+    // that fresh row; if a concurrent return already moved it (e.g. its capture is in flight), nothing is touched.
+    const entry = cs;
+    const refuse = (code: string, reason: string): CheckoutSession => {
+      try {
+        return this.store.transaction(() => {
+          const cur = this.sessions.getCheckout(entry.checkoutSessionId, entry.userId);
+          if (cur.version !== entry.version || cur.state !== "APPROVED") return cur;
+          if (this.captureEverRequested(cur)) return this.holdUnknown(cur, code, `${reason} (a capture was already requested; outcome still unknown, reservation kept)`);
+          return this.fail(cur, code, reason);
+        });
+      } catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(entry.checkoutSessionId, entry.userId); throw e; }
+    };
     const mandate = cs.mandateId ? this.mandates.get(cs.mandateId, cs.userId) : null;
     if (!mandate || mandate.authorizationStatus === "REVOKED" || mandate.authorizationStatus === "EXPIRED")
-      return this.fail(cs, "MANDATE_NO_LONGER_VALID", "Mandate was revoked or expired before capture; nothing was captured.");
+      return refuse("MANDATE_NO_LONGER_VALID", "Mandate was revoked or expired before capture; DIAPORIA did not send this capture.");
     const recipient = await this.verifyRecipientBeforeCapture(cs);
-    if (recipient.fail) return this.fail(cs, recipient.fail.code, recipient.fail.detail);
-    try { cs = this.sessions.transition(cs, "CAPTURE_PENDING", recipient.actual ? { actualRecipientId: recipient.actual } : {}); }
-    catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
-    this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_REQUESTED", { idempotent: true });
+    if (recipient.fail) return refuse(recipient.fail.code, recipient.fail.detail);
+    // Expiry hardening (2, 3, 5): the capture decision is made here, atomically, on a fresh read, after every
+    // await above (merchant re-check, recipient read) that could have outlived the checkout. A concurrent request
+    // that moved the checkout wins (version check). Past expiry no capture is sent:
+    //  - never requested before: FAILED and the reservation released (no capture can exist);
+    //  - requested before (replay after an uncertain outcome): UNKNOWN, reservation kept, reconcile reads only.
+    // captureRequestedAt is written durably before the provider call, so a later reconcile can tell an already
+    // initiated capture from a new attempt.
+    const read = cs;
+    type Gate = { go: true; cs: CheckoutSession } | { go: false; cs: CheckoutSession };
+    let gate: Gate;
+    try {
+      gate = this.store.transaction((): Gate => {
+        const cur = this.sessions.getCheckout(read.checkoutSessionId, read.userId);
+        if (cur.version !== read.version || cur.state !== "APPROVED") return { go: false, cs: cur };
+        if (cur.expiresAt <= this.now()) {
+          if (this.captureEverRequested(cur)) {
+            const u = this.sessions.transition(cur, "UNKNOWN", { failureCode: "CAPTURE_OUTCOME_UNKNOWN", failureReason: "Checkout expired after a capture was requested; reconciling by provider reads only, no new capture" });
+            this.audit.append(cur.checkoutSessionId, cur.userId, "CAPTURE_NOT_RETRIED_AFTER_EXPIRY", { captureRequestedAt: cur.captureRequestedAt });
+            return { go: false, cs: u };
+          }
+          const f = this.sessions.transition(cur, "FAILED", { reservedMinor: 0, failureCode: "CHECKOUT_EXPIRED_BEFORE_CAPTURE", failureReason: "Checkout expired before capture; DIAPORIA never requested a capture for this order" });
+          if (cur.mandateId && cur.reservedMinor > 0) this.policy.release(cur.mandateId, cur.userId, cur.reservedMinor, cur.checkoutSessionId);
+          this.audit.append(cur.checkoutSessionId, cur.userId, "CAPTURE_REFUSED_CHECKOUT_EXPIRED", { captureRequested: false });
+          return { go: false, cs: f };
+        }
+        return { go: true, cs: this.sessions.transition(cur, "CAPTURE_PENDING", { ...(recipient.actual ? { actualRecipientId: recipient.actual } : {}), captureRequestedAt: cur.captureRequestedAt ?? this.now() }) };
+      });
+    } catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(read.checkoutSessionId, read.userId); throw e; }
+    if (!gate.go) return gate.cs;
+    cs = gate.cs;
+    this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_REQUESTED", { idempotent: true, replay });
     let capture: ProviderCapture;
     try { capture = await this.payments.captureOrder(cs.providerOrderId!, cs.captureKey); }
     catch (e) {
-      if (e instanceof ProviderError) return this.fail(cs, "CAPTURE_REJECTED", errorText(e));
+      // A 4xx on the FIRST request is a definite rejection. On a replay it is not (e.g. the same request id still in
+      // progress, or the order already captured), so it stays UNKNOWN with the reservation kept.
+      if (e instanceof ProviderError && !replay) {
+        const pending = cs;   // only the CAPTURE_PENDING version this call committed; if anything moved it, leave it alone
+        return this.store.transaction(() => {
+          const cur = this.sessions.getCheckout(pending.checkoutSessionId, pending.userId);
+          return cur.version === pending.version ? this.fail(cur, "CAPTURE_REJECTED", errorText(e)) : cur;
+        });
+      }
       cs = this.sessions.transition(cs, "UNKNOWN", { failureCode: "CAPTURE_OUTCOME_UNKNOWN", failureReason: errorText(e) });
       this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_OUTCOME_UNKNOWN", { reason: errorText(e) });
       return cs;
@@ -546,6 +714,14 @@ export class CommerceGateway {
   async reconcile(userId: string, checkoutSessionId: string): Promise<CheckoutSession> {
     let cs = this.sessions.getCheckout(checkoutSessionId, userId);
     if (cs.captureId) return (await this.reconcileCapture(cs, "MANUAL")).checkout;
+    cs = await this.recoverTimedOutCreate(cs);
+    // Review F3: CAPTURE_PENDING with no capture id means the process stopped between the capture gate and the
+    // provider's answer. Once no in-process call can still be running (older than the provider timeout, with margin),
+    // treat it as an uncertain capture: UNKNOWN, reservation kept; the rules below then read the order.
+    if (cs.state === "CAPTURE_PENDING" && !cs.captureId && cs.updatedAt <= this.now() - STUCK_CAPTURE_MS) {
+      cs = this.holdUnknown(cs, "CAPTURE_OUTCOME_UNKNOWN", "Capture was requested but no provider answer was recorded");
+      if (cs.state !== "UNKNOWN" || cs.captureId) return cs.captureId ? (await this.reconcileCapture(cs, "MANUAL")).checkout : cs;
+    }
     if (!["UNKNOWN", "CAPTURE_PENDING"].includes(cs.state) || !cs.providerOrderId) return cs;
     const order = await this.payments.getOrder(cs.providerOrderId);
     this.audit.append(cs.checkoutSessionId, userId, "RECONCILED", { providerStatus: order.status, captures: order.captures.length });
@@ -557,11 +733,78 @@ export class CommerceGateway {
       catch (e) { this.audit.append(cs.checkoutSessionId, userId, "RECONCILE_PROVIDER_UNAVAILABLE", { reason: errorText(e) }); return cs; }
       return this.applyCapture(cs, fresh);
     }
+    // Provider evidence that nothing can be captured: a VOIDED order with no capture. Only then may an UNKNOWN
+    // checkout whose capture was requested release its reservation (6: no "not paid" claim without evidence).
+    if (cs.state === "UNKNOWN" && order.status === "VOIDED" && order.captures.length === 0) {
+      return this.closeUnknown(cs, "FAILED", "PROVIDER_ORDER_VOIDED", "The provider reports the order VOIDED with no capture", { providerStatus: order.status, providerCaptures: 0 });
+    }
     if (cs.state === "UNKNOWN" && order.status === "APPROVED") {
-      cs = this.sessions.transition(cs, "APPROVED", { failureCode: null, failureReason: null });
-      return this.capture(cs); // same PayPal-Request-Id: a replay cannot double-capture
+      if (cs.expiresAt <= this.now()) {
+        // (4) Past expiry: never a new capture and never a blind retry.
+        if (this.captureEverRequested(cs)) {
+          // A capture was requested and the provider shows none yet. It may still land, so the reservation stays
+          // and the checkout stays UNKNOWN; later reads adopt a capture, or a VOIDED order closes it.
+          this.audit.append(cs.checkoutSessionId, userId, "RECONCILE_NO_RETRY_AFTER_EXPIRY", { providerStatus: order.status, providerCaptures: 0, captureRequestedAt: cs.captureRequestedAt });
+          return cs;
+        }
+        return this.closeUnknown(cs, "FAILED", "CHECKOUT_EXPIRED_BEFORE_CAPTURE", "Checkout expired before capture; DIAPORIA never requested a capture for this order",
+          { providerStatus: order.status, providerCaptures: 0, captureRequested: false });
+      }
+      // Before expiry: legitimate recovery. A replay after an uncertain capture reuses the same PayPal-Request-Id.
+      try { cs = this.sessions.transition(cs, "APPROVED", { failureCode: null, failureReason: null }); }
+      catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, userId); throw e; }
+      return this.capture(cs);
+    }
+    // A recovered create whose order the buyer never approved, past the checkout's expiry: nothing was or can be
+    // captured by us (we only capture APPROVED orders on a payable checkout), so close it and release the bound
+    // authorization (release revokes it). Before expiry it stays UNKNOWN; the buyer return reconciles it.
+    // Review N1: closeUnknown re-reads, compare-and-sets, then releases, in one transaction.
+    if (cs.state === "UNKNOWN" && cs.failureCode === "CREATE_ORDER_TIMEOUT" && order.status !== "APPROVED" && order.status !== "COMPLETED" && cs.expiresAt <= this.now()) {
+      return this.closeUnknown(cs, "CANCELLED", "CHECKOUT_EXPIRED", "Order was never approved before the checkout expired", { after: "CREATE_ORDER_TIMEOUT", providerStatus: order.status });
     }
     return cs;
+  }
+
+  /** Moves a checkout whose capture outcome is uncertain to UNKNOWN on a fresh read, keeping its reservation. */
+  private holdUnknown(cs: CheckoutSession, code: string, reason: string): CheckoutSession {
+    try {
+      const cur = this.sessions.getCheckout(cs.checkoutSessionId, cs.userId);
+      if (cur.version !== cs.version || cur.state === "UNKNOWN" || TERMINAL.has(cur.state)) return cur;   // only the version the caller decided on
+      const out = this.sessions.transition(cur, "UNKNOWN", { failureCode: code, failureReason: reason });
+      this.audit.append(cs.checkoutSessionId, cs.userId, "CAPTURE_REPLAY_HELD_UNKNOWN", { code });
+      return out;
+    } catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
+  }
+
+  /**
+   * Was a capture ever sent for this checkout? The durable column, else (rows from before the column existed) the
+   * CAPTURE_REQUESTED audit event, else a known capture id. Unknown history counts as requested (fail safe).
+   */
+  private captureEverRequested(cs: CheckoutSession): boolean {
+    if (cs.captureRequestedAt !== null || cs.captureId) return true;
+    if (cs.failureCode === "CAPTURE_OUTCOME_UNKNOWN") return true;
+    const r = this.store.db.prepare("SELECT 1 FROM audit_events WHERE subject_id = ? AND type = 'CAPTURE_REQUESTED' LIMIT 1").get(cs.checkoutSessionId);
+    return !!r;
+  }
+
+  /**
+   * Closes an UNKNOWN checkout and releases its reservation, only if nothing moved it since `read` (a racing buyer
+   * return or capture wins). Callers must hold evidence that no capture exists or can still succeed.
+   */
+  private closeUnknown(read: CheckoutSession, to: "FAILED" | "CANCELLED", code: string, reason: string, evidence: Record<string, unknown>): CheckoutSession {
+    try {
+      return this.store.transaction(() => {
+        const cur = this.sessions.getCheckout(read.checkoutSessionId, read.userId);
+        if (cur.version !== read.version || cur.state !== "UNKNOWN" || cur.captureId) throw new StaleStateError(`Checkout ${cur.checkoutSessionId} changed during reconcile`);
+        const out = this.sessions.transition(cur, to, { reservedMinor: 0, failureCode: code, failureReason: reason });
+        if (cur.mandateId && cur.reservedMinor > 0) this.policy.release(cur.mandateId, cur.userId, cur.reservedMinor, cur.checkoutSessionId);
+        this.audit.append(cur.checkoutSessionId, cur.userId, code === "CHECKOUT_EXPIRED" ? "CHECKOUT_EXPIRED" : "RECONCILE_CLOSED_NO_CAPTURE", { code, ...evidence });
+        return out;
+      });
+    } catch (e) {
+      if (!(e instanceof StaleStateError)) throw e;
+      return this.sessions.getCheckout(read.checkoutSessionId, read.userId);
+    }
   }
 
   // ---------------------------------------------------------------- authoritative capture reconciliation
@@ -664,6 +907,27 @@ export class CommerceGateway {
       const r = await this.reconcileCapture(cs, source);
       results.push({ checkoutSessionId: cs.checkoutSessionId, outcome: r.outcome, state: r.checkout.state });
     }
+    // UNKNOWN with no local capture id (e.g. the capture call timed out after PayPal may have captured):
+    // read the order and adopt a capture only if the provider shows one. Never captures here; if the
+    // order is merely APPROVED the checkout stays UNKNOWN for the owner's explicit reconcile.
+    for (const cs of this.sessions.listUnknownWithoutCapture()) {
+      let outcome: ReconcileOutcome = "NO_CHANGE"; let state: string = cs.state;
+      try {
+        const order = await this.readWithRetry(() => this.payments.getOrder(cs.providerOrderId!));
+        const cap = order.captures[0];
+        this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILED_READ_ONLY", { source, providerStatus: order.status, captures: order.captures.length });
+        if (cap) {
+          const fresh = await this.readWithRetry(() => this.payments.getCapture(cap.captureId));
+          const after = await this.applyCapture(cs, fresh);
+          state = after.state;
+          outcome = after.state === "COMPLETED" ? "SETTLED_COMPLETED" : after.state === "FAILED" ? "SETTLED_FAILED" : after.state === "CAPTURE_PENDING" ? "STILL_PENDING" : "NO_CHANGE";
+        }
+      } catch (e) {
+        this.audit.append(cs.checkoutSessionId, cs.userId, "RECONCILE_PROVIDER_UNAVAILABLE", { source, reason: errorText(e) });
+        outcome = "PROVIDER_UNAVAILABLE";
+      }
+      results.push({ checkoutSessionId: cs.checkoutSessionId, outcome, state });
+    }
     return results;
   }
 
@@ -713,7 +977,7 @@ export class CommerceGateway {
       capture: { captureId: cs.captureId, status: cs.captureStatus },
       failure: cs.failureCode ? { code: cs.failureCode, reason: cs.failureReason } : null,
       uncertainty: cs.state === "UNKNOWN" ? "Payment outcome is not known; the server will reconcile with the provider before any retry." : cs.state === "CAPTURE_PENDING" ? "Provider has not confirmed final settlement." : null,
-      paymentStatus: paymentStatusOf(cs.state, expired),
+      paymentStatus: paymentStatusOf(cs.state, expired, cs.failureCode),
       payment: this.paymentDetails(cs, expired),
       merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED" as const,
       merchantFundsAvailability: "NOT_DETERMINED_BY_CAPTURE_API" as const,
@@ -721,6 +985,7 @@ export class CommerceGateway {
       recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId, verified: cs.actualRecipientId !== null && cs.actualRecipientId === cs.intendedPayeeId,
         provenance: cs.actualRecipientId ? (cs.provider === "PAYPAL_SANDBOX" ? "PAYMENT_PROVIDER" : "MOCK") : null },
       paymentProvider: cs.provider, paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const, sandboxOrMock: true, fulfillment: "NOT_VERIFIED" as const, expiresAt: new Date(cs.expiresAt).toISOString(),
+      purchaseOutcome: purchaseOutcomeOf(cs.provider, expired ? "EXPIRED" : cs.state, paymentStatusOf(cs.state, expired, cs.failureCode)),
     };
   }
 
@@ -733,20 +998,21 @@ export class CommerceGateway {
       paymentResult: completed ? { status: "COMPLETED" as const, provider: cs.provider, providerOrderId: cs.providerOrderId, captureId: cs.captureId,
         amount: { totalMinor: cs.totalMinor, currency: cs.currency }, verifiedBy: "Provider capture re-read after capture" } : null,
       paymentEnvironment: paymentEnvironment(cs.provider), liveMerchantCheckout: false as const,
-      paymentStatus: paymentStatusOf(cs.state, false), isFinalPaymentReceipt: completed,
+      paymentStatus: paymentStatusOf(cs.state, false, cs.failureCode), isFinalPaymentReceipt: completed,
       payment: this.paymentDetails(cs, false),
       refund: cs.state === "REFUNDED" ? { status: cs.captureStatus, verifiedAt: cs.providerVerifiedAt ? new Date(cs.providerVerifiedAt).toISOString() : null } : null,
       merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED" as const,
       merchantIdentity: publicBinding(cs), recipient: { intendedPayeeId: cs.intendedPayeeId, actualRecipientId: cs.actualRecipientId },
       paymentStatusNote: completed ? (cs.provider === "MOCK_PAYPAL" ? "MOCK payment: no PayPal API was called." : "PayPal Sandbox payment: no real money moved.") : `No completed payment. Current state: ${cs.state}.`,
       merchantOrder: { status: "NOT_VERIFIED" as const, note: "Fictional demo merchant; no merchant order, shipment or fulfillment exists or is claimed." },
+      purchaseOutcome: purchaseOutcomeOf(cs.provider, cs.state, paymentStatusOf(cs.state, false, cs.failureCode)),
       purchaseSummary: cs.summary, summaryHash: cs.summaryHash, auditTimeline: timeline,
     };
   }
 
   // ---------------------------------------------------------------- helpers
   private paymentDetails(cs: CheckoutSession, expired: boolean) {
-    const state = expired ? "EXPIRED" : cs.state;
+    const state = expired || cs.failureCode === "CHECKOUT_EXPIRED_BEFORE_CAPTURE" ? "EXPIRED" : cs.state;
     const prohibited = ["APPROVED", "CAPTURE_PENDING", "UNKNOWN", "COMPLETED"].includes(state);
     const next: Record<string, string> = {
       PREPARED: "WAIT", HOLD: "OWNER_AUTHORIZATION_OR_NEW_LIMIT_REQUIRED", APPROVAL_REQUIRED: cs.approvalUrl ? "BUYER_MUST_APPROVE_AT_APPROVAL_URL" : "OWNER_MUST_AUTHORIZE_AT_USER_AUTHORIZATION_URL",
@@ -776,12 +1042,21 @@ export class CommerceGateway {
 
   expireIfNeeded(cs: CheckoutSession): CheckoutSession {
     if (["PREPARED", "APPROVAL_REQUIRED", "HOLD"].includes(cs.state) && cs.expiresAt <= this.now()) {
-      if (cs.mandateId && cs.reservedMinor > 0) this.policy.release(cs.mandateId, cs.userId, cs.reservedMinor, cs.checkoutSessionId);
-      const out = this.sessions.transition(cs, "EXPIRED", { reservedMinor: 0, failureCode: "CHECKOUT_EXPIRED", failureReason: "Checkout expired before approval" });
-      this.audit.append(cs.checkoutSessionId, cs.userId, "CHECKOUT_EXPIRED", {});
-      return out;
+      // Compare-and-set first, release second, in one transaction: if anything moved the checkout, nothing is released.
+      return this.store.transaction(() => {
+        const out = this.sessions.transition(cs, "EXPIRED", { reservedMinor: 0, failureCode: "CHECKOUT_EXPIRED", failureReason: "Checkout expired before approval" });
+        if (cs.mandateId && cs.reservedMinor > 0) this.policy.release(cs.mandateId, cs.userId, cs.reservedMinor, cs.checkoutSessionId);
+        this.audit.append(cs.checkoutSessionId, cs.userId, "CHECKOUT_EXPIRED", {});
+        return out;
+      });
     }
     return cs;
+  }
+
+  /** expireIfNeeded on a fresh read, for callers holding a copy from before an await; a concurrent move wins. */
+  private expireFresh(cs: CheckoutSession): CheckoutSession {
+    try { return this.expireIfNeeded(this.sessions.getCheckout(cs.checkoutSessionId, cs.userId)); }
+    catch (e) { if (e instanceof StaleStateError) return this.sessions.getCheckout(cs.checkoutSessionId, cs.userId); throw e; }
   }
 
   private fail(cs: CheckoutSession, code: string, reason: string): CheckoutSession {
@@ -811,8 +1086,29 @@ export class CommerceGateway {
 
 export type PaymentStatus = "NOT_STARTED" | "NOT_AUTHORIZED" | "APPROVAL_REQUIRED" | "APPROVED_NOT_CAPTURED" | "CAPTURE_PENDING"
   | "PAYMENT_COMPLETED" | "PAYMENT_FAILED" | "PAYMENT_REFUNDED" | "PAYMENT_UNKNOWN" | "CANCELLED" | "EXPIRED";
-export function paymentStatusOf(state: string, expired: boolean): PaymentStatus {
-  if (expired) return "EXPIRED";
+/**
+ * The three layers of a purchase, always reported separately. A completed PayPal capture is ONLY the first
+ * layer: it proves the payer's funds were captured for the payee, not that a merchant accepted an order or
+ * shipped anything. This server has no merchant order integration, so layers 2 and 3 are never confirmed here.
+ */
+export function purchaseOutcomeOf(provider: string, state: string, paymentStatus: PaymentStatus) {
+  const env = provider === "PAYPAL_SANDBOX" ? "PayPal Sandbox (no real money)" : provider === "MOCK_PAYPAL" ? "MOCK (no PayPal API call)" : provider;
+  const paymentLine: Record<string, string> = {
+    PAYMENT_COMPLETED: `Payment captured (${env}).`, CAPTURE_PENDING: `Payment capture is pending at the provider (${env}); not final.`,
+    PAYMENT_REFUNDED: `Payment was captured and then refunded (${env}).`, PAYMENT_FAILED: "Payment failed; nothing was captured.",
+    EXPIRED: "Checkout expired before any capture; DIAPORIA never requested one, so no payment was taken.",
+  };
+  return {
+    payment: paymentStatus,
+    merchantOrderConfirmation: "NOT_CONFIRMED" as const,
+    fulfillment: "NOT_VERIFIED" as const,
+    merchantPurchaseComplete: false as const,
+    statement: `${paymentLine[paymentStatus] ?? `Payment status: ${paymentStatus} (state ${state}).`} No merchant order confirmation was received and no fulfillment or shipment is verified, so this is not a completed merchant purchase.`,
+  };
+}
+
+export function paymentStatusOf(state: string, expired: boolean, failureCode: string | null = null): PaymentStatus {
+  if (expired || failureCode === "CHECKOUT_EXPIRED_BEFORE_CAPTURE") return "EXPIRED";
   switch (state) {
     case "PREPARED": return "NOT_STARTED";
     case "HOLD": return "NOT_AUTHORIZED";

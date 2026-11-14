@@ -4,6 +4,8 @@
 
 A cross-platform AI purchasing engine with evidence-based product research, bounded checkout authorization, and PayPal Sandbox integration. Built for MCP-enabled assistants.
 
+> **MVP integration status (2026-11-10):** see [docs/MVP_IMPLEMENTATION_STATUS.md](docs/MVP_IMPLEMENTATION_STATUS.md) for what is implemented, MOCK-verified, live-verified and blocked, and run `npm run dogfood` for the end-to-end scenarios. Mission and invariants: [docs/MISSION.md](docs/MISSION.md).
+
 ## In 30 seconds
 
 Any MCP client (Claude, ChatGPT, Grok, others) calls five tools on this server:
@@ -35,11 +37,11 @@ research_purchase → compare_purchase_offers → prepare_checkout → (user app
 | PayPal Sandbox Orders v2 adapter (CAPTURE intent, `PayPal-Request-Id`, Sandbox host only) | Implemented; unit-tested with a fake `fetch`; **live Sandbox use: 2 owner-approved runs** (see the Sandbox checkout row above and docs/TEST_REPORT.md) |
 | Real MCP host: Claude Code CLI → localhost | **Tested** (discovery, research → compare → prepare → status, $6,000 refusal, cross-user and scope boundaries; mock payments). See docs/HOST_TEST_EVIDENCE.md |
 | Local MCP hosts: Claude Code, OpenAI Codex CLI, xAI Grok Build, Nous Hermes Agent | **Tested, 4/4 PASS** on localhost with MOCK data (see docs/INTEROP.md) |
-| Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** Need a public HTTPS endpoint; only research-only public mode is available without OAuth |
-| Production user authentication (OAuth 2.1 for MCP) | **Not implemented.** Dev-only per-user tokens on loopback; public deployments run research-only and payment is disabled |
+| Remote hosts: claude.ai connector, ChatGPT, Grok | **Not tested.** OAuth now exists (row below), but no public HTTPS endpoint is deployed. A public OAuth deployment offers research and read tools only |
+| Remote MCP authentication (OAuth 2.1) | **Implemented, offline-verified** (`DIAPORIA_AUTH_MODE=oauth`): RFC 9728/8414 discovery, dynamic registration, PKCE S256, audience-bound tokens, refresh rotation, revocation. The official MCP SDK client completes the flow in tests. Owner-key login stands in for a real identity provider. Not deployed; no remote host connected. See [docs/REMOTE_MCP_AUTH.md](docs/REMOTE_MCP_AUTH.md) |
 | Live product research (catalog search, independent evidence) | **BYOK adapters for Channel3 (catalog) and Tavily (independent evidence)**, off by default. Bounded live smoke only (see Live evidence status below). Listing prices are never treated as checkout quotes. Without keys, all research is MOCK |
 | Merchant identity verification (registry + recipient attestation) | **MOCK providers only**: workflow implemented and mock-tested; no official registry or PayPal attestation integrated (see below) |
-| Merchant fulfillment / shipping | Not provided and never claimed. Sandbox payments go to DIAPORIA's own Sandbox test account; the demo merchants are fictional |
+| Merchant order confirmation / fulfillment / shipping | Not provided and never claimed. A completed capture is reported as payment only (`purchaseOutcome.merchantPurchaseComplete: false`). Sandbox payments go to DIAPORIA's own Sandbox test account; the demo merchants are fictional |
 | PayPal Agent Ready, Store Sync | Not integrated (see roadmap below) |
 
 ## Quick start (no keys, no network)
@@ -48,12 +50,13 @@ Requires Node.js 22.13+ (uses the built-in `node:sqlite`).
 
 ```bash
 npm ci
-npm test            # 115 tests
+npm test            # all automated mock and offline integration tests
 npm run typecheck
 npm run demo:e2e    # full MCP purchase path, all MOCK
 npm run demo:identity  # valid merchant vs impersonator, all MOCK
 npm run demo:quote     # discovery → Shopify cart estimate → external checkout handoff (fixtures)
 npm run demo:service   # evidence routing + usage ledger, community vs simulated managed billing (all MOCK)
+npm run demo:subscription  # managed subscription billing against a fake PayPal: subscribe once, allowance, replay, cancel (all MOCK)
 ```
 
 Run the server:
@@ -73,6 +76,17 @@ Then point an MCP client at `http://127.0.0.1:8790/mcp` with header `Authorizati
 To use PayPal Sandbox instead of the mock, set `PAYMENT_PROVIDER=paypal_sandbox` and Sandbox REST credentials (see `.env.example`). Live credentials are refused by construction.
 
 Every research, compare, prepare, status and receipt result carries `paymentEnvironment` (`MOCK` = no PayPal API at all, `PAYPAL_SANDBOX` = PayPal test environment) and `liveMerchantCheckout: false`. Live PayPal and live merchant checkout are not supported.
+
+## Browser Checkout Handoff V0 (KERNEL)
+
+This is a separate path for real merchants that DIAPORIA does not pay. It works in four steps:
+
+1. An isolated browser prepares the cart on an authorized merchant's own website.
+2. It captures the displayed total, shipping, tax and any unknowns, then stops before payment.
+3. The human takes over the same browser through an owner-authenticated, short-lived page and uses the merchant's own PayPal button.
+4. Only authenticated seller-side confirmation yields `ORDER_CONFIRMED`.
+
+Phase A (offline fixture) and Phase B (**one owner-approved, live KERNEL session proving a synthetic same-browser popup**) are verified. Phase C, which requires the **actual PayPal Sandbox button and buyer login**, remains **NOT RUN** live; its controlled test merchant and offline (C0) tests exist ([docs/PHASE_C_TEST_MERCHANT.md](docs/PHASE_C_TEST_MERCHANT.md), [operator checklist](docs/PHASE_C_OPERATOR_CHECKLIST.md)). The integrated code now requires a reviewed exact-host KERNEL egress allowlist for real merchant recipes, plus explicit browser opt-in, and implements a best-effort independent 10-minute cleanup watchdog. Network/IP isolation and crash recovery remain unverified in the real KERNEL environment. See [docs/BROWSER_CHECKOUT_HANDOFF.md](docs/BROWSER_CHECKOUT_HANDOFF.md), [the security review](docs/HANDOFF_SECURITY_REVIEW.md) [the host matrix](docs/HANDOFF_HOST_MATRIX.md) and [the Phase C approval runbook](docs/PHASE_C_RUNBOOK.md).
 
 ## Architecture
 
@@ -95,10 +109,10 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/MCP_TOOLS.md](doc
 - AI-client tokens carry `purchase.research`, `purchase.read`, `purchase.prepare`. No scope can create a mandate or capture funds.
 - Owner keys (held by the human) create and revoke mandates via `/owner/mandates` or the `/authorize/<checkout>` page (cookie + CSRF, SameSite=Strict).
 - Every lookup is scoped by the authenticated user; another user's session returns `NOT_FOUND`.
-- Payment execution is enabled only when auth mode is `dev`, the server binds to loopback, and the public base URL is loopback. Anything else returns `HOLD / PUBLIC_PAYMENT_DISABLED`.
+- Payment execution is enabled only when auth mode is `dev` or `oauth`, the server binds to loopback, and the public base URL is loopback. Anything else returns `HOLD / PUBLIC_PAYMENT_DISABLED`.
 - Host-header and Origin allowlists (DNS-rebinding protection), 64 KiB body limit, per-token rate limits, 30 s request timeout.
 - PayPal credentials stay server-side; errors carry only HTTP status and PayPal debug id; audit records are redacted.
-- Known gaps: no OAuth, in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
+- Known gaps: OAuth is implemented but not deployed (owner-key login stands in for an identity provider), in-memory rate limiter and owner-page sessions (single process), no webhook listener (status comes from synchronous verification and explicit reconciliation).
 
 Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) for the Sandbox path, and a public HTTPS tunnel or host for remote AI clients.
 
@@ -107,13 +121,13 @@ Credentials needed for anything beyond the mock demo: PayPal Sandbox REST app (`
 | Integration | Live-tested | Result |
 |---|---|---|
 | Claude Code CLI as MCP host (localhost) | ✓ | Discovery, research, compare, prepare and status; $6,000 refusal; cross-user and scope boundaries |
-| Four local MCP hosts: Claude Code, Codex CLI, Grok Build, Hermes Agent (2026-11-09) | ✓ | All four **PASS**: a real host-originated `research_purchase` call over Streamable HTTP, with identical results. Host interop is live; the commerce data is MOCK fixtures. See [docs/INTEROP.md](docs/INTEROP.md) |
+| Four local MCP hosts: Claude Code, Codex CLI, Grok Build, Hermes Agent | ✓ | 2026-11-09: all four **PASS** `research_purchase`. 2026-11-10: all four **PASS** the two-step `research_purchase` → `compare_purchase_offers` workflow. Real host-originated calls over Streamable HTTP, identical results, per-host attribution, and a cross-host session probe refused. Host interop is live; the commerce data is MOCK fixtures and no payment tool was offered. See [docs/INTEROP.md](docs/INTEROP.md) |
 | PayPal Sandbox order, buyer approval, recipient check, capture | ✓ (2 runs) | Run 1 failed closed before capture. Run 2: one capture, still `PENDING / PENDING_REVIEW` |
 | Channel3 product discovery | ✓ (2 calls total) | First run wrongly locked a "w/ Pro Stand Kit" bundle as the exact product. After the fix, the corrective run marked it `BUNDLE`; no standalone listing named the colour Black, so identity was `NOT_FOUND`, giving HOLD. Listing prices are never checkout quotes |
 | Tavily independent search | ✓ (2 calls total, 2026-11-09) | First run: a false contradiction from an over-broad negation rule. After the fix, a corrective run found Sony WH-CH720N ANC `SUFFICIENT_TRUE` from independent review sites; a comparative "isn't the very best" sentence was read correctly. A retailer page (amazon.com) was counted as independent, so retailer and marketplace domains are now excluded (fixed offline) |
-| KERNEL page inspection | — | No public adapter yet |
+| KERNEL page inspection | — | BYOK adapter implemented and fake-HTTP tested; **no live call made** (paid; needs owner approval) |
 | Shopify Storefront Cart | — | Fixtures only |
-| Production OAuth, managed billing, merchant orders | — | Not implemented |
+| Production OAuth deployment, managed billing, merchant orders | — | OAuth implemented offline only; billing MOCK only; merchant orders not integrated |
 
 Raw evidence (sanitized) is in `docs/evidence/`. Setup is in [docs/SETUP.md](docs/SETUP.md), and the judge walkthrough is in [docs/HACKATHON_DEMO.md](docs/HACKATHON_DEMO.md).
 
@@ -123,11 +137,12 @@ DIAPORIA stays host-neutral: users work through their own AI assistant, and ther
 
 | Capability | Implemented | Mock-tested | Live-tested | Planned / blocked |
 |---|---|---|---|---|
-| Evidence Router: explicit sufficiency rule; existing evidence → Tavily → KERNEL only when needed; caching; limits never skip verification | ✓ | ✓ | Tavily: bounded smoke (2 calls); KERNEL: — | KERNEL adapter; retailer exclusion offline-tested only |
+| Evidence Router: explicit sufficiency rule; existing evidence → Tavily → KERNEL only when needed; caching; limits never skip verification | ✓ | ✓ | Tavily: bounded smoke (2 calls); KERNEL: — | KERNEL live smoke (paid, awaiting approval); retailer exclusion offline-tested only |
 | Usage Ledger: micro-USD supplier cost, cents billable, dedupe/retries billed once, per-request and monthly caps, estimate vs reconciled cost | ✓ | ✓ | Recorded live BYOK calls with cost **unknown** (not 0) | Real price book |
-| Community mode: BYOK or MOCK providers, no DIAPORIA billing | ✓ | ✓ | — | KERNEL BYOK adapter |
+| Community mode: BYOK (Channel3, Tavily, KERNEL) or MOCK providers, no DIAPORIA billing | ✓ | ✓ | Channel3 and Tavily bounded smoke | KERNEL live smoke |
 | Managed mode: server-owned keys, deny paid ops without ACTIVE billing, fail closed | ✓ (loopback **simulation only**) | ✓ | — | **Production authentication** (blocker) |
-| Service billing context: plans, authorization, period summary, signed webhook | ✓ (**mock** PayPal Subscriptions) | ✓ | — | PayPal Subscriptions integration and plan design (no metered-usage API) |
+| Service billing context: plans, authorization, period summary, signed webhook | ✓ (**mock** PayPal Subscriptions) | ✓ | — | Superseded for managed mode by the subscription billing row below (kept as `MANAGED_BILLING=legacy-mock`) |
+| Managed subscription billing V1: PayPal Subscriptions adapter (Sandbox-only, endpoint allowlist), lifecycle state machine, paid-period grants, allowance/cap enforcement inside the ledger transaction, PayPal-verified webhooks, replay/concurrency protection | ✓ | ✓ (fake PayPal HTTP) | **No** Sandbox or live call yet | Owner-approved Sandbox run ([procedure](docs/SUBSCRIPTION_SANDBOX_PROCEDURE.md)); real prices (UNKNOWN); merchant country eligibility. See [docs/MANAGED_BILLING.md](docs/MANAGED_BILLING.md) |
 | `get_usage_summary` MCP tool (read-only, per user) | ✓ | ✓ | — | — |
 
 Fixture offers are labelled `offerEvidenceClass: FIXTURE_OFFER`; merchant estimates are `MERCHANT_API_ESTIMATE`; no merchant order is ever claimed (`NO_MERCHANT_ORDER`).

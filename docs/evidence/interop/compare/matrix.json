@@ -1,0 +1,121 @@
+{
+  "scenario": "research_purchase → compare_purchase_offers",
+  "fixture": {
+    "request": "Buy Sony WH-CH720N Black",
+    "currency": "USD",
+    "budgetMinor": 6000,
+    "mustHave": [
+      "active_noise_cancellation"
+    ]
+  },
+  "destination": {
+    "country": "US",
+    "region": "CA"
+  },
+  "generatedAt": "2026-11-09T17:50:41.006Z",
+  "unauthenticatedProbe": [
+    {
+      "time": "2026-11-09T17:49:41.404Z",
+      "userAgent": "curl-unauth-probe",
+      "method": "tools/list",
+      "status": 401
+    }
+  ],
+  "crossHostAuthorizationProbe": {
+    "probe": "codex-cli token → compare_purchase_offers on claude-code's research session (direct to server, not via a host)",
+    "sessionOwner": "interop-claude-code",
+    "isError": true,
+    "error": {
+      "code": "NOT_FOUND",
+      "message": "Purchase session not found",
+      "details": {}
+    }
+  },
+  "hosts": {
+    "claude-code": {
+      "status": "PASS",
+      "host": "Claude Code 2.1.310",
+      "userAgents": [
+        "claude-code/2.1.310 (claude-desktop, agent-sdk/0.3.317)"
+      ],
+      "checks": {
+        "discovery": true,
+        "oneCallEach": true,
+        "order": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "compareBound": true,
+        "hostOriginated": true,
+        "resultsOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true,
+        "noPaymentEffect": true
+      }
+    },
+    "codex-cli": {
+      "status": "PASS",
+      "host": "codex-cli 0.160.0 (codex exec --json)",
+      "userAgents": [
+        "codex-mcp-client/0.160.0"
+      ],
+      "checks": {
+        "discovery": true,
+        "oneCallEach": true,
+        "order": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "compareBound": true,
+        "hostOriginated": true,
+        "resultsOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true,
+        "noPaymentEffect": true
+      }
+    },
+    "grok-build": {
+      "status": "PASS",
+      "host": "grok 1.0.77 (50ca579fa996) [stable]",
+      "userAgents": [
+        "grok-cli/1.0.77"
+      ],
+      "checks": {
+        "discovery": true,
+        "oneCallEach": true,
+        "order": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "compareBound": true,
+        "hostOriginated": true,
+        "resultsOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true,
+        "noPaymentEffect": true
+      }
+    },
+    "hermes-agent": {
+      "status": "PASS",
+      "host": "Hermes Agent v0.22.7 (2026.9.24) · stable · local b200f5bc60e3",
+      "userAgents": [
+        "python-httpx/0.28.1",
+        "python-httpx2/2.15.1"
+      ],
+      "checks": {
+        "discovery": true,
+        "oneCallEach": true,
+        "order": true,
+        "noOtherToolCalls": true,
+        "fixtureArguments": true,
+        "compareBound": true,
+        "hostOriginated": true,
+        "resultsOk": true,
+        "semanticsMatchReference": true,
+        "attributedToHostUser": true,
+        "scopeLimitedDiscovery": true,
+        "noPaymentEffect": true
+      }
+    }
+  }
+}

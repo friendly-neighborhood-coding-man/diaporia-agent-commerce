@@ -9,17 +9,30 @@ import { MockPayPalProvider } from "../payment/MockPayPalProvider.js";
 import type { PaymentProvider } from "../payment/PaymentProvider.js";
 import { DevAuth, SCOPES, type Principal } from "../auth/devAuth.js";
 import { createCommerceMcpServer } from "../mcp/MCPCommerceAdapter.js";
+import { handleSubscriptionRoutes } from "../billing/subscriptions/http.js";
 import { parseDecimalToMinor } from "../domain/money.js";
 import { NotFoundError } from "../checkout/CheckoutSessionManager.js";
 import { esc, money, page } from "./html.js";
 import { RateLimiter } from "./rateLimit.js";
+import { BrowserCheckoutHandoff } from "../handoff/BrowserCheckoutHandoff.js";
+import { createHandoffRoutes } from "../handoff/http.js";
+import { OAuthAuthority, type PendingAuthorization } from "../auth/oauth.js";
 
 export interface AppConfig {
   host: string;
   port: number;
   /** Externally visible origin, e.g. http://127.0.0.1:8790 */
   baseUrl: string;
-  authMode: "dev" | "public-readonly-demo";
+  /**
+   * dev: static per-user dev tokens (local only).
+   * oauth: OAuth 2.1 (PKCE, DCR, RFC 8707/9728) for remote MCP clients. Payment execution and the
+   *   payment-preparation tools exist only when the server is loopback-bound; on any public host an
+   *   OAuth deployment is research/read only until an independent security review says otherwise.
+   * public-readonly-demo: anonymous research/read.
+   */
+  authMode: "dev" | "public-readonly-demo" | "oauth";
+  /** OAuth token lifetimes (tests). */
+  oauth?: { accessTokenTtlSec?: number; refreshTokenTtlSec?: number; codeTtlSec?: number; maxClients?: number };
   dbPath: string;
   auth: DevAuth;
   research?: CommerceResearchAdapter;
@@ -35,6 +48,8 @@ export interface AppConfig {
   readRetry?: { attempts: number; baseDelayMs: number };
   /** Metering, evidence routing, community/managed mode and service billing. */
   service?: import("../engine/ServicePlane.js").ServicePlane | null;
+  /** Browser checkout handoff (separate path; absent = disabled). */
+  handoff?: Omit<import("../handoff/BrowserCheckoutHandoff.js").HandoffConfig, "baseUrl" | "enabled"> | null;
 }
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -44,7 +59,7 @@ export function isLoopbackUrl(u: string): boolean {
   try { return LOOPBACK.test(new URL(u).hostname); } catch { return false; }
 }
 
-export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean }
+export interface App { server: Server; gateway: CommerceGateway; store: Store; auth: DevAuth; mockPayPal: MockPayPalProvider | null; paymentExecutionEnabled: boolean; handoff: BrowserCheckoutHandoff | null; oauth: OAuthAuthority | null }
 
 export function createApp(cfg: AppConfig): App {
   const now = cfg.now ?? Date.now;
@@ -52,7 +67,7 @@ export function createApp(cfg: AppConfig): App {
   const payments = cfg.payments ? cfg.payments(cfg.baseUrl) : new MockPayPalProvider(cfg.baseUrl);
   const mockPayPal = payments instanceof MockPayPalProvider ? payments : null;
   // Payment flows run only with per-user dev tokens on a loopback-only deployment.
-  const paymentExecutionEnabled = cfg.authMode === "dev" && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
+  const paymentExecutionEnabled = (cfg.authMode === "dev" || cfg.authMode === "oauth") && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl);
   // Managed mode needs production authentication, which does not exist yet. Only an explicit loopback simulation may run it.
   if (cfg.service?.mode === "managed" && !(cfg.service.managedSimulation === true && LOOPBACK.test(cfg.host) && isLoopbackUrl(cfg.baseUrl)))
     throw new Error("Managed mode requires production authentication (not implemented). Only managedSimulation on loopback is allowed.");
@@ -61,11 +76,23 @@ export function createApp(cfg: AppConfig): App {
     sandboxPlatformPayeeEmail: cfg.sandboxPlatformPayeeEmail ?? null, webhookVerifier: cfg.webhookVerifier ?? null,
     ...(cfg.readRetry ? { readRetry: cfg.readRetry } : {}), service: cfg.service ?? null }, now);
   const base = new URL(cfg.baseUrl);
+  // Every human-facing page names the real payment environment. MOCK is never labelled Sandbox.
+  const envBanner = payments.name === "PAYPAL_SANDBOX" ? "PayPal Sandbox: test accounts and test money only. No real money moves."
+    : "MOCK environment: simulated payment, no PayPal call, no money moves.";
+  const envPage = (title: string, body: string) => page(title, body, envBanner);
+  const oauth = cfg.authMode === "oauth" ? new OAuthAuthority(store, cfg.auth, { issuer: base.origin, resource: `${base.origin}/mcp`,
+    offeredScopes: paymentExecutionEnabled ? [SCOPES.RESEARCH, SCOPES.READ, SCOPES.PREPARE] : [SCOPES.RESEARCH, SCOPES.READ], ...(cfg.oauth ?? {}) }, now) : null;
+  if (oauth && base.protocol !== "https:" && !isLoopbackUrl(cfg.baseUrl)) throw new Error("OAuth mode requires an https PUBLIC_BASE_URL unless it is loopback");
   const allowedHosts = [...new Set([base.host, `127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`])];
   const allowedOrigins = [...new Set([base.origin, `http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`])];
   const mcpLimiter = new RateLimiter(120, 60_000);
   const webLimiter = new RateLimiter(30, 60_000);
   const ownerSessions = new Map<string, { userId: string; csrf: string; expiresAt: number }>();
+  const handoff = cfg.handoff ? new BrowserCheckoutHandoff(store, gateway, { ...cfg.handoff, baseUrl: cfg.baseUrl, enabled: paymentExecutionEnabled }, now) : null;
+  const handoffRoutes = handoff ? createHandoffRoutes({ handoff, auth: cfg.auth, now, secureCookies: base.protocol === "https:",
+    sameOrigin: (req) => sameOrigin(req, allowedOrigins), readText }) : null;
+  const handoffTimer = handoff ? setInterval(() => { void handoff.tick(); }, 15_000) : null;
+  handoffTimer?.unref();
 
   const server = createServer(async (req, res) => {
     try {
@@ -82,11 +109,17 @@ export function createApp(cfg: AppConfig): App {
         if (origin && !allowedOrigins.includes(origin)) return send(res, 403, { error: "Origin not allowed" });
         let principal: Principal | null;
         if (cfg.authMode === "public-readonly-demo") principal = { userId: "anonymous-demo", scopes: new Set([SCOPES.RESEARCH, SCOPES.READ]), kind: "ANONYMOUS_PUBLIC_DEMO", tokenFingerprint: "anon" };
+        else if (oauth) principal = oauth.verifyAccessToken(req.headers.authorization);
         else principal = cfg.auth.verifyBearer(req.headers.authorization);
-        if (!principal) { res.setHeader("WWW-Authenticate", 'Bearer realm="diaporia-dev", error="invalid_token"'); return send(res, 401, { error: "Missing or invalid bearer token" }); }
+        if (!principal) {
+          res.setHeader("WWW-Authenticate", oauth ? oauth.challenge(req.headers.authorization ? "invalid_token" : undefined) : 'Bearer realm="diaporia-dev", error="invalid_token"');
+          return send(res, 401, { error: "Missing or invalid bearer token" });
+        }
         if (!mcpLimiter.take(`${principal.tokenFingerprint}|${ip}`)) return send(res, 429, { error: "Rate limit exceeded" });
         const body = await readJson(req);
-        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools: cfg.authMode === "dev" && principal.scopes.has(SCOPES.PREPARE) });
+        // OAuth on a public host never offers payment-preparation tools (they would only return HOLD anyway).
+        const exposePaymentTools = (cfg.authMode === "dev" || (cfg.authMode === "oauth" && paymentExecutionEnabled)) && principal.scopes.has(SCOPES.PREPARE);
+        const mcp = createCommerceMcpServer(gateway, principal, { exposePaymentTools, handoff });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts, allowedOrigins });
         res.on("close", () => { void transport.close(); void mcp.close(); });
         await mcp.connect(transport);
@@ -95,8 +128,36 @@ export function createApp(cfg: AppConfig): App {
       }
 
       if (!webLimiter.take(ip)) return send(res, 429, { error: "Rate limit exceeded" });
+
+      // ---- OAuth 2.1 authorization server + RFC 9728 resource metadata (oauth mode only) ----
+      if (oauth) {
+        const p = url.pathname;
+        if (req.method === "GET" && (p === "/.well-known/oauth-protected-resource" || p === "/.well-known/oauth-protected-resource/mcp"))
+          return sendPublic(res, 200, oauth.protectedResourceMetadata());
+        if (req.method === "GET" && p === "/.well-known/oauth-authorization-server") return sendPublic(res, 200, oauth.authorizationServerMetadata());
+        if (p === "/oauth/register" && req.method === "POST") { const out = oauth.register(await readJson(req)); return send(res, out.status, out.body); }
+        if (p === "/oauth/token" && req.method === "POST") { const out = oauth.token(new URLSearchParams(await readText(req)), header(req, "authorization")); return send(res, out.status, out.body); }
+        if (p === "/oauth/revoke" && req.method === "POST") { const out = oauth.revoke(new URLSearchParams(await readText(req)), header(req, "authorization")); return send(res, out.status, out.body); }
+        if (p === "/oauth/authorize" && req.method === "GET") {
+          const r = oauth.beginAuthorization(url.searchParams);
+          if (!r.ok) {
+            if (r.redirect) { res.statusCode = 302; res.setHeader("Location", r.redirect); return res.end(); }
+            return html(res, 400, page("Authorization request refused", `<p class="state">${esc(r.error.error)}</p><p>${esc(r.error.description)}</p>`, AUTH_BANNER));
+          }
+          return html(res, 200, consentPage(r.pending, paymentExecutionEnabled), formActionFor(r.pending.redirectUri));
+        }
+        if (p === "/oauth/authorize" && req.method === "POST") {
+          if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+          const form = new URLSearchParams(await readText(req));
+          const pend = oauth.getPending(form.get("request_id"));
+          const out = oauth.completeAuthorization(form);
+          if ("redirect" in out) { res.statusCode = 303; res.setHeader("Location", out.redirect); return res.end(); }
+          if (pend && out.error.status === 401) return html(res, 401, consentPage(pend, paymentExecutionEnabled, "Owner key not recognized."), formActionFor(pend.redirectUri));
+          return html(res, out.error.status, page("Authorization failed", `<p class="state">${esc(out.error.error)}</p><p>${esc(out.error.description)}</p>`, AUTH_BANNER));
+        }
+      }
       // Without payment execution (public deployments), no owner, authorization, return or mock-payment route exists.
-      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
+      if (!paymentExecutionEnabled && /^\/(owner|authorize|paypal|mock-paypal|billing|handoff)(\/|$)/.test(url.pathname)) return send(res, 403, { error: "Payment routes are disabled on this deployment" });
 
       // ---- Owner API (human-held owner key; AI client tokens cannot reach this) ----
       if (url.pathname === "/owner/mandates" && req.method === "POST") {
@@ -132,50 +193,68 @@ export function createApp(cfg: AppConfig): App {
         return send(res, 200, gateway.getCheckoutStatus(userId, cs.checkoutSessionId));
       }
 
+      const cancel = /^\/owner\/checkouts\/(cs_[0-9a-f-]{36})\/cancel$/.exec(url.pathname);
+      if (cancel && req.method === "POST") {
+        if (!sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Origin not allowed" });
+        const userId = cfg.auth.verifyOwnerKey(header(req, "x-owner-key"));
+        if (!userId) return send(res, 401, { error: "Owner key required" });
+        const out = await gateway.cancelCheckoutAsOwner(userId, cancel[1]!);
+        return send(res, out.cancelled ? 200 : 409, { cancelled: out.cancelled, reason: out.reason, status: gateway.getCheckoutStatus(userId, out.checkout.checkoutSessionId) });
+      }
+
       // ---- Owner authorization page for a prepared checkout ----
       const auth = /^\/authorize\/(cs_[0-9a-f-]{36})$/.exec(url.pathname);
       if (auth) {
         const csId = auth[1]!;
-        if (req.method === "GET") return html(res, 200, page("Authorize a DIAPORIA checkout", `<p>An AI assistant prepared checkout <code>${esc(csId)}</code>. Enter your owner key to review it.
+        if (req.method === "GET") return html(res, 200, envPage("Authorize a DIAPORIA checkout", `<p>An AI assistant prepared checkout <code>${esc(csId)}</code>. Enter your owner key to review it.
           The AI client cannot do this step: its token cannot create spending authority.</p>
           <form method="post"><input type="hidden" name="action" value="review"><label>Owner key<input name="ownerKey" type="password" autocomplete="off" required></label><p><button>Review checkout</button></p></form>`));
         if (req.method !== "POST" || !sameOrigin(req, allowedOrigins)) return send(res, 403, { error: "Forbidden" });
         const form = new URLSearchParams(await readText(req));
         if (form.get("action") === "review") {
           const userId = cfg.auth.verifyOwnerKey(form.get("ownerKey") ?? undefined);
-          if (!userId) return html(res, 401, page("Not authorized", "<p>Owner key not recognized.</p>"));
+          if (!userId) return html(res, 401, envPage("Not authorized", "<p>Owner key not recognized.</p>"));
           let cs;
-          try { cs = gateway.sessions.getCheckout(csId, userId); } catch { return html(res, 404, page("Not found", "<p>Checkout not found.</p>")); }
+          try { cs = gateway.sessions.getCheckout(csId, userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
           const sid = randomBytes(24).toString("base64url"); const csrf = randomBytes(24).toString("base64url");
           ownerSessions.set(sid, { userId, csrf, expiresAt: now() + 10 * 60_000 });
           res.setHeader("Set-Cookie", `dac_owner=${sid}; HttpOnly; SameSite=Strict; Path=/authorize; Max-Age=600${base.protocol === "https:" ? "; Secure" : ""}`);
-          const c = cs.cost;
-          return html(res, 200, page("Review and set your spending limit", `<table>
-            <tr><td>Product</td><td>${esc(`${cs.identity.brand} ${cs.identity.model} · ${cs.identity.variant ?? "—"} · ${cs.identity.condition}`)}</td></tr>
-            <tr><td>Merchant</td><td>${esc(cs.summary.merchant.name)} <span class="muted">(fictional demo merchant)</span></td></tr>
-            <tr><td>Quantity</td><td>${cs.quantity}</td></tr><tr><td>Item</td><td>${esc(money(c.itemMinor, cs.currency))}</td></tr>
-            <tr><td>Shipping</td><td>${esc(money(c.shippingMinor, cs.currency))}</td></tr><tr><td>Tax</td><td>${esc(money(c.taxMinor, cs.currency))}</td></tr>
-            <tr><td><b>Total</b></td><td><b>${esc(money(cs.totalMinor, cs.currency))}</b></td></tr><tr><td>State</td><td class="state">${esc(cs.state)}</td></tr></table>
-            <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
-            <label>Maximum you authorize (${esc(cs.currency)})<input name="maximum" inputmode="decimal" required placeholder="60.00"></label>
-            <p class="muted">This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve.</p>
-            <p><button>Authorize and continue to PayPal</button></p></form>`));
+          return html(res, 200, envPage("Review and set your spending limit", reviewBody(cs, csrf, payments.name, cs.mandateId ? gateway.mandates.get(cs.mandateId, userId) : null)));
+        }
+        if (form.get("action") === "cancel") {
+          const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
+          const sess = sid ? ownerSessions.get(sid) : undefined;
+          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
+          ownerSessions.delete(sid!);
+          let out;
+          try { out = await gateway.cancelCheckoutAsOwner(sess.userId, csId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
+          return html(res, out.cancelled ? 200 : 409, envPage(out.cancelled ? "Checkout cancelled" : "Checkout not cancelled", out.cancelled
+            ? "<p>Nothing was paid. Any reserved spending limit was released. You can return to your AI assistant.</p>"
+            : `<p class="state">${esc(out.reason)}</p><p>The checkout was left unchanged because cancelling now could race a payment. Ask your AI assistant to check the checkout status.</p>`));
         }
         if (form.get("action") === "authorize") {
           const sid = /(?:^|;\s*)dac_owner=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? "")?.[1];
           const sess = sid ? ownerSessions.get(sid) : undefined;
-          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, page("Session expired", "<p>Review the checkout again.</p>"));
+          if (!sess || sess.expiresAt <= now() || form.get("csrf") !== sess.csrf) return html(res, 401, envPage("Session expired", "<p>Review the checkout again.</p>"));
           ownerSessions.delete(sid!);
           let cs;
-          try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, page("Not found", "<p>Checkout not found.</p>")); }
+          try { cs = gateway.sessions.getCheckout(csId, sess.userId); } catch { return html(res, 404, envPage("Not found", "<p>Checkout not found.</p>")); }
           let maximum: number;
-          try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, page("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
-          const out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum);
+          try { maximum = parseDecimalToMinor(form.get("maximum") ?? "", cs.currency); } catch { return html(res, 400, envPage("Invalid amount", "<p>Enter an amount like 60.00.</p>")); }
+          let out;
+          try { out = await gateway.authorizeCheckoutAsOwner(sess.userId, csId, maximum); }
+          catch (e) {
+            if (e instanceof CommerceError && e.code === "INVALID_STATE") return html(res, 409, envPage("Already authorized", `<p class="state">${esc(gateway.sessions.getCheckout(csId, sess.userId).state)}</p><p>This checkout was already authorized or can no longer be paid. No new spending limit was created. Ask your AI assistant to check the checkout status.</p>`));
+            throw e;
+          }
           if (out.decision.allowed && out.checkout.approvalUrl) { res.statusCode = 303; res.setHeader("Location", out.checkout.approvalUrl); return res.end(); }
-          return html(res, 403, page("Checkout not authorized", `<p class="state">${esc(out.decision.code)}</p><p>${esc(out.decision.detail)}</p><p>No payment was started.</p>`));
+          return html(res, 403, envPage("Checkout not authorized", `<p class="state">${esc(out.decision.code)}</p><p>${esc(out.decision.detail)}</p><p>No payment was started.</p>`));
         }
         return send(res, 400, { error: "Unknown action" });
       }
+
+      // ---- Managed subscription billing (owner subscribe/cancel, buyer return, verified PayPal billing webhook) ----
+      if (await handleSubscriptionRoutes(req, res, url, { billing: cfg.service?.billing ?? null, auth: cfg.auth, allowedOrigins, send, html, readJson, readText, header, sameOrigin })) return;
 
       // ---- Mock service-billing webhook (simulation only; HMAC-signed) ----
       if (url.pathname === "/billing/webhook/mock" && req.method === "POST") {
@@ -199,14 +278,15 @@ export function createApp(cfg: AppConfig): App {
       // ---- PayPal (or mock) buyer return / cancel ----
       if ((url.pathname === "/paypal/return" || url.pathname === "/paypal/cancel") && req.method === "GET") {
         const csId = url.searchParams.get("checkout") ?? ""; const orderId = url.searchParams.get("token") ?? "";
-        if (!/^cs_[0-9a-f-]{36}$/.test(csId) || !/^[A-Z0-9]{8,40}$/.test(orderId)) return html(res, 400, page("Invalid return", "<p>Malformed return parameters.</p>"));
+        if (!/^cs_[0-9a-f-]{36}$/.test(csId) || !/^[A-Z0-9]{8,40}$/.test(orderId)) return html(res, 400, envPage("Invalid return", "<p>Malformed return parameters.</p>"));
         try {
           const cs = url.pathname === "/paypal/return" ? await gateway.handleBuyerReturn(csId, orderId) : await gateway.handleBuyerCancel(csId, orderId);
-          return html(res, 200, page("Payment status", `<p>Server-verified state: <span class="state">${esc(cs.state)}</span></p>
+          return html(res, 200, envPage("Payment status", `<p>Server-verified state: <span class="state">${esc(cs.state)}</span></p>
             ${cs.failureCode ? `<p class="muted">${esc(cs.failureCode)}: ${esc(cs.failureReason)}</p>` : ""}
-            <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>`));
+            <p>Return to your AI assistant and ask it to check the checkout status. This page does not itself prove payment.</p>
+            <p class="muted">Even a COMPLETED payment is only the payment step: no merchant order confirmation or shipment is verified by DIAPORIA.</p>`));
         } catch (e) {
-          if (e instanceof NotFoundError) return html(res, 404, page("Not found", "<p>Unknown checkout.</p>"));
+          if (e instanceof NotFoundError) return html(res, 404, envPage("Not found", "<p>Unknown checkout.</p>"));
           throw e;
         }
       }
@@ -228,6 +308,9 @@ export function createApp(cfg: AppConfig): App {
         return send(res, 405, { error: "Method not allowed" });
       }
 
+      // ---- Browser checkout handoff page (owner-authenticated; separate from the PayPal Sandbox path) ----
+      if (handoffRoutes && await handoffRoutes(req, res, url)) return;
+
       return send(res, 404, { error: "Not found" });
     } catch (e) {
       if (e instanceof BodyTooLarge) return send(res, 413, { error: "Request body too large" });
@@ -240,8 +323,8 @@ export function createApp(cfg: AppConfig): App {
   });
   server.requestTimeout = 30_000;
   server.headersTimeout = 10_000;
-  server.on("close", () => store.close());
-  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled };
+  server.on("close", () => { if (handoffTimer) clearInterval(handoffTimer); void handoff?.shutdown(); store.close(); });
+  return { server, gateway, store, auth: cfg.auth, mockPayPal, paymentExecutionEnabled, handoff, oauth };
 }
 
 class BodyTooLarge extends Error {}
@@ -267,15 +350,81 @@ function header(req: IncomingMessage, name: string): string | undefined { const 
 function sameOrigin(req: IncomingMessage, allowed: string[]): boolean { const o = req.headers.origin; return o === undefined || allowed.includes(o); }
 function securityHeaders(res: ServerResponse) {
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("Cache-Control", "no-store");
 }
 function send(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(body));
 }
-function html(res: ServerResponse, status: number, body: string) {
+type CheckoutView = import("../checkout/CheckoutSessionManager.js").CheckoutSession;
+type MandateView = import("../policy/PurchaseMandate.js").PurchaseMandate;
+/**
+ * Owner review page: everything the human needs to decide, with nothing implied. Unknown charges are
+ * listed as unknown (never zero), the payee is named with its provenance, and the payment
+ * environment is explicit. Approving here creates a DIAPORIA spending limit; it moves no money.
+ */
+export function reviewBody(cs: CheckoutView, csrf: string, provider: string, mandate: MandateView | null): string {
+  const c = cs.cost; const cur = cs.currency;
+  const env = provider === "PAYPAL_SANDBOX" ? "PayPal Sandbox (test money only)" : "MOCK (simulated; no PayPal call, no money)";
+  const mi = cs.summary.merchantIdentity;
+  const payee = mi
+    ? `${esc(mi.verifiedLegalName)} · payee <code>${esc(mi.intendedPayeeId)}</code>${mi.payeeRelationship === "DIAPORIA_SANDBOX_PLATFORM_ACCOUNT"
+      ? ' <span class="muted">(DIAPORIA\'s own Sandbox platform account receives this test payment, not the merchant)</span>' : ' <span class="muted">(merchant-attested payee)</span>'}`
+    : '<span class="state">UNKNOWN</span> <span class="muted">(no verified merchant identity; payment will not start)</span>';
+  const unknown = c.unknownComponents.length ? `<span class="state">${esc(c.unknownComponents.join(", "))}</span> <span class="muted">(unknown is not zero; the total cannot be verified)</span>` : "none";
+  const limit = mandate
+    ? `${esc(money(mandate.maximumTotalMinor, mandate.currency))} (${esc(mandate.authorizationStatus)}, expires ${esc(mandate.expiresAt)}; reserved ${esc(money(mandate.reservedMinor, mandate.currency))}, used ${esc(money(mandate.consumedMinor, mandate.currency))})`
+    : "none yet: you set it below";
+  return `<table>
+    <tr><td>Payment environment</td><td data-field="payment-environment"><b>${esc(env)}</b></td></tr>
+    <tr><td>Product</td><td>${esc(`${cs.identity.brand} ${cs.identity.model} · ${cs.identity.variant ?? "—"} · ${cs.identity.condition}${cs.identity.sku ? ` · SKU ${cs.identity.sku}` : ""}`)}</td></tr>
+    <tr><td>Merchant</td><td>${esc(cs.summary.merchant.name)} (${esc(cs.summary.merchant.domain)}) <span class="muted">(fictional demo merchant)</span></td></tr>
+    <tr><td>Funds go to</td><td data-field="payee">${payee}</td></tr>
+    <tr><td>Quantity</td><td>${cs.quantity}</td></tr><tr><td>Item</td><td>${esc(money(c.itemMinor, cur))}</td></tr>
+    <tr><td>Shipping</td><td>${esc(money(c.shippingMinor, cur))}</td></tr><tr><td>Tax</td><td>${esc(money(c.taxMinor, cur))}</td></tr>
+    <tr><td>Fees</td><td>${esc(money(c.feesMinor, cur))}</td></tr><tr><td>Discount</td><td>${esc(money(c.discountMinor, cur))}</td></tr>
+    <tr><td>Unknown charges</td><td data-field="unknown-charges">${unknown}</td></tr>
+    <tr><td><b>Total payable</b></td><td data-field="total"><b>${esc(money(cs.totalMinor, cur))}</b></td></tr>
+    <tr><td>AI assistant's requested maximum</td><td>${esc(money(cs.clientMaxMinor, cur))} <span class="muted">(narrows only; grants nothing)</span></td></tr>
+    <tr><td>Your current spending limit</td><td data-field="spending-limit">${limit}</td></tr>
+    <tr><td>Quote expires</td><td>${esc(new Date(cs.expiresAt).toISOString())}</td></tr>
+    <tr><td>State</td><td class="state">${esc(cs.state)}</td></tr></table>
+    <form method="post"><input type="hidden" name="action" value="authorize"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <label>Maximum you authorize (${esc(cur)})<input name="maximum" inputmode="decimal" required placeholder="60.00"></label>
+    <p class="muted">This is a DIAPORIA spending limit for this one checkout. It is not a PayPal-enforced cap; PayPal will still ask you to approve. Approving moves no money by itself.</p>
+    <p><button>Authorize and continue to payment approval</button></p></form>
+    <form method="post"><input type="hidden" name="action" value="cancel"><input type="hidden" name="csrf" value="${esc(csrf)}">
+    <p><button class="secondary">Cancel this checkout</button></p></form>
+    <p class="muted">Afterwards, return to your AI assistant and ask it for the checkout status. A browser redirect is never proof of payment.</p>`;
+}
+/** Metadata documents may be fetched cross-origin by browser-based MCP clients. */
+function sendPublic(res: ServerResponse, status: number, body: unknown) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  send(res, status, body);
+}
+const AUTH_BANNER = "Connecting an AI assistant to DIAPORIA. This grants tool access, never spending authority.";
+const SCOPE_TEXT: Record<string, string> = {
+  [SCOPES.RESEARCH]: "Research products and compare merchant offers (no payment effect)",
+  [SCOPES.READ]: "Read checkout status, receipts and usage for your account (read-only)",
+  [SCOPES.PREPARE]: "Prepare checkouts for you to approve. It cannot create a spending limit or capture money: you still set the limit and approve the payment yourself.",
+};
+function consentPage(p: PendingAuthorization, paymentToolsAvailable: boolean, error?: string): string {
+  const redirectHost = new URL(p.redirectUri).host;
+  const items = p.scopes.map((s) => `<p><label><input type="checkbox" name="scope" value="${esc(s)}" checked style="width:auto"> <code>${esc(s)}</code>: ${esc(SCOPE_TEXT[s] ?? s)}${
+    s === SCOPES.PREPARE && !paymentToolsAvailable ? ' <span class="muted">(not offered on this deployment: payment tools are disabled here)</span>' : ""}</label></p>`).join("");
+  return page("Allow an AI client to use DIAPORIA?", `${error ? `<p class="state">${esc(error)}</p>` : ""}
+    <p>The client <b>${esc(p.clientName)}</b> (self-registered; name not verified) wants to use DIAPORIA on your behalf. After you allow it, your browser returns to <code>${esc(redirectHost)}</code>.</p>
+    <form method="post" action="/oauth/authorize"><input type="hidden" name="request_id" value="${esc(p.id)}"><input type="hidden" name="csrf" value="${esc(p.csrf)}">
+    ${items}
+    <label>Owner key (proves you are the account owner)<input name="owner_key" type="password" autocomplete="off"></label>
+    <p class="muted">The client gets a token valid for this server only. Revoke it any time; it never lets the client set a spending limit.</p>
+    <p><button name="decision" value="approve">Allow</button> <button class="secondary" name="decision" value="deny">Deny</button></p></form>`, AUTH_BANNER);
+}
+/** The consent POST redirects to the client's redirect URI, which CSP form-action must allow. */
+function formActionFor(redirectUri: string): string { return new URL(redirectUri).origin; }
+function html(res: ServerResponse, status: number, body: string, extraFormAction?: string) {
   res.statusCode = status;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://www.sandbox.paypal.com; frame-ancestors 'none'; base-uri 'none'");
+  res.setHeader("Content-Security-Policy", `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://www.sandbox.paypal.com${extraFormAction ? ` ${extraFormAction}` : ""}; frame-ancestors 'none'; base-uri 'none'`);
   res.end(body);
 }

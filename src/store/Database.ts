@@ -64,8 +64,16 @@ export class Store {
       ["merchant_identity_json", "TEXT"], ["intended_payee_id", "TEXT"], ["payee_relationship", "TEXT"],
       ["attestation_id", "TEXT"], ["attestation_expires_at", "INTEGER"], ["actual_recipient_id", "TEXT"],
       ["provider_verified_at", "INTEGER"], ["provider_pending_reason", "TEXT"],
+      // Expiry hardening: set once, durably, BEFORE the first capture request reaches the provider.
+      ["capture_requested_at", "INTEGER"],
     ];
     for (const [name, type] of add) if (!cols.has(name)) this.db.exec(`ALTER TABLE checkout_sessions ADD COLUMN ${name} ${type}`);
+    // DF-4: a mandate created on the owner page is bound to exactly one checkout. At most one live
+    // (non-revoked) bound mandate per checkout, enforced by the database across processes.
+    const mcols = new Set((this.db.prepare("PRAGMA table_info(mandates)").all() as Array<{ name: string }>).map((c) => c.name));
+    if (!mcols.has("bound_checkout_session_id")) this.db.exec("ALTER TABLE mandates ADD COLUMN bound_checkout_session_id TEXT");
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS mandates_one_live_per_bound_checkout ON mandates(bound_checkout_session_id)
+      WHERE bound_checkout_session_id IS NOT NULL AND status <> 'REVOKED'`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS checkout_by_capture ON checkout_sessions(capture_id);
       CREATE TABLE IF NOT EXISTS webhook_events (
         event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, capture_id TEXT, checkout_session_id TEXT,

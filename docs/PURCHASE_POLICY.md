@@ -13,15 +13,22 @@
 | `merchantConstraints.allowedMerchantIds` | Optional allowlist |
 | `authorizationStatus` | `ACTIVE`, `EXHAUSTED`, `REVOKED`, `EXPIRED` |
 | `checkoutSessionId` | First checkout the mandate was bound to |
+| `scope` | `REUSABLE` (owner API) or `CHECKOUT_BOUND` (owner approval page) |
+| `boundCheckoutSessionId` | For `CHECKOUT_BOUND`: the one checkout it may ever pay; `null` for `REUSABLE` |
 | `revokedAt` | Revocation time |
 | `reservedMinor`, `consumedMinor`, `transactionsUsed` | Durable counters |
 
 Only the owner creates mandates: `POST /owner/mandates` (header `X-Owner-Key`) or the `/authorize/<checkoutSessionId>` page. MCP tokens cannot. `POST /owner/mandates/<id>/revoke` revokes.
 
+### Two kinds of mandate (DF-4)
+
+- **REUSABLE**, created on purpose through `POST /owner/mandates`. Automatic mandate selection at `prepare_checkout` only ever considers these.
+- **CHECKOUT_BOUND**, created by the `/authorize/<checkoutSessionId>` page. It may pay only that checkout (`BOUND_TO_OTHER_CHECKOUT` otherwise), is never selected for another checkout, and the database holds at most one non-revoked bound mandate per checkout (partial UNIQUE index). The page re-checks the checkout and creates the mandate in one `BEGIN IMMEDIATE` transaction. It creates nothing when the checkout has expired, completed, been cancelled or failed, already has a provider order, or already has a mandate (409). The page revokes the mandate if no payment starts, and `release` revokes a released bound mandate. A provider timeout keeps it reserved on the `UNKNOWN` checkout for reconciliation only. A legacy page mandate with no bound id is unusable.
+
 ## Evaluation order (`PurchasePolicyEngine.evaluate`)
 
 1. mandate exists and belongs to the user
-2. not revoked, not expired, not exhausted
+2. not revoked, not expired, not exhausted; a `CHECKOUT_BOUND` mandate only for its own checkout
 3. total is a positive integer
 4. exact product identity match
 5. currency match

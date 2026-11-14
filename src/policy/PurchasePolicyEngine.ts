@@ -41,6 +41,8 @@ export class PurchasePolicyEngine {
     if (m.authorizationStatus === "REVOKED" || m.revokedAt) return deny("MANDATE_REVOKED", "Mandate was revoked.");
     if (m.authorizationStatus === "EXPIRED" || Date.parse(m.expiresAt) <= this.now()) return deny("MANDATE_EXPIRED", "Mandate has expired.");
     if (m.authorizationStatus === "EXHAUSTED") return deny("MANDATE_EXHAUSTED", "Mandate has been fully used.");
+    if (m.scope === "CHECKOUT_BOUND" && m.boundCheckoutSessionId !== req.checkoutSessionId)
+      return deny("BOUND_TO_OTHER_CHECKOUT", "This authorization was given for one specific checkout and cannot authorize another.");
     if (!Number.isSafeInteger(req.totalMinor) || req.totalMinor <= 0) return deny("INVALID_AMOUNT", "Total must be a positive integer of minor units.");
     if (!identityEquals(m.productIdentity, req.productIdentity)) return deny("PRODUCT_MISMATCH", "Product, variant, condition or SKU differs from the mandate.");
     if (m.currency !== req.currency) return deny("CURRENCY_MISMATCH", `Mandate is in ${m.currency}, checkout is in ${req.currency}.`);
@@ -58,7 +60,9 @@ export class PurchasePolicyEngine {
    * matches, it is returned so the caller gets an explicit MANDATE_EXPIRED rejection.
    */
   findApplicable(userId: string, identity: ProductIdentity): PurchaseMandate | null {
-    const matches = this.mandates.listActive(userId).filter((m) => identityEquals(m.productIdentity, identity));
+    // Only explicitly created reusable mandates are ever selected automatically. A checkout-bound
+    // authorization from the owner page never carries over to a new checkout (DF-4).
+    const matches = this.mandates.listActive(userId).filter((m) => m.scope === "REUSABLE" && identityEquals(m.productIdentity, identity));
     return matches.find((m) => m.authorizationStatus === "ACTIVE") ?? matches[0] ?? null;
   }
 
@@ -86,6 +90,9 @@ export class PurchasePolicyEngine {
       this.store.db.prepare(`UPDATE mandates SET reserved_minor = reserved_minor - ?, transactions_used = transactions_used - 1,
         checkout_session_id = CASE WHEN checkout_session_id = ? AND transactions_used = 1 THEN NULL ELSE checkout_session_id END
         WHERE id = ? AND user_id = ? AND reserved_minor >= ? AND transactions_used >= 1`).run(amountMinor, checkoutSessionId, mandateId, userId, amountMinor);
+      // A checkout-bound authorization whose checkout failed, expired or was cancelled is withdrawn, not returned to a pool.
+      this.store.db.prepare(`UPDATE mandates SET status = 'REVOKED', revoked_at = ? WHERE id = ? AND user_id = ? AND bound_checkout_session_id IS NOT NULL
+        AND status = 'ACTIVE' AND reserved_minor = 0`).run(this.now(), mandateId, userId);
     });
   }
 

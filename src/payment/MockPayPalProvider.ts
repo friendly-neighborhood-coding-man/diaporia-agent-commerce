@@ -20,6 +20,8 @@ export class MockPayPalProvider implements PaymentProvider {
   private readonly captures = new Map<string, ProviderCapture>();
   /** Outcomes consumed by successive capture calls; defaults to COMPLETED. */
   captureOutcomes: MockCaptureOutcome[] = [];
+  /** Outcomes consumed by successive createOrder calls (tests only); defaults to success. */
+  createOutcomes: Array<"OK" | "TIMEOUT_AFTER_CREATE" | "ERROR"> = [];
 
   constructor(private readonly baseUrl: string) {}
 
@@ -32,6 +34,9 @@ export class MockPayPalProvider implements PaymentProvider {
       payee: { merchantId: input.payeeMerchantId ?? "MOCKPAYEE-PLATFORM" },
       returnUrl: input.returnUrl, cancelUrl: input.cancelUrl, createKey: input.idempotencyKey });
     this.byCreateKey.set(input.idempotencyKey, orderId);
+    const outcome = this.createOutcomes.shift() ?? "OK";
+    if (outcome === "TIMEOUT_AFTER_CREATE") throw new ProviderTimeoutError("Mock network timeout after the order was created");
+    if (outcome === "ERROR") { this.orders.delete(orderId); this.byCreateKey.delete(input.idempotencyKey); throw new Error("Mock createOrder rejected"); }
     return { orderId, approvalUrl: this.approvalUrl(orderId) };
   }
 
@@ -44,6 +49,12 @@ export class MockPayPalProvider implements PaymentProvider {
     const u = new URL(o.returnUrl);
     u.searchParams.set("token", orderId);
     return u.toString();
+  }
+
+  /** Test hook: the provider voids an order that was never captured (as PayPal does to stale approved orders). */
+  voidOrder(orderId: string): void {
+    const o = this.mustGet(orderId);
+    if (o.captures.length === 0) o.status = "VOIDED";
   }
 
   buyerCancel(orderId: string): string {

@@ -1,5 +1,9 @@
 # Four-host MCP interoperability
 
+The next scenario, the full purchasing workflow including human authorization, status and receipt, is prepared but not run: [SCENARIO_I_RUNBOOK.md](SCENARIO_I_RUNBOOK.md).
+
+Two scenarios were run with the same four hosts: `research_purchase` alone (2026-11-09, first section) and the two-step `research_purchase` → `compare_purchase_offers` workflow (2026-11-10, section below).
+
 The same DIAPORIA MCP server was used by four independent AI hosts, each through its own MCP client. The server was this repository at `ac0a4c1`, with no changes for any host. **No payment state machine, purchase policy, authorization or validation was changed for any host.** No PayPal call and no paid research call was made.
 
 ### What is live and what is mock
@@ -24,6 +28,33 @@ All four `research_purchase` results are identical on every compared field: mode
 <!-- MATRIX:END -->
 
 **PASS** means all nine checks in [`scripts/interop/build-evidence.mjs`](../scripts/interop/build-evidence.mjs) hold. In particular, the server saw the call from that host's own token, the host's own transcript shows it issued the call, and the result matches the reference result field for field. **NOT_TESTED** means no host-originated tool call happened. Compatibility is never inferred from discovery alone.
+
+## Two-step workflow: `research_purchase` → `compare_purchase_offers` (2026-11-10)
+
+The same four hosts ran a second, longer scenario on 2026-11-10 against this repository's branch `feature/byok-completion-v1`, built from this PR's code. Each host had to call `research_purchase`, then pass **its own** returned `purchaseSessionId` and `identity.lockedIdentity` to `compare_purchase_offers` with destination US/CA. Payments: `PAYMENT_PROVIDER=mock`; tokens carried only `purchase.research,purchase.read`, so no payment tool was listed.
+
+| Host | Version | Client seen by server (User-Agent) | Result | How the calls were made |
+|---|---|---|---|---|
+| Claude Code | Claude Code 2.1.310 | claude-code/2.1.310 (claude-desktop, agent-sdk/0.3.317) | **PASS** | `claude -p`; native MCP tools `mcp__diaporia__research_purchase`, `mcp__diaporia__compare_purchase_offers` |
+| OpenAI Codex CLI | codex-cli 0.160.0 (codex exec --json) | codex-mcp-client/0.160.0 | **PASS** | `codex exec --json`; two `mcp_tool_call` items |
+| xAI Grok Build | grok 1.0.77 (50ca579fa996) [stable] | grok-cli/1.0.77 | **PASS** | `grok -p`; both tools through `use_tool`. Grok also read its own saved copy of the long compare result with local `grep`/`read_file` (host-side, no server call). xAI cost $0.16 |
+| Nous Research Hermes Agent | Hermes Agent v0.22.7 (2026.9.24) · stable · local b200f5bc60e3 | python-httpx/0.28.1 / python-httpx2/2.15.1 | **PASS** | `hermes chat --oneshot`, model Claude Haiku via the Claude subscription provider plugin; Hermes' own MCP client executed both calls (after host-internal `tool_search`, `tool_describe`) |
+
+All four hosts got identical results for both calls: `RESEARCHED` / `LOCKED`, then `OFFER_VERIFIED` with lowest verified eligible offer `off_alpha` at 5939 USD cents, 1 eligible and 10 ineligible offers, no hold reasons, `paymentEffect: NONE`. Each host's purchase session is stored under its own user id with the audit chain `RESEARCH_STARTED → RESEARCHED → OFFERS_COMPARED`.
+
+**Authorization checks in the same run:**
+- A request without a token: **401**.
+- Cross-host probe (direct to the server, not through a host): the Codex token asked `compare_purchase_offers` to use Claude Code's research session → `NOT_FOUND` ("Purchase session not found"). Sessions are scoped to the token's user.
+
+**PASS** here means all twelve checks in [`scripts/interop/build-compare-evidence.mjs`](../scripts/interop/build-compare-evidence.mjs) hold, including: one call of each tool from that host's own token, compare after research, compare bound to the research result's own session id and locked identity, both calls visible in the host's own transcript, results identical to the reference, and `paymentEffect: NONE` on both.
+
+**What was not tested:** `prepare_checkout`, `get_checkout_status` and `get_purchase_receipt` were not offered to any host in either scenario, and no host used live Channel3, Tavily or KERNEL data. Remote hosts (claude.ai connector, ChatGPT, Grok web) were not tested.
+
+Reproduce: same setup as below with `.data/interop-compare/` instead of `.data/interop/`, server on 18891 and proxy on 18890 (18791 was briefly unavailable on the test machine), prompt in `.data/interop-compare/prompt.txt`:
+
+> Use the MCP server named diaporia. List its tools. Then make exactly two tool calls, in this order: 1. Call research_purchase exactly once with exactly these arguments: `{"request":"Buy Sony WH-CH720N Black","currency":"USD","budgetMinor":6000,"mustHave":["active_noise_cancellation"]}` 2. Call compare_purchase_offers exactly once with these arguments: researchSessionId = the purchaseSessionId returned by step 1; productIdentity = the identity.lockedIdentity object returned by step 1, copied exactly with all of its fields; destination = `{"country":"US","region":"CA"}`. Do not call any other tool and do not use any other way to reach the server. Then report: …
+
+Evidence: `docs/evidence/interop/compare/` (`matrix.json` and one file per host). Regenerate with `node scripts/interop/build-compare-evidence.mjs`.
 
 ## Fixture scenario (reproducible)
 
@@ -115,6 +146,15 @@ Launch notes:
 - **Discovery probe.** Claude Code 2.1.310 and Grok 1.0.52/1.0.77 first send `server/discover` with protocol `2026-07-28`. This server (MCP TypeScript SDK 1.32.2) answers 400, and both hosts fall back to `initialize` with protocol `2025-11-25`. The fallback is automatic, and nothing was changed.
 - **GET probes.** Claude Code and Hermes probe `GET /mcp` for a standalone SSE stream. The stateless server answers 405, which the spec allows, and both continue over POST.
 - **Server instructions (fixed after the run).** During the run, the server's `instructions` text named `prepare_checkout` even for tokens without `purchase.prepare`, and Claude Code pointed this out in its answer. The tool was never listed or callable, so this was text only. The instructions are now built from the same scope checks as tool registration (`serverInstructions`, `tests/mcp-instructions.test.ts`). Authorization, tool registration and business logic are unchanged. The evidence files keep the original host answers.
+
+### Scenario I run 3 interoperability observations (2026-11-10, non-blocking)
+
+None of these is a DIAPORIA defect, and none affected a check. All four hosts passed 17/17.
+
+- **Hermes version line.** `hermes --version` was captured with `2>&1` right after `hermes pm repair`. Its first line was Hermes's own update-check warning ("Could not resolve the stable source release: … git ls-remote …"), so the matrix `host` field shows that warning. The real version is `Hermes Agent v0.22.7 (2026.9.24)`, and a later capture had an empty stderr. The evidence is left as recorded. The runbook now keeps only the `^Hermes Agent v` line.
+- **MCP protocol fallback.** Claude Code 2.1.310 and Grok 1.0.77 again first offered protocol `2026-07-28`, got a 400, and fell back to `2025-11-25` automatically. This is the same as the discovery probe above.
+- **Grok internal tool name.** In phase 2 Grok's first `use_tool` used the unqualified name `get_checkout_status`. It failed inside Grok before reaching the server, and Grok retried with `diaporia__get_checkout_status`. The server saw exactly one status call and one receipt call.
+- **Hermes cold gateway.** In a fresh `HERMES_HOME`, the first chat fails with "Gateway starting: deadline" before any tool call. The gateway finished starting about 16 s after the chat's 60 s deadline. The runbook now pre-warms it with `hermes gateway ensure --timeout 120`.
 
 ## Evidence
 

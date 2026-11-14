@@ -48,9 +48,35 @@ Output: `state`, `stateIsServerVerified: true`, `amount`, `approval {required, a
 
 ## get_purchase_receipt
 
-Output: `paymentResult` (only when `COMPLETED`), `paymentStatusNote` (MOCK vs Sandbox), `merchantOrder.status: "NOT_VERIFIED"`, `purchaseSummary`, `auditTimeline[]`.
+Output: `paymentResult` (only when `COMPLETED`), `paymentStatusNote` (MOCK vs Sandbox), `merchantOrder.status: "NOT_VERIFIED"`, `purchaseSummary`, `auditTimeline[]`, `purchaseOutcome`.
 
+## purchaseOutcome (status and receipt)
+
+Payment completion, merchant order confirmation and fulfillment are three separate layers. `state: COMPLETED` is only the first.
+
+```json
+{ "payment": "PAYMENT_COMPLETED", "merchantOrderConfirmation": "NOT_CONFIRMED", "fulfillment": "NOT_VERIFIED",
+  "merchantPurchaseComplete": false,
+  "statement": "Payment captured (PayPal Sandbox (no real money)). No merchant order confirmation was received and no fulfillment or shipment is verified, so this is not a completed merchant purchase." }
+```
+
+`merchantOrderConfirmation` is always `NOT_CONFIRMED` and `merchantPurchaseComplete` is always `false` in this release, because no merchant order integration exists. AI hosts should relay `statement` instead of saying "your purchase is complete".
+
+
+## prepare_browser_checkout (browser handoff; only when `HANDOFF_DRIVER` is set)
+
+Scope `purchase.prepare`, dev auth on loopback only. Input is `{ purchaseSessionId, offerId, quantity (1..5), maximumApprovedTotalMinor, currency }`, and the offer must be an EXTERNAL offer from a merchant that has a DIAPORIA recipe. It prepares the merchant cart in an isolated browser, captures what the merchant displays, applies constraints and stops before payment. It returns the handoff contract: `handoffId`, `state`, `capturedCart`, `constraints { violations, unknowns, effectiveMaximumMinor }`, `humanAction { kind: OPEN_HANDOFF_PAGE, url, authentication: OWNER_KEY, presentation }`, `orderStatus`, `paymentEffect: NONE_BY_DIAPORIA` and `diaporiaCreatedPaymentOrder: false`. See `docs/BROWSER_CHECKOUT_HANDOFF.md`.
+
+## get_browser_checkout_status
+
+Scope `purchase.read`, read-only. The same contract, plus `observation` (read-only, after takeover) and `sellerConfirmation`. `ORDER_CONFIRMED` requires authenticated seller-side confirmation.
 
 ## Payment status fields (lifecycle round)
 
 `get_checkout_status` and `get_purchase_receipt` also return `paymentStatus`, `payment { paymentEnvironment, providerOrderId, captureId, providerCaptureStatus, pendingReason, lastAuthoritativeVerificationAt, recommendedNextAction, newPaymentAttemptProhibited }` and `merchantOrderStatus: "MERCHANT_ORDER_NOT_VERIFIED"`. The receipt adds `isFinalPaymentReceipt` and `refund`. A `CAPTURE_PENDING` payment is never a completed receipt. See PAYMENT_LIFECYCLE.md.
+
+## Owner-only HTTP routes added in the MVP integration branch
+
+- `POST /owner/checkouts/{cs_id}/cancel` (header `X-Owner-Key`): cancels a checkout only while no capture can exist (`PREPARED`, `HOLD`, or `APPROVAL_REQUIRED` when the provider still reports the order unapproved). Returns `200 {cancelled: true}` and releases the mandate reservation, or `409 {cancelled: false, reason}` with `BUYER_ALREADY_APPROVED_AT_PROVIDER`, `PROVIDER_STATE_UNKNOWN` or `NOT_CANCELLABLE_IN_<STATE>`. The owner review page has the same Cancel button.
+- `prepare_checkout` repeated with identical arguments after the checkout reached `COMPLETED` returns that checkout with `deduplicated: true`; one purchase session buys at most once.
+- With `DIAPORIA_AUTH_MODE=oauth`, `/mcp` accepts OAuth access tokens only. See [REMOTE_MCP_AUTH.md](REMOTE_MCP_AUTH.md).

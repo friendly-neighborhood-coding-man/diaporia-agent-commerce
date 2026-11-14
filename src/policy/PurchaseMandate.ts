@@ -27,6 +27,13 @@ export interface PurchaseMandate {
   consumedMinor: number;
   transactionsUsed: number;
   createdVia: "OWNER_API" | "OWNER_APPROVAL_PAGE";
+  /**
+   * REUSABLE: created on purpose through the owner API; may authorize any matching checkout within its limits.
+   * CHECKOUT_BOUND: created on the owner approval page for one checkout; never authorizes any other checkout and is
+   * never selected automatically. Legacy page mandates without a bound id are CHECKOUT_BOUND to nothing (unusable).
+   */
+  scope: "REUSABLE" | "CHECKOUT_BOUND";
+  boundCheckoutSessionId: string | null;
   createdAt: string;
 }
 
@@ -40,6 +47,8 @@ export interface CreateMandateInput {
   ttlSeconds?: number;
   allowedMerchantIds?: string[] | null;
   createdVia: PurchaseMandate["createdVia"];
+  /** Required for, and only allowed with, createdVia OWNER_APPROVAL_PAGE. */
+  boundCheckoutSessionId?: string;
 }
 
 type MandateRow = Record<string, string | number | null>;
@@ -61,14 +70,16 @@ export class MandateRepository {
     const maxT = input.maximumTransactions ?? 1;
     if (!Number.isSafeInteger(maxQ) || maxQ < 1 || maxQ > 10) throw new Error("maximumQuantity must be 1..10");
     if (!Number.isSafeInteger(maxT) || maxT < 1 || maxT > 10) throw new Error("maximumTransactions must be 1..10");
+    const bound = input.boundCheckoutSessionId ?? null;
+    if ((input.createdVia === "OWNER_APPROVAL_PAGE") !== (bound !== null)) throw new Error("Owner-page mandates must be bound to exactly one checkout; owner-API mandates must not be");
     const ttl = input.ttlSeconds ?? 3600;
     if (!Number.isSafeInteger(ttl) || ttl < 60 || ttl > 7 * 86400) throw new Error("ttlSeconds must be 60..604800");
     const id = `mdt_${randomUUID()}`;
     const now = this.now();
     this.store.db.prepare(`INSERT INTO mandates(id,user_id,identity_json,currency,max_total_minor,max_quantity,max_transactions,expires_at,
-      merchant_constraints_json,status,created_via,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      merchant_constraints_json,status,created_via,created_at,bound_checkout_session_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       id, input.userId, JSON.stringify(input.productIdentity), input.currency, input.maximumTotalMinor, maxQ, maxT, now + ttl * 1000,
-      JSON.stringify({ allowedMerchantIds: input.allowedMerchantIds ?? null }), "ACTIVE", input.createdVia, now);
+      JSON.stringify({ allowedMerchantIds: input.allowedMerchantIds ?? null }), "ACTIVE", input.createdVia, now, bound);
     return this.get(id, input.userId)!;
   }
 
@@ -100,7 +111,10 @@ export class MandateRepository {
       checkoutSessionId: r.checkout_session_id === null ? null : String(r.checkout_session_id),
       revokedAt: r.revoked_at === null ? null : new Date(Number(r.revoked_at)).toISOString(),
       reservedMinor: Number(r.reserved_minor), consumedMinor: Number(r.consumed_minor), transactionsUsed: Number(r.transactions_used),
-      createdVia: r.created_via as PurchaseMandate["createdVia"], createdAt: new Date(Number(r.created_at)).toISOString(),
+      createdVia: r.created_via as PurchaseMandate["createdVia"],
+      scope: r.created_via === "OWNER_APPROVAL_PAGE" ? "CHECKOUT_BOUND" : "REUSABLE",
+      boundCheckoutSessionId: r.bound_checkout_session_id == null ? null : String(r.bound_checkout_session_id),
+      createdAt: new Date(Number(r.created_at)).toISOString(),
     };
   }
 }

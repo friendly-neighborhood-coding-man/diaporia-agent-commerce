@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "tsx src/main.ts",
     "start": "node dist/src/main.js",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p apps/phase-c-test-merchant/tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "demo:e2e": "tsx scripts/demo-e2e.ts",
@@ -20,10 +20,25 @@
     "preflight:sandbox": "tsx scripts/sandbox-preflight.ts",
     "demo:identity": "tsx scripts/demo-merchant-identity.ts",
     "demo:quote": "tsx scripts/demo-merchant-quote.ts",
+    "demo:subscription": "tsx scripts/demo-subscription.ts",
+    "sandbox:subscription": "tsx scripts/subscription-sandbox.ts",
     "smoke:shopify": "tsx scripts/shopify-smoke.ts",
     "demo:service": "tsx scripts/demo-service.ts",
     "live:smoke": "tsx scripts/live-smoke.ts",
-    "live:evidence": "tsx scripts/live-evidence-check.ts"
+    "live:evidence": "tsx scripts/live-evidence-check.ts",
+    "demo:handoff": "tsx scripts/demo-handoff.ts",
+    "merchant:start": "tsx apps/phase-c-test-merchant/src/main.ts",
+    "merchant:start:built": "node dist-merchant/apps/phase-c-test-merchant/src/main.js",
+    "phase-c:approval": "tsx scripts/phase-c-approval.ts",
+    "phase-c:recipe": "tsx scripts/phase-c-recipe.ts",
+    "phase-c:sign": "tsx scripts/phase-c-sign.ts",
+    "demo:phase-c": "tsx scripts/demo-phase-c.ts",
+    "phase-c:c3-compare": "tsx scripts/phase-c-c3-compare.ts",
+    "phase-c:kernel-check": "tsx scripts/phase-c-kernel-check.ts",
+    "dogfood": "tsx scripts/dogfood.ts",
+    "eval:research": "tsx scripts/research-eval.ts",
+    "scenario-i:selftest": "node scripts/interop/scenario-i-selftest.mjs",
+    "eval:semantic-fidelity": "node scripts/interop/semantic-fidelity.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -31,6 +46,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "playwright-core": "1.65.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
